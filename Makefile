@@ -6,10 +6,10 @@
 #   make down-wipe    Same as WIPE=1
 #   make db-clear          Empty Arango collections; restart API
 #   make install-requirements  Host Node, Go, and corepack pnpm
-#   make e2e-docker        Plan isolated e2e-docker feature runs
+#   make e2e-docker        Plan the one-stack e2e suite
 #   make e2e-docker FORCE=1
-#   make e2e-docker-force  Plan a fresh run of every feature
-#   make e2e-last-runs     Fail unless every e2e last-run passed
+#   make e2e-docker-force  Plan a fresh suite run
+#   make e2e-last-runs     Fail unless the suite last-run passed
 #
 # WIPE does not delete bind-mounted ./data/photos (or ./data/cache).
 # db-clear does not delete volumes or bind mounts.
@@ -52,10 +52,10 @@ help:
 	$(info make install-requirements  Host Node 20, Go 1.23, corepack pnpm)
 	$(info make e2e             Playwright BDD against the isolated memries-e2e stack)
 	$(info make e2e-down        Stop the isolated e2e stack; keep volumes)
-	$(info make e2e-docker      Plan isolated e2e-docker feature runs)
+	$(info make e2e-docker      Plan the one-stack e2e suite)
 	$(info make e2e-docker FORCE=1)
-	$(info make e2e-docker-force  Plan a fresh run of every feature (refresh last-runs))
-	$(info make e2e-last-runs   Fail unless every e2e last-run passed)
+	$(info make e2e-docker-force  Plan a fresh suite run (refresh last-runs))
+	$(info make e2e-last-runs   Fail unless the suite last-run passed)
 	$(info                      Bind-mounted ./data/photos is not removed.)
 	@exit 0
 
@@ -87,6 +87,10 @@ build:
 e2e:
 	$(REQUIRE_ENV)
 	pnpm --filter @memries/e2e test
+
+e2e-headed:
+	$(REQUIRE_ENV)
+	pnpm --filter @memries/e2e test:headed
 
 e2e-down:
 	$(REQUIRE_ENV)

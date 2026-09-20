@@ -69,7 +69,6 @@
       "lastRunsPath": ".cursor/skills/e2e-docker/last-runs.json",
       "incompleteField": null,
       "steps": ["e2e"],
-      "maxLaunch": 4,
       "suites": [
         {
           "id": "memries",

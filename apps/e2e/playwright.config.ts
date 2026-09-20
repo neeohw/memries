@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 import { defineBddConfig } from 'playwright-bdd';
+import { resolveE2ePlaywrightProfile } from './scripts/e2e-profile.mjs';
 import { ORIGIN } from './steps/origins';
+
+const profile = resolveE2ePlaywrightProfile();
 
 function featureGlob(): string {
   const raw = process.env.MEMRIES_E2E_FEATURE?.trim();
@@ -18,16 +21,20 @@ const bddDir = defineBddConfig({
 
 export default defineConfig({
   testDir: bddDir,
-  fullyParallel: false,
-  workers: 1,
+  fullyParallel: profile.fullyParallel,
+  workers: profile.workers,
+  retries: profile.retries,
+  forbidOnly: profile.forbidOnly,
   timeout: 180_000,
   expect: { timeout: 15_000 },
-  reporter: 'list',
+  reporter: profile.reporter,
   use: {
     baseURL: ORIGIN,
     locale: 'en-GB',
     timezoneId: 'UTC',
-    trace: 'on-first-retry',
+    headless: profile.headless,
+    trace: profile.trace,
+    screenshot: profile.screenshot,
   },
   projects: [
     {
@@ -42,7 +49,7 @@ export default defineConfig({
   webServer: {
     command: 'node scripts/stack.mjs up',
     url: ORIGIN,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !profile.inCI,
     timeout: 180_000,
   },
 });

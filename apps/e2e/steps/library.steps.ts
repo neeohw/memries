@@ -344,12 +344,12 @@ When(
   },
 );
 
-When('I remove the photo {string}', async (_fixtures, file: string) => {
+When('I remove the photo {string}', async ({}, file: string) => {
   markFixturesDirty();
   runPrepareFixtures(['remove-photo', file]);
 });
 
-When('I relocate the photo {string} to {string}', async (_fixtures, from: string, to: string) => {
+When('I relocate the photo {string} to {string}', async ({}, from: string, to: string) => {
   markFixturesDirty();
   runPrepareFixtures(['relocate-photo', from, to]);
 });
@@ -383,7 +383,7 @@ Then('the photo from {string} should be a favorite', async ({ page }, day: strin
   await expect(photo).toHaveAttribute('aria-label', /Open favorited photo/);
 });
 
-Given('the library fixtures are restored', async () => {
+Given('the library fixtures are restored', async ({}) => {
   runPrepareFixtures();
 });
 

@@ -14,9 +14,10 @@ Stay in this repository. Do not read or edit parent directories.
 | [0006](docs/adr/0006-truncate-arango-for-resync.md) | Truncate Arango for resync; keep photo volumes |
 | [0007](docs/adr/0007-viewport-forced-compact-thumbs.md) | Compact grids: 256 at viewport ≥1280px, else 512; no `srcset` |
 | [0008](docs/adr/0008-smart-date-search.md) | Search smart dates are SPA-parsed; `/api/photos` gets `month` / `local_from` / `local_to`; Filter opens Search |
-| [0009](docs/adr/0009-e2e-docker-skill-owns-isolated-stacks.md) | `/e2e-docker` lives here: one feature file, one Compose project, four exclusive 19000-band slots, setup + merge of `apps/e2e/`, cap 4 per sequential slice (1.1, 1.2, …), last-runs in this repo; `--force` reruns every feature |
-| [0010](docs/adr/0010-memries-platform-quality-shelf.md) | Local `/platform-quality`: a11y → e2e slices 1.1/1.2/… (max 4) → lint → format; no scripts-to-node; dual-shell script rule |
+| [0009](docs/adr/0009-e2e-docker-skill-owns-isolated-stacks.md) | Superseded by [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) |
+| [0010](docs/adr/0010-memries-platform-quality-shelf.md) | Local `/platform-quality`: a11y → e2e suite → lint → format; e2e slices superseded by [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) |
 | [0011](docs/adr/0011-turborepo-pnpm-workspace.md) | pnpm + Turbo workspace under `apps/`; prune + fill-extras in Docker; quality shelf paths retargeted |
+| [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) | One `memries-e2e` stack; `/e2e-docker` plans and records id `memries`; local headed + 4 workers, CI one-by-one |
 
 ## Contexts
 
@@ -26,8 +27,8 @@ Stay in this repository. Do not read or edit parent directories.
 | Indexer | [apps/backend/cmd/indexer](apps/backend/cmd/indexer/main.go), [internal/index](apps/backend/internal/index/indexer.go) | HTTP job or CLI walks prefix → identity → EXIF → thumbs → upsert ([0004](docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md)) |
 | Timeline UI | [apps/frontend/src](apps/frontend/src) | [App.tsx](apps/frontend/src/App.tsx) → [Timeline.tsx](apps/frontend/src/components/Timeline.tsx) → [groupPhotos.ts](apps/frontend/src/lib/groupPhotos.ts); catalog in [lib/api.ts](apps/frontend/src/lib/api.ts) |
 | Local ops | [docker-compose.yml](docker-compose.yml), [deploy/](deploy/), [Makefile](Makefile) | Caddy routes; Dex issuer `http://localhost:5556`; catalog reset [docs/adr/0006-truncate-arango-for-resync.md](docs/adr/0006-truncate-arango-for-resync.md); images [Dockerfile.frontend](Dockerfile.frontend) / [Dockerfile.backend](Dockerfile.backend) |
-| Isolated Playwright BDD | [apps/e2e/](apps/e2e/) | One feature per Compose project ([0009](docs/adr/0009-e2e-docker-skill-owns-isolated-stacks.md)); skill [`.cursor/skills/e2e-docker/`](.cursor/skills/e2e-docker/) |
-| Quality shelf | [`.cursor/skills/`](.cursor/skills/) | `/platform-quality` waves and last-runs ([0010](docs/adr/0010-memries-platform-quality-shelf.md)); planner [`apps/scripts/app-fanout/app-fanout.mjs`](apps/scripts/app-fanout/app-fanout.mjs) |
+| Isolated Playwright BDD | [apps/e2e/](apps/e2e/) | One suite on `memries-e2e` / 18080 ([0012](docs/adr/0012-e2e-one-suite-two-profiles.md)); skill [`.cursor/skills/e2e-docker/`](.cursor/skills/e2e-docker/) |
+| Quality shelf | [`.cursor/skills/`](.cursor/skills/) | `/platform-quality` waves and last-runs ([0010](docs/adr/0010-memries-platform-quality-shelf.md), [0012](docs/adr/0012-e2e-one-suite-two-profiles.md)); planner [`apps/scripts/app-fanout/app-fanout.mjs`](apps/scripts/app-fanout/app-fanout.mjs) |
 | Build graph | [package.json](package.json), [turbo.json](turbo.json) | pnpm workspace + Turbo ([0011](docs/adr/0011-turborepo-pnpm-workspace.md)); host install [apps/scripts/install-requirements/](apps/scripts/install-requirements/) |
 
 ```mermaid

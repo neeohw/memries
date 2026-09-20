@@ -1,6 +1,8 @@
 # Isolated Playwright BDD
 
-Real-stack browser tests against a **separate** Compose project (default `memries-e2e`). They do not share ports or volumes with `make up`. A second instance (for example a worktree fan-out) must set `MEMRIES_E2E_PROJECT` plus one of the four `*_HOST_PORT` slots starting at `19000` so it does not steal `18080`. At most four fan-out stacks may run at once; each slot is leased exclusively.
+Real-stack browser tests against a **separate** Compose project (default `memries-e2e` on `18080`). They do not share ports or volumes with `make up`. All feature files run in one Playwright process.
+
+Locally (no `CI`) Playwright is headed and uses at most four workers. In a pipeline (`CI=true`) it is headless, one worker, four retries.
 
 ## First run
 
@@ -21,8 +23,8 @@ pnpm --filter @memries/e2e test
 ```
 
 `make e2e` from the app root is the same as `pnpm --filter @memries/e2e test`.
-`make e2e-docker-force` plans a fresh isolated stack per feature so `/e2e-docker --force` can refresh last-runs.
-What each feature proves — and whether its last-run passed — is on the [main README](../../README.md#end-to-end-tests). `make e2e-last-runs` fails unless every last-run is green.
+`make e2e-docker` plans the suite; `make e2e-docker-force` marks it `needs-run` so `/e2e-docker --force` can refresh last-runs.
+What the suite proves — and whether its last-run passed — is on the [main README](../../README.md#end-to-end-tests). `make e2e-last-runs` fails unless that last-run is green.
 
 Login is Dex `admin@example.com` / `password`. Fixture JPEGs live in `apps/e2e/.work/photos/admin@example.com/` and are regenerated before every `stack:up`.
 
@@ -41,18 +43,10 @@ pnpm --filter @memries/e2e run stack:wipe
 
 `.work/` photos/cache/generated Dex, `.features-gen/`, and `node_modules/` are gitignored. This does not touch `./data/photos` from the developer stack.
 
-## One feature / one stack
+## Optional: one feature file
 
 ```bash
-MEMRIES_E2E_FEATURE=timeline.feature \
-MEMRIES_E2E_PROJECT=e2e-memries-timeline \
-CADDY_HOST_PORT=19000 BACKEND_HOST_PORT=19001 FRONTEND_HOST_PORT=19002 \
-ARANGO_HOST_PORT=19003 DEX_HOST_PORT=19004 \
-pnpm --filter @memries/e2e test
+MEMRIES_E2E_FEATURE=timeline.feature pnpm --filter @memries/e2e test
 ```
 
-After the run, wipe that project so the next slice can reuse the port band:
-
-```bash
-MEMRIES_E2E_PROJECT=e2e-memries-timeline pnpm --filter @memries/e2e run stack:wipe
-```
+That still uses the `memries-e2e` stack. It does not start a second Compose project.

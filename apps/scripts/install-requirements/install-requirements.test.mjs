@@ -36,6 +36,17 @@ describe('version helpers', () => {
     assert.equal(goTarballUrl('arm64'), `https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz`);
   });
 
+  it('builds official macOS tarball URLs', () => {
+    assert.equal(
+      nodeTarballUrl('arm64', 'darwin'),
+      `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-arm64.tar.gz`,
+    );
+    assert.equal(
+      goTarballUrl('x64', 'darwin'),
+      `https://go.dev/dl/go${GO_VERSION}.darwin-amd64.tar.gz`,
+    );
+  });
+
   it('probes the default Windows Go install path', () => {
     const bins = goCommandCandidates('win32', { ProgramFiles: 'C:\\Program Files' });
     assert.deepEqual(bins, ['go', 'C:\\Program Files\\Go\\bin\\go.exe', 'C:\\Go\\bin\\go.exe']);
@@ -173,15 +184,31 @@ describe('main', () => {
     assert.equal(calls[1].shell, true);
   });
 
-  it('rejects macOS', async () => {
-    await assert.rejects(
-      () =>
-        main([], {
-          platform: () => 'darwin',
-          enableCorepack: () => {},
-          log: () => {},
-        }),
-      /Unsupported platform/,
+  it('downloads official tarballs on macOS when tools are missing', async () => {
+    const downloads = [];
+    await main([], {
+      platform: () => 'darwin',
+      arch: () => 'arm64',
+      nodeOk: () => false,
+      goFound: () => false,
+      goOk: () => false,
+      prefix: () => '/tmp/tools',
+      nodeDistVersion: NODE_VERSION,
+      goDistVersion: GO_VERSION,
+      installTarball: async (opts) => downloads.push(opts),
+      enableCorepack: () => {},
+      log: () => {},
+    });
+    assert.equal(downloads.length, 2);
+    assert.equal(
+      downloads[0].url,
+      `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-arm64.tar.gz`,
     );
+    assert.equal(downloads[0].strip, 1);
+    assert.equal(
+      downloads[1].url,
+      `https://go.dev/dl/go${GO_VERSION}.darwin-arm64.tar.gz`,
+    );
+    assert.equal(downloads[1].strip, 0);
   });
 });

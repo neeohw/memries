@@ -1,48 +1,35 @@
 /**
- * Last-run status for the README tag: all-green only when every discovered
- * feature has a passed finding.
+ * Last-run status for the README tag: all-green only when the suite finding passed.
+ * Catalog blurbs still come from feature files; marks follow the suite finding.
  */
-import { featureStem } from './e2e-features.mjs';
+import { SUITE_ID } from './e2e-docker-last-runs.mjs';
 
-function rowStem(row) {
-  if (row.featureFile) return featureStem(row.featureFile);
-  return String(row.id || '').replace(/^memries-/, '');
-}
-
-function rowStatus(lastRunsApps, id) {
-  const status = lastRunsApps?.[id]?.finding?.status;
+function suiteStatus(lastRunsApps, suiteId = SUITE_ID) {
+  const status = lastRunsApps?.[suiteId]?.finding?.status;
   if (status === 'passed' || status === 'failed') return status;
   return 'missing';
 }
 
-export function summarizeE2eLastRuns({ discovered = [], lastRunsApps = {} } = {}) {
-  const rows = discovered.map((row) => ({
-    id: row.id,
-    stem: rowStem(row),
-    status: rowStatus(lastRunsApps, row.id),
-  }));
-  const passed = rows.filter((row) => row.status === 'passed').length;
-  const failed = rows.filter((row) => row.status === 'failed').length;
-  const missing = rows.filter((row) => row.status === 'missing').length;
+export function summarizeE2eLastRuns({ lastRunsApps = {}, suiteId = SUITE_ID } = {}) {
+  const status = suiteStatus(lastRunsApps, suiteId);
   return {
-    allPassed: rows.length > 0 && passed === rows.length,
-    passed,
-    failed,
-    missing,
-    total: rows.length,
-    rows,
+    allPassed: status === 'passed',
+    passed: status === 'passed' ? 1 : 0,
+    failed: status === 'failed' ? 1 : 0,
+    missing: status === 'missing' ? 1 : 0,
+    total: 1,
+    rows: [{ id: suiteId, stem: 'suite', status }],
   };
 }
 
 export function renderE2eLastRunsTag(summary) {
   if (summary.allPassed) {
-    return `[**E2E last-runs:** ✅ all ${summary.total} passed](#end-to-end-tests)`;
+    return '[**E2E last-runs:** ✅ suite passed](#end-to-end-tests)';
   }
-  const stems = (summary.rows ?? [])
-    .filter((row) => row.status !== 'passed')
-    .map((row) => row.stem);
-  const clause = stems.length ? ` — ${stems.join(', ')}` : '';
-  return `[**E2E last-runs:** ❌ ${summary.passed} of ${summary.total} passed](#end-to-end-tests)${clause}`;
+  if (summary.missing) {
+    return '[**E2E last-runs:** ❌ suite not recorded](#end-to-end-tests)';
+  }
+  return '[**E2E last-runs:** ❌ suite failed](#end-to-end-tests)';
 }
 
 function escapeRegExp(value) {
@@ -89,12 +76,9 @@ export function catalogRowsFromFeatures(files = []) {
 }
 
 export function renderE2eCatalog(catalog = [], summary = { rows: [] }) {
-  const statusById = new Map((summary.rows ?? []).map((row) => [row.id, row.status]));
+  const suiteMark = summary.rows?.[0]?.status === 'passed' ? '✅' : '❌';
   return catalog
-    .map((row) => {
-      const mark = statusById.get(row.id) === 'passed' ? '✅' : '❌';
-      return `- ${mark} **${row.title}** — ${row.blurb}`;
-    })
+    .map((row) => `- ${suiteMark} **${row.title}** — ${row.blurb}`)
     .join('\n');
 }
 
@@ -116,7 +100,7 @@ export function applyE2eLastRunsReadme({
   if (missingTitle.length) {
     throw new Error(`feature file missing Feature: title: ${missingTitle.join(', ')}`);
   }
-  const summary = summarizeE2eLastRuns({ discovered, lastRunsApps });
+  const summary = summarizeE2eLastRuns({ lastRunsApps });
   let next = replaceMarkedRegion(markdown, README_TAG_REGION, renderE2eLastRunsTag(summary));
   next = replaceMarkedRegion(next, README_CATALOG_REGION, renderE2eCatalog(catalog, summary));
   return { markdown: next, summary };

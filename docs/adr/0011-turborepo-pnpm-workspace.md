@@ -29,4 +29,4 @@ The repo was four isolated trees: npm `frontend/` and `e2e/`, a Go module in `ba
 ## Limitations
 
 - No remote Turbo cache and no CI workflow in this change.
-- The installer does not cover macOS.
+- Host install covers Windows, Linux, and macOS (official tarballs on Unix; winget on Windows).

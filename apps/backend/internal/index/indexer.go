@@ -203,7 +203,7 @@ func (i *Indexer) indexOne(ctx context.Context, key, ownerID string, force bool)
 				return false, err
 			}
 		}
-		if changed || existing.Storage.Path != key {
+		if changed || existing.Storage.Path != key || existing.DeletedAt != nil {
 			applyCapture(existing, cap)
 			existing.Storage, _ = relocatedStorage(existing.Storage, key, i.Store.Backend())
 			existing.DeletedAt = nil

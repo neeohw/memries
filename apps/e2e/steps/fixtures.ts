@@ -34,7 +34,6 @@ async function indexStatus(page: Page): Promise<string> {
 
 async function reindexOwner(page: Page) {
   const started = await page.request.post('/api/index');
-  if (started.status() === 401) return;
   if (!started.ok() && started.status() !== 202) {
     throw new Error(`index start failed: ${started.status()} ${await started.text()}`);
   }
@@ -43,7 +42,6 @@ async function reindexOwner(page: Page) {
 
 async function resetLibrary(page: Page) {
   const res = await page.request.post('/api/e2e/reset');
-  if (res.status() === 401) return;
   if (!res.ok()) {
     throw new Error(`e2e reset failed: ${res.status()} ${await res.text()}`);
   }

@@ -5,7 +5,7 @@ Shared planner assets for the Memries quality orchestrators:
 - `frontend-page-accessibility` / `frontend-format` / `frontend-lint`
 - `backend-format` / `backend-lint`
 - `platform-format` / `platform-lint`
-- `e2e-docker` (one Playwright feature file per Docker stack; sequential slices of 4)
+- `e2e-docker` (one Playwright suite on `memries-e2e`)
 - `platform-quality` (umbrella; user-invoked only; max 4 agents per wave)
 
 Planning lives in [`apps/scripts/app-fanout/app-fanout.mjs`](../../../apps/scripts/app-fanout/app-fanout.mjs) and [`apps/scripts/app-fanout/app-fanout.config.json`](../../../apps/scripts/app-fanout/app-fanout.config.json). Standalone `/e2e-docker` still uses [`apps/scripts/e2e-docker/e2e-docker.mjs`](../../../apps/scripts/e2e-docker/e2e-docker.mjs); both call the same `planE2eFeatures`.

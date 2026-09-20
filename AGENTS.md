@@ -70,8 +70,8 @@ New tests belong next to those seams (`*_test.go` / frontend tests), not inside 
 - `frontend-page-accessibility` / `frontend-lint` / `frontend-format` — React + Vite + Tailwind tree under `apps/frontend/`
 - `backend-lint` / `backend-format` — Go (`gofmt` / `go vet`) under `apps/backend/`
 - `platform-lint` / `platform-format` — `apps/e2e/` and `apps/scripts/`
-- `e2e-docker` — one Docker Playwright feature per worktree (max 4 stacks per sequential slice 1.1, 1.2, 1.3, …; setup + run + merge `apps/e2e/` only). `--force` reruns every feature and refreshes last-runs. Shelf: [`.cursor/skills/e2e-docker/`](.cursor/skills/e2e-docker/)
-- `platform-quality` — user-invoked only: page-accessibility → e2e-docker (sequential slices 1.1, 1.2, … of 4) → lint → format. Max 4 agents per wave. No scripts-to-node wave
+- `e2e-docker` — plan + `make e2e` + record one suite (`memries`) on `memries-e2e`. `--force` reruns the suite and refreshes last-runs. Shelf: [`.cursor/skills/e2e-docker/`](.cursor/skills/e2e-docker/)
+- `platform-quality` — user-invoked only: page-accessibility → e2e-docker (one suite run) → lint → format. Max 4 agents per lint/format/a11y wave. No scripts-to-node wave
 
 ## Scripts
 

@@ -24,7 +24,7 @@ describe('app-fanout.config', () => {
     );
     assert.deepEqual(waves[1].skills, ['e2e-docker']);
     assert.equal(config.skills['scripts-to-node'], undefined);
-    assert.equal(config.skills['e2e-docker'].maxLaunch, 4);
+    assert.equal(config.skills['e2e-docker'].maxLaunch, undefined);
     assert.equal(config.skills['platform-quality'].maxLaunch, 4);
     assert.equal(config.maxLaunch, 40);
   });
@@ -45,7 +45,7 @@ describe('app-fanout.config', () => {
 
 describe('maxLaunchOf', () => {
   it('uses the skill cap when it is lower than the global cap', () => {
-    assert.equal(maxLaunchOf(config, config.skills['e2e-docker']), 4);
+    assert.equal(maxLaunchOf(config, config.skills['e2e-docker']), 40);
     assert.equal(maxLaunchOf(config, config.skills['platform-quality']), 4);
     assert.equal(maxLaunchOf(config, config.skills['frontend-lint']), 40);
   });
@@ -121,18 +121,17 @@ describe('planUmbrellaWaves', () => {
       lastRunsPath: '.cursor/skills/e2e-docker/last-runs.json',
       apps: [
         {
-          id: 'memries-login',
+          id: 'memries',
           skill: 'e2e-docker',
           status: 'needs-run',
-          agentName: 'e2e-docker-memries-login',
-          worktreeBranch: 'e2e-docker-memries-login',
+          agentName: 'e2e-docker-memries',
+          worktreeBranch: 'e2e-docker-memries',
           baseBranch: 'main',
-          path: 'e2e/features/login.feature',
-          featureFile: 'login.feature',
+          path: 'apps/e2e',
+          kind: 'e2e-suite',
           suiteCommit: 'abc',
-          composeProject: 'e2e-memries-login',
-          origin: 'http://localhost:19000',
-          ports: { caddy: 19000 },
+          composeProject: 'memries-e2e',
+          origin: 'http://localhost:18080',
         },
       ],
     };
@@ -170,24 +169,15 @@ describe('planUmbrellaWaves', () => {
     });
     assert.deepEqual(plan.steps, ['page-accessibility', 'e2e', 'lint', 'format']);
     assert.equal(plan.waves[1].step, 'e2e');
-    assert.equal(plan.waves[1].label, '1.1');
-    assert.equal(plan.waves[1].launchNow[0].featureFile, 'login.feature');
-    assert.equal(plan.waves[1].launchNow[0].composeProject, 'e2e-memries-login');
+    assert.equal(plan.waves[1].label, undefined);
+    assert.equal(plan.waves[1].launchNow.length, 1);
+    assert.equal(plan.waves[1].launchNow[0].id, 'memries');
+    assert.equal(plan.waves[1].launchNow[0].composeProject, 'memries-e2e');
+    assert.equal(plan.waves[1].launchNow[0].origin, 'http://localhost:18080');
     assert.equal(plan.waves[2].step, 'lint');
   });
 
-  it('splits e2e into sequential slices of 4 labeled 1.1, 1.2, 1.3', () => {
-    const apps = Array.from({ length: 9 }, (_, i) => ({
-      id: `memries-f${i}`,
-      skill: 'e2e-docker',
-      status: 'needs-run',
-      agentName: `e2e-docker-memries-f${i}`,
-      worktreeBranch: `e2e-docker-memries-f${i}`,
-      baseBranch: 'main',
-      path: `e2e/features/f${i}.feature`,
-      featureFile: `f${i}.feature`,
-      suiteCommit: 'abc',
-    }));
+  it('keeps the e2e wave as one suite with no later slices', () => {
     const plan = planUmbrellaWaves({
       waves: [
         { step: 'page-accessibility', skills: ['frontend-page-accessibility'] },
@@ -200,10 +190,21 @@ describe('planUmbrellaWaves', () => {
           lastRunsPath: '.cursor/skills/frontend-page-accessibility/last-runs.json',
         },
         'e2e-docker': {
-          apps,
+          apps: [
+            {
+              id: 'memries',
+              skill: 'e2e-docker',
+              status: 'needs-run',
+              agentName: 'e2e-docker-memries',
+              worktreeBranch: 'e2e-docker-memries',
+              baseBranch: 'main',
+              path: 'apps/e2e',
+              composeProject: 'memries-e2e',
+              origin: 'http://localhost:18080',
+            },
+          ],
           steps: ['e2e'],
           lastRunsPath: '.cursor/skills/e2e-docker/last-runs.json',
-          maxLaunch: 4,
         },
       },
       maxLaunch: 4,
@@ -211,105 +212,14 @@ describe('planUmbrellaWaves', () => {
       baseBranch: 'main',
       head: 'abc',
     });
+    assert.equal(plan.waves.length, 1);
+    assert.equal(plan.waves[0].step, 'e2e');
     assert.deepEqual(
-      plan.waves.map((w) => w.label),
-      ['1.1', '1.2', '1.3'],
+      plan.waves[0].launchNow.map((row) => row.id),
+      ['memries'],
     );
-    assert.equal(plan.waves[0].launchNow.length, 4);
-    assert.equal(plan.waves[1].launchNow.length, 4);
-    assert.equal(plan.waves[2].launchNow.length, 1);
-    assert.equal(plan.waves[0].deferred.length, 5);
-    assert.equal(plan.waves[0].launchNow[0].ports.caddy, 19000);
-    assert.equal(plan.waves[0].launchNow[3].ports.caddy, 19060);
-    assert.equal(plan.waves[1].launchNow[0].ports.caddy, 19000);
-    assert.equal(plan.waves[0].sequential, true);
-    assert.equal(plan.waves[0].launchNow[0].slot, 0);
-    assert.equal(plan.waves[0].launchNow[3].slot, 3);
-  });
-
-  it('blocks e2e launchNow when a prior slot is still active', () => {
-    const apps = Array.from({ length: 5 }, (_, i) => ({
-      id: `memries-f${i}`,
-      skill: 'e2e-docker',
-      status: 'needs-run',
-      agentName: `e2e-docker-memries-f${i}`,
-      worktreeBranch: `e2e-docker-memries-f${i}`,
-      baseBranch: 'main',
-      path: `e2e/features/f${i}.feature`,
-      featureFile: `f${i}.feature`,
-      suiteCommit: 'abc',
-    }));
-    const plan = planUmbrellaWaves({
-      waves: [
-        { step: 'page-accessibility', skills: ['frontend-page-accessibility'] },
-        { step: 'e2e', skills: ['e2e-docker'] },
-      ],
-      nestedBySkill: {
-        'frontend-page-accessibility': {
-          apps: [],
-          steps: ['page-accessibility'],
-          lastRunsPath: 'x',
-        },
-        'e2e-docker': {
-          apps,
-          steps: ['e2e'],
-          lastRunsPath: '.cursor/skills/e2e-docker/last-runs.json',
-          maxLaunch: 4,
-        },
-      },
-      maxLaunch: 4,
-      waveFilter: 1,
-      baseBranch: 'main',
-      head: 'abc',
-      listBusySlots: () => [{ slot: 3, project: 'e2e-memries-navigation' }],
-    });
-    assert.deepEqual(plan.waves[0].launchNow, []);
-    assert.deepEqual(plan.waves[1].launchNow, []);
-    assert.equal(plan.waves[0].hint, 'band held by e2e-memries-navigation; close that slice first');
-    assert.equal(plan.waves[0].deferred.length, 5);
-  });
-
-  it('relabels the next remaining e2e batch as 1.2 when that slice is requested', () => {
-    const apps = Array.from({ length: 5 }, (_, i) => ({
-      id: `memries-f${i}`,
-      skill: 'e2e-docker',
-      status: 'needs-run',
-      agentName: `e2e-docker-memries-f${i}`,
-      worktreeBranch: `e2e-docker-memries-f${i}`,
-      baseBranch: 'main',
-      path: `e2e/features/f${i}.feature`,
-      featureFile: `f${i}.feature`,
-      suiteCommit: 'abc',
-    }));
-    const plan = planUmbrellaWaves({
-      waves: [
-        { step: 'page-accessibility', skills: ['frontend-page-accessibility'] },
-        { step: 'e2e', skills: ['e2e-docker'] },
-      ],
-      nestedBySkill: {
-        'frontend-page-accessibility': {
-          apps: [],
-          steps: ['page-accessibility'],
-          lastRunsPath: 'x',
-        },
-        'e2e-docker': {
-          apps,
-          steps: ['e2e'],
-          lastRunsPath: '.cursor/skills/e2e-docker/last-runs.json',
-          maxLaunch: 4,
-        },
-      },
-      maxLaunch: 4,
-      waveFilter: { index: 1, slice: 2 },
-      baseBranch: 'main',
-      head: 'abc',
-    });
-    assert.deepEqual(
-      plan.waves.map((w) => w.label),
-      ['1.2', '1.3'],
-    );
-    assert.equal(plan.waves[0].launchNow.length, 4);
-    assert.equal(plan.waves[1].launchNow.length, 1);
+    assert.deepEqual(plan.waves[0].deferred, []);
+    assert.equal(plan.waves[0].label, undefined);
   });
 });
 

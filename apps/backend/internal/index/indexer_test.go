@@ -210,3 +210,41 @@ func TestResyncKeepsIdentityAndFavoriteWhenContentChanges(t *testing.T) {
 		t.Fatal("expected new hash")
 	}
 }
+
+func TestRestoredOriginalClearsSoftDelete(t *testing.T) {
+	root := t.TempDir()
+	key := "admin@example.com/restore.jpg"
+	full := filepath.Join(root, filepath.FromSlash(key))
+	writeJPEG(t, full, 10, 200, 10)
+	repo := &memPhotos{}
+	idx := newTestIndexer(t, root, repo)
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.byKey) != 1 {
+		t.Fatalf("photos %d", len(repo.byKey))
+	}
+	var id string
+	for _, p := range repo.byKey {
+		id = p.Key
+	}
+
+	if err := os.Remove(full); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+
+	writeJPEG(t, full, 10, 200, 10)
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	got := repo.byKey[id]
+	if got == nil {
+		t.Fatal("identity lost")
+	}
+	if got.DeletedAt != nil {
+		t.Fatal("expected DeletedAt cleared after same-path restore")
+	}
+}

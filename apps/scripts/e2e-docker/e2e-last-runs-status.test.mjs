@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { SUITE_ID } from './e2e-docker-last-runs.mjs';
 import {
   applyE2eLastRunsReadme,
   catalogRowsFromFeatures,
@@ -18,79 +19,68 @@ function discovered(...stems) {
 }
 
 describe('summarizeE2eLastRuns', () => {
-  it('is all-green only when every discovered feature passed', () => {
+  it('is all-green only when the suite finding passed', () => {
     const summary = summarizeE2eLastRuns({
-      discovered: discovered('login', 'timeline'),
       lastRunsApps: {
-        'memries-login': { finding: { status: 'passed' } },
-        'memries-timeline': { finding: { status: 'passed' } },
+        [SUITE_ID]: { finding: { status: 'passed' } },
       },
     });
     assert.deepEqual(summary, {
       allPassed: true,
-      passed: 2,
+      passed: 1,
       failed: 0,
       missing: 0,
-      total: 2,
-      rows: [
-        { id: 'memries-login', stem: 'login', status: 'passed' },
-        { id: 'memries-timeline', stem: 'timeline', status: 'passed' },
-      ],
+      total: 1,
+      rows: [{ id: SUITE_ID, stem: 'suite', status: 'passed' }],
     });
   });
 
-  it('counts failed and never-run findings as not all-green', () => {
-    const summary = summarizeE2eLastRuns({
-      discovered: discovered('login', 'search', 'viewer'),
-      lastRunsApps: {
-        'memries-login': { finding: { status: 'passed' } },
-        'memries-search': { finding: { status: 'failed' } },
-      },
-    });
-    assert.equal(summary.allPassed, false);
-    assert.equal(summary.passed, 1);
-    assert.equal(summary.failed, 1);
-    assert.equal(summary.missing, 1);
-    assert.equal(summary.total, 3);
-    assert.deepEqual(
-      summary.rows.map((row) => row.status),
-      ['passed', 'failed', 'missing'],
+  it('is not all-green when the suite failed or was never recorded', () => {
+    assert.equal(
+      summarizeE2eLastRuns({
+        lastRunsApps: { [SUITE_ID]: { finding: { status: 'failed' } } },
+      }).allPassed,
+      false,
     );
+    assert.equal(summarizeE2eLastRuns({ lastRunsApps: {} }).missing, 1);
   });
 });
 
 describe('renderE2eLastRunsTag', () => {
-  it('renders a green check when every last-run passed', () => {
+  it('renders a green check when the suite passed', () => {
     const tag = renderE2eLastRunsTag({
       allPassed: true,
-      passed: 14,
+      passed: 1,
       failed: 0,
       missing: 0,
-      total: 14,
-      rows: [],
+      total: 1,
+      rows: [{ id: SUITE_ID, stem: 'suite', status: 'passed' }],
     });
-    assert.equal(tag, '[**E2E last-runs:** ✅ all 14 passed](#end-to-end-tests)');
+    assert.equal(tag, '[**E2E last-runs:** ✅ suite passed](#end-to-end-tests)');
   });
 
-  it('names the stems that kept the tag from going green', () => {
+  it('renders a failed suite without a feature count', () => {
     const tag = renderE2eLastRunsTag({
       allPassed: false,
-      passed: 10,
-      failed: 3,
-      missing: 1,
-      total: 14,
-      rows: [
-        { id: 'memries-login', stem: 'login', status: 'failed' },
-        { id: 'memries-search', stem: 'search', status: 'failed' },
-        { id: 'memries-timeline', stem: 'timeline', status: 'passed' },
-        { id: 'memries-viewer', stem: 'viewer', status: 'failed' },
-        { id: 'memries-zoom', stem: 'zoom', status: 'missing' },
-      ],
+      passed: 0,
+      failed: 1,
+      missing: 0,
+      total: 1,
+      rows: [{ id: SUITE_ID, stem: 'suite', status: 'failed' }],
     });
-    assert.equal(
-      tag,
-      '[**E2E last-runs:** ❌ 10 of 14 passed](#end-to-end-tests) — login, search, viewer, zoom',
-    );
+    assert.equal(tag, '[**E2E last-runs:** ❌ suite failed](#end-to-end-tests)');
+  });
+
+  it('renders not recorded when the suite has no finding', () => {
+    const tag = renderE2eLastRunsTag({
+      allPassed: false,
+      passed: 0,
+      failed: 0,
+      missing: 1,
+      total: 1,
+      rows: [{ id: SUITE_ID, stem: 'suite', status: 'missing' }],
+    });
+    assert.equal(tag, '[**E2E last-runs:** ❌ suite not recorded](#end-to-end-tests)');
   });
 });
 
@@ -99,11 +89,11 @@ describe('replaceMarkedRegion', () => {
     const next = replaceMarkedRegion(
       '# Title\n\n<!-- e2e-last-runs-tag:start -->\nold\n<!-- e2e-last-runs-tag:end -->\n\nMore\n',
       'e2e-last-runs-tag',
-      '[**E2E last-runs:** ✅ all 2 passed](#end-to-end-tests)',
+      '[**E2E last-runs:** ✅ suite passed](#end-to-end-tests)',
     );
     assert.equal(
       next,
-      '# Title\n\n<!-- e2e-last-runs-tag:start -->\n[**E2E last-runs:** ✅ all 2 passed](#end-to-end-tests)\n<!-- e2e-last-runs-tag:end -->\n\nMore\n',
+      '# Title\n\n<!-- e2e-last-runs-tag:start -->\n[**E2E last-runs:** ✅ suite passed](#end-to-end-tests)\n<!-- e2e-last-runs-tag:end -->\n\nMore\n',
     );
   });
 
@@ -127,16 +117,6 @@ describe('catalogRowsFromFeatures', () => {
     Given I am signed in
 `,
       },
-      {
-        id: 'memries-timeline',
-        source: `Feature: Timeline periods
-  Year / month / week / day headings follow capture time. The pinned
-  label follows the first visible Timeline Group.
-
-  Scenario: Granularity headings include an ISO week range
-    Given I am signed in
-`,
-      },
     ]);
     assert.deepEqual(rows, [
       {
@@ -144,33 +124,24 @@ describe('catalogRowsFromFeatures', () => {
         title: 'Sign in',
         blurb: 'Dex login puts the owner on Memories.',
       },
-      {
-        id: 'memries-timeline',
-        title: 'Timeline periods',
-        blurb:
-          'Year / month / week / day headings follow capture time. The pinned label follows the first visible Timeline Group.',
-      },
     ]);
   });
 });
 
 describe('renderE2eCatalog', () => {
-  it('marks each feature from the last-run finding', () => {
+  it('marks every feature from the suite finding', () => {
     const markdown = renderE2eCatalog(
       [
         { id: 'memries-login', title: 'Sign in', blurb: 'Dex login puts the owner on Memories.' },
         { id: 'memries-search', title: 'Search', blurb: 'Filter on Memories opens Search.' },
       ],
       {
-        rows: [
-          { id: 'memries-login', stem: 'login', status: 'passed' },
-          { id: 'memries-search', stem: 'search', status: 'failed' },
-        ],
+        rows: [{ id: SUITE_ID, stem: 'suite', status: 'passed' }],
       },
     );
     assert.equal(
       markdown,
-      '- ✅ **Sign in** — Dex login puts the owner on Memories.\n- ❌ **Search** — Filter on Memories opens Search.',
+      '- ✅ **Sign in** — Dex login puts the owner on Memories.\n- ✅ **Search** — Filter on Memories opens Search.',
     );
   });
 });
@@ -189,7 +160,7 @@ old catalog
 <!-- e2e-last-runs-catalog:end -->
 `;
 
-  it('refreshes the tag and catalog from last-runs and Feature blurbs', () => {
+  it('refreshes the tag and catalog from the suite finding and Feature blurbs', () => {
     const sources = {
       'memries-login': `Feature: Sign in
   Dex login puts the owner on Memories.
@@ -202,19 +173,18 @@ old catalog
       markdown: template,
       discovered: discovered('login', 'search'),
       lastRunsApps: {
-        'memries-login': { finding: { status: 'passed' } },
-        'memries-search': { finding: { status: 'failed' } },
+        [SUITE_ID]: { finding: { status: 'failed' } },
       },
       readFeature: (row) => sources[row.id],
     });
     assert.equal(result.summary.allPassed, false);
     assert.match(
       result.markdown,
-      /<!-- e2e-last-runs-tag:start -->\n\[\*+E2E last-runs:\*\* ❌ 1 of 2 passed\]\(#end-to-end-tests\) — search\n<!-- e2e-last-runs-tag:end -->/,
+      /<!-- e2e-last-runs-tag:start -->\n\[\*+E2E last-runs:\*\* ❌ suite failed\]\(#end-to-end-tests\)\n<!-- e2e-last-runs-tag:end -->/,
     );
     assert.match(
       result.markdown,
-      /<!-- e2e-last-runs-catalog:start -->\n- ✅ \*\*Sign in\*\* — Dex login puts the owner on Memories\.\n- ❌ \*\*Search\*\* — Filter on Memories opens Search\.\n<!-- e2e-last-runs-catalog:end -->/,
+      /<!-- e2e-last-runs-catalog:start -->\n- ❌ \*\*Sign in\*\* — Dex login puts the owner on Memories\.\n- ❌ \*\*Search\*\* — Filter on Memories opens Search\.\n<!-- e2e-last-runs-catalog:end -->/,
     );
   });
 

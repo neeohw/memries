@@ -1,9 +1,7 @@
 /**
- * Discover Playwright BDD feature files for the e2e-docker skill.
- * One row per `.feature` file. Isolation (compose project + ports) is assigned
- * by launch index so parallel Docker stacks do not collide.
+ * Discover Playwright BDD feature files for the README catalog, and the
+ * suite-wide git-diff paths used by the one-stack e2e plan.
  */
-import { isolationForSlot } from '../../e2e/scripts/e2e-slots.mjs';
 
 export function posix(p) {
   return String(p || '').replaceAll('\\', '/');
@@ -25,43 +23,8 @@ export function featureId(suiteId, fileName) {
   return `${suiteId}-${featureStem(fileName)}`;
 }
 
-export function e2eDiffPaths(featuresDir, featureFile) {
-  const dir = posix(featuresDir).replace(/\/$/, '');
-  const e2eRoot = dir.replace(/\/features$/, '') || 'apps/e2e';
-  return [
-    `${dir}/${featureFile}`,
-    `${e2eRoot}/steps`,
-    `${e2eRoot}/scripts`,
-    `${e2eRoot}/docker-compose.yml`,
-    `${e2eRoot}/playwright.config.ts`,
-    `${e2eRoot}/deploy`,
-    'apps/frontend',
-    'apps/backend',
-  ];
-}
-
-export function composeProjectForId(id) {
-  return `e2e-${id}`;
-}
-
-export function isolationForLaunchIndex(index) {
-  return isolationForSlot(index);
-}
-
-export function applyIsolation(rows) {
-  return rows.map((row, index) => {
-    const isolation = isolationForLaunchIndex(index);
-    if (!isolation) {
-      throw new Error('fan-out stack must use one of the four slot port sets');
-    }
-    return {
-      ...row,
-      composeProject: composeProjectForId(row.id),
-      origin: isolation.origin,
-      ports: isolation.ports,
-      slot: isolation.slot,
-    };
-  });
+export function e2eDiffPaths() {
+  return ['apps/e2e', 'apps/frontend', 'apps/backend'];
 }
 
 export function parseWaveArg(value) {
@@ -70,30 +33,6 @@ export function parseWaveArg(value) {
   const matched = /^(\d+)\.(\d+)$/.exec(raw);
   if (!matched) return null;
   return { index: Number(matched[1]), slice: Number(matched[2]) };
-}
-
-export function e2eSequentialWaves(
-  needsRun,
-  { maxLaunch = 4, startSlice = 1, waveIndex = 1 } = {},
-) {
-  const size = Number(maxLaunch) > 0 ? Number(maxLaunch) : 4;
-  const start = Number(startSlice) > 0 ? Number(startSlice) : 1;
-  const index = Number.isInteger(Number(waveIndex)) ? Number(waveIndex) : 1;
-  const rows = Array.isArray(needsRun) ? needsRun : [];
-  if (!rows.length) {
-    return [{ label: `${index}.${start}`, slice: start, sequential: true, rows: [] }];
-  }
-  const waves = [];
-  for (let i = 0; i < rows.length; i += size) {
-    const slice = start + waves.length;
-    waves.push({
-      label: `${index}.${slice}`,
-      slice,
-      sequential: true,
-      rows: applyIsolation(rows.slice(i, i + size)),
-    });
-  }
-  return waves;
 }
 
 export function decideE2eFeatureStatus({

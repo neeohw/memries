@@ -21,14 +21,8 @@ import {
   commitLastRunsIfNeeded,
   isAgentWorktreeBranch,
 } from '../e2e-docker/e2e-docker-last-runs.mjs';
-import { applyBusySlotGate, listActiveSlots } from '../../e2e/scripts/e2e-slots.mjs';
-import {
-  buildE2ePlan,
-  downFanoutProjects,
-  featureIdFromBranch,
-  recordE2eFindings,
-} from '../e2e-docker/e2e-docker.mjs';
-import { e2eSequentialWaves, parseWaveArg } from '../e2e-docker/e2e-features.mjs';
+import { buildE2ePlan, recordE2eFindings } from '../e2e-docker/e2e-docker.mjs';
+import { parseWaveArg } from '../e2e-docker/e2e-features.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SCRIPT_DIR, '..', '..', '..');
@@ -179,9 +173,7 @@ function launchRow(app, branch) {
   if (app.composeProject) {
     row.composeProject = app.composeProject;
     row.origin = app.origin;
-    row.ports = app.ports;
   }
-  if (app.slot != null) row.slot = app.slot;
   return row;
 }
 
@@ -239,7 +231,6 @@ export function planUmbrellaWaves({
   head,
   force = false,
   skillId = 'platform-quality',
-  listBusySlots = () => [],
 }) {
   if (!Array.isArray(waves) || !waves.length) {
     throw new Error(`umbrella '${skillId}' requires a non-empty waves array`);
@@ -255,28 +246,6 @@ export function planUmbrellaWaves({
     const waveMax = waveMaxOf(wave, nestedBySkill, maxLaunch);
     const needsRun = nestedApps.filter((a) => a.status === 'needs-run');
     const lists = waveStatusLists(nestedApps, needsRun);
-    if (wave.skills.includes('e2e-docker')) {
-      const slices = e2eSequentialWaves(needsRun, {
-        maxLaunch: waveMax,
-        startSlice: filter?.slice ?? 1,
-        waveIndex: index,
-      });
-      slices.forEach((slice, slicePos) => {
-        planned.push({
-          index,
-          slice: slice.slice,
-          label: slice.label,
-          step: wave.step,
-          skills: wave.skills,
-          sequential: true,
-          apps: nestedApps,
-          ...lists,
-          launchNow: slice.rows.map((a) => launchRow(a, baseBranch)),
-          deferred: needsRun.slice(slicePos * waveMax + slice.rows.length).map((a) => a.agentName),
-        });
-      });
-      return;
-    }
     planned.push({
       index,
       step: wave.step,
@@ -288,7 +257,7 @@ export function planUmbrellaWaves({
     });
   });
 
-  const result = {
+  return {
     skill: skillId,
     kind: 'umbrella',
     userInvokedOnly: true,
@@ -299,15 +268,6 @@ export function planUmbrellaWaves({
     force,
     maxLaunch,
     waves: planned,
-  };
-  const busySlots = typeof listBusySlots === 'function' ? listBusySlots() : [];
-  if (!busySlots.length) return result;
-  return {
-    ...result,
-    waves: result.waves.map((wave) => {
-      if (!wave.skills?.includes('e2e-docker')) return wave;
-      return applyBusySlotGate(wave, busySlots);
-    }),
   };
 }
 
@@ -509,7 +469,6 @@ function plan(skillId, opts, config) {
     head,
     force: Boolean(opts.force),
     skillId,
-    listBusySlots: () => listActiveSlots(),
   });
 }
 
@@ -593,9 +552,6 @@ function closeHere() {
   if (!primaryPath) {
     throw new Error('cannot resolve the primary checkout from this directory');
   }
-  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { allowFail: true });
-  const id = featureIdFromBranch(branch);
-  const stacks = id ? downFanoutProjects([id]) : [];
   const closed = closeOpenedWorktrees({
     here,
     deleteBranch: false,
@@ -604,7 +560,7 @@ function closeHere() {
     runGit: (args, options) => git(args, options),
     ...closeHelpers(),
   });
-  return { ...closed, stacks };
+  return closed;
 }
 
 function closeSkill(skillId, ids, opts, config) {
@@ -613,7 +569,6 @@ function closeSkill(skillId, ids, opts, config) {
   const listed = parseWorktreeList(listPorcelain);
   const primaryPath = listed[0]?.path || ROOT;
   const branches = [];
-  let stacks = [];
   if (skillId && ids.length) {
     const skill = resolveSkill(config, skillId);
     if (isUmbrella(skill)) {
@@ -622,7 +577,6 @@ function closeSkill(skillId, ids, opts, config) {
     for (const id of ids) {
       branches.push(`${skillId}-${id}`);
     }
-    if (skill.discover === 'e2e-features') stacks = downFanoutProjects(ids);
   }
   const closed = closeOpenedWorktrees({
     branches,
@@ -633,7 +587,7 @@ function closeSkill(skillId, ids, opts, config) {
     runGit: (args, options) => git(args, options),
     ...closeHelpers(),
   });
-  return { ...closed, stacks };
+  return closed;
 }
 
 function parseArgs(argv) {

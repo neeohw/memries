@@ -1,7 +1,8 @@
 # 0009. e2e-docker skill owns isolated stacks
 
-- Status: Accepted
+- Status: Superseded
 - Date: 2026-08-26
+- Superseded by: [0012](0012-e2e-one-suite-two-profiles.md)
 - Source type: Internal decision (test orchestration)
 
 ## Key thesis

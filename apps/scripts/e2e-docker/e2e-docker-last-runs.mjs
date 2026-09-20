@@ -1,7 +1,6 @@
 /**
  * When to Conventional-Commit a skill last-runs.json after `record`.
- * The executing parent owns this file (and the README last-runs tag);
- * child worktrees never touch them.
+ * The executing parent owns this file (and the README last-runs tag).
  */
 import { join } from 'node:path';
 const AGENT_WORKTREE_BRANCH_RE =
@@ -31,6 +30,11 @@ export function parseFinding(raw) {
   return finding;
 }
 
+export const SUITE_ID = 'memries';
+export const SUITE_PATH = 'apps/e2e';
+export const SUITE_COMPOSE_PROJECT = 'memries-e2e';
+export const SUITE_ORIGIN = 'http://localhost:18080';
+
 export function applyE2eRecord({ previous, path, sha, recordedAt, finding }) {
   const entry = { path, recordedAt };
   if (finding?.status === 'passed' && sha) {
@@ -40,6 +44,19 @@ export function applyE2eRecord({ previous, path, sha, recordedAt, finding }) {
   }
   if (finding) entry.finding = finding;
   return entry;
+}
+
+/** First suite record drops leftover per-feature last-run keys. */
+export function suiteLastRunsAfterRecord({ previousApps = {}, path, sha, recordedAt, finding }) {
+  return {
+    [SUITE_ID]: applyE2eRecord({
+      previous: previousApps[SUITE_ID],
+      path,
+      sha,
+      recordedAt,
+      finding,
+    }),
+  };
 }
 
 export function lastRunsNeedCommit(beforeApps, afterApps, ids) {

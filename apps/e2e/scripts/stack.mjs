@@ -3,13 +3,8 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import {
-  DEFAULT_STACK_PROJECT,
-  claimSlot,
-  isFanoutProject,
-  releaseSlot,
-  slotForPorts,
-} from './e2e-slots.mjs';
+
+export const DEFAULT_STACK_PROJECT = 'memries-e2e';
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const e2eRoot = dirname(scriptsDir);
@@ -73,46 +68,6 @@ export function resolveStackConfig(env = process.env) {
  */
 export function composeArgs(config, composePath, envPath, extra) {
   return ['compose', '-p', config.project, '-f', composePath, '--env-file', envPath, ...extra];
-}
-
-/**
- * @param {string} template
- * @param {ReturnType<typeof resolveStackConfig>} config
- */
-export function requireFanoutSlot(config) {
-  if (!isFanoutProject(config?.project) || config.project === DEFAULT_STACK_PROJECT) return null;
-  const slot = slotForPorts(config.ports);
-  if (slot == null) {
-    throw new Error(`fan-out project ${config.project} must use one of the four slot port sets`);
-  }
-  return slot;
-}
-
-export function beginFanoutUp(config, deps = {}) {
-  const slot = requireFanoutSlot(config);
-  if (slot == null) return null;
-  claimSlot({
-    slot,
-    project: config.project,
-    leaseRoot: deps.leaseRoot,
-    projectAlive: deps.projectAlive,
-    portsFree: deps.portsFree,
-  });
-  return slot;
-}
-
-export function failFanoutUp(config, deps = {}) {
-  if (typeof deps.composeDown === 'function') deps.composeDown(config);
-  const slot = requireFanoutSlot(config);
-  if (slot == null) return;
-  releaseSlot({ slot, project: config.project, leaseRoot: deps.leaseRoot });
-}
-
-export function finishFanoutDown(config, deps = {}) {
-  if (!deps.wipe) return;
-  const slot = requireFanoutSlot(config);
-  if (slot == null) return;
-  releaseSlot({ slot, project: config.project, leaseRoot: deps.leaseRoot });
 }
 
 export function renderDexConfig(template, config) {
@@ -181,7 +136,6 @@ export async function up(options = {}) {
   }
   const config = resolveStackConfig(env);
   const runDocker = options.runDocker ?? run;
-  const slot = beginFanoutUp(config, options);
   try {
     writeGeneratedDex(config);
     if (!options.skipFixtures) {
@@ -198,18 +152,6 @@ export async function up(options = {}) {
       await waitFor(config.healthz, 60_000);
     }
   } catch (err) {
-    if (slot != null) {
-      try {
-        await runDocker(
-          'docker',
-          composeArgs(config, composeFile, envFile, ['down', '-v', '--remove-orphans']),
-          config.composeEnv,
-        );
-      } catch {
-        // wipe is best-effort; the lease still drops so the slot can be reused
-      }
-      failFanoutUp(config, options);
-    }
     if (!options.skipLogs) await dumpLogs(config);
     throw err;
   }
@@ -221,7 +163,6 @@ export async function down(wipe, options = {}) {
   const runDocker = options.runDocker ?? run;
   const extra = wipe ? ['down', '-v', '--remove-orphans'] : ['down', '--remove-orphans'];
   await runDocker('docker', composeArgs(config, composeFile, envFile, extra), config.composeEnv);
-  finishFanoutDown(config, { ...options, wipe });
 }
 
 const isMain = Boolean(process.argv[1]) && pathToFileURL(process.argv[1]).href === import.meta.url;

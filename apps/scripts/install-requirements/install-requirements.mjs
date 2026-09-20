@@ -141,10 +141,10 @@ export async function main(argv = process.argv.slice(2), injected = {}) {
   const platform = deps.platform();
   if (platform === 'win32') {
     await installWindows(deps);
-  } else if (platform === 'linux') {
+  } else if (platform === 'linux' || platform === 'darwin') {
     await installLinux(deps);
   } else {
-    throw new Error(`Unsupported platform '${platform}'. Use Windows or Linux.`);
+    throw new Error(`Unsupported platform '${platform}'. Use Windows, Linux, or macOS.`);
   }
   deps.enableCorepack();
   deps.log('');

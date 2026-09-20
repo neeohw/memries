@@ -4,15 +4,11 @@ import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  applyIsolation,
-  composeProjectForId,
   decideE2eFeatureStatus,
   discoverE2eFeatures,
   e2eDiffPaths,
-  e2eSequentialWaves,
   featureId,
   featureRelPath,
-  isolationForLaunchIndex,
   parseWaveArg,
 } from './e2e-features.mjs';
 
@@ -104,87 +100,18 @@ describe('discoverE2eFeatures', () => {
 });
 
 describe('e2eDiffPaths', () => {
-  it('includes the feature file, shared harness, and app code', () => {
-    assert.deepEqual(e2eDiffPaths('apps/e2e/features', 'timeline.feature'), [
-      'apps/e2e/features/timeline.feature',
-      'apps/e2e/steps',
-      'apps/e2e/scripts',
-      'apps/e2e/docker-compose.yml',
-      'apps/e2e/playwright.config.ts',
-      'apps/e2e/deploy',
-      'apps/frontend',
-      'apps/backend',
-    ]);
-  });
-});
-
-describe('isolationForLaunchIndex', () => {
-  it('uses the 19000 band so 18080 stays free', () => {
-    assert.deepEqual(isolationForLaunchIndex(0), {
-      slot: 0,
-      ports: {
-        caddy: 19000,
-        backend: 19001,
-        frontend: 19002,
-        arango: 19003,
-        dex: 19004,
-      },
-      origin: 'http://localhost:19000',
-    });
-    assert.equal(isolationForLaunchIndex(1).ports.caddy, 19020);
-    assert.equal(isolationForLaunchIndex(4), null);
-  });
-});
-
-describe('composeProjectForId', () => {
-  it('prefixes the feature id', () => {
-    assert.equal(composeProjectForId('memries-timeline'), 'e2e-memries-timeline');
-  });
-});
-
-describe('applyIsolation', () => {
-  it('assigns ports by launch index, not by name', () => {
-    const rows = applyIsolation([{ id: 'memries-viewer' }, { id: 'memries-albums' }]);
-    assert.equal(rows[0].composeProject, 'e2e-memries-viewer');
-    assert.equal(rows[0].ports.caddy, 19000);
-    assert.equal(rows[1].ports.caddy, 19020);
+  it('diffs the e2e harness and both product apps as one suite', () => {
+    assert.deepEqual(e2eDiffPaths(), ['apps/e2e', 'apps/frontend', 'apps/backend']);
   });
 });
 
 describe('parseWaveArg', () => {
-  it('reads a quality-wave index and an optional e2e slice', () => {
+  it('reads a quality-wave index and still parses a dotted form', () => {
     assert.deepEqual(parseWaveArg('0'), { index: 0, slice: null });
     assert.deepEqual(parseWaveArg('1'), { index: 1, slice: null });
     assert.deepEqual(parseWaveArg('1.1'), { index: 1, slice: 1 });
     assert.deepEqual(parseWaveArg('1.2'), { index: 1, slice: 2 });
     assert.equal(parseWaveArg('e2e'), null);
-  });
-});
-
-describe('e2eSequentialWaves', () => {
-  it('chunks features into sequential slices of four and reuses the 19000 band', () => {
-    const rows = Array.from({ length: 9 }, (_, i) => ({ id: `memries-f${i}` }));
-    const waves = e2eSequentialWaves(rows, { maxLaunch: 4, waveIndex: 1 });
-    assert.deepEqual(
-      waves.map((w) => w.label),
-      ['1.1', '1.2', '1.3'],
-    );
-    assert.equal(waves[0].rows.length, 4);
-    assert.equal(waves[1].rows.length, 4);
-    assert.equal(waves[2].rows.length, 1);
-    assert.equal(waves[0].rows[0].ports.caddy, 19000);
-    assert.equal(waves[0].rows[3].ports.caddy, 19060);
-    assert.equal(waves[1].rows[0].ports.caddy, 19000);
-    assert.equal(waves[0].sequential, true);
-  });
-
-  it('starts labels at the requested slice so 1.2 is the next remaining batch', () => {
-    const rows = Array.from({ length: 5 }, (_, i) => ({ id: `memries-f${i}` }));
-    const waves = e2eSequentialWaves(rows, { maxLaunch: 4, waveIndex: 1, startSlice: 2 });
-    assert.deepEqual(
-      waves.map((w) => w.label),
-      ['1.2', '1.3'],
-    );
   });
 });
 

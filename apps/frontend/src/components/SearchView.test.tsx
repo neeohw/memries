@@ -25,9 +25,12 @@ describe('SearchView', () => {
       />,
     );
     expect(screen.getByRole('heading', { level: 1, name: 'Search' })).toBeTruthy();
-    expect(screen.getByRole('search')).toContainElement(
-      screen.getByRole('searchbox', { name: 'Search memories' }),
-    );
+    const searchForm = screen.getByRole('search');
+    const searchbox = screen.getByRole('searchbox', { name: 'Search memories' });
+    expect(searchForm).toContainElement(searchbox);
+    expect(searchForm).toHaveAttribute('autoComplete', 'off');
+    expect(searchbox).toHaveAttribute('autoComplete', 'off');
+    expect(searchbox).toHaveAttribute('name', 'memries-memory-search');
     expect(screen.getByRole('button', { name: 'Years' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('list', { name: 'Search suggestions' })).toBeTruthy();
     expect(screen.getByRole('status')).toHaveTextContent('No memories match that search.');

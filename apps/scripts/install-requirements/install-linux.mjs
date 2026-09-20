@@ -5,7 +5,7 @@ export async function installLinux(deps) {
   if (!deps.nodeOk()) {
     deps.log(`Installing Node ${deps.nodeDistVersion} into ${prefix}…`);
     await deps.installTarball({
-      url: nodeTarballUrl(deps.arch()),
+      url: nodeTarballUrl(deps.arch(), deps.platform()),
       dest: prefix,
       strip: 1,
     });
@@ -15,7 +15,7 @@ export async function installLinux(deps) {
   if (!deps.goFound()) {
     deps.log(`Installing Go ${deps.goDistVersion} into ${prefix}…`);
     await deps.installTarball({
-      url: goTarballUrl(deps.arch()),
+      url: goTarballUrl(deps.arch(), deps.platform()),
       dest: prefix,
       strip: 0,
     });

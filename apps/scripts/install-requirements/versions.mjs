@@ -32,12 +32,18 @@ export function linuxArch(arch) {
   return { node: 'x64', go: 'amd64' };
 }
 
-export function nodeTarballUrl(arch) {
-  const { node } = linuxArch(arch);
-  return `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node}.tar.gz`;
+export function distOs(platform = 'linux') {
+  return platform === 'darwin' ? 'darwin' : 'linux';
 }
 
-export function goTarballUrl(arch) {
+export function nodeTarballUrl(arch, platform = 'linux') {
+  const { node } = linuxArch(arch);
+  const os = distOs(platform);
+  return `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${os}-${node}.tar.gz`;
+}
+
+export function goTarballUrl(arch, platform = 'linux') {
   const { go } = linuxArch(arch);
-  return `https://go.dev/dl/go${GO_VERSION}.linux-${go}.tar.gz`;
+  const os = distOs(platform);
+  return `https://go.dev/dl/go${GO_VERSION}.${os}-${go}.tar.gz`;
 }

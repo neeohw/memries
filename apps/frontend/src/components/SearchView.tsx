@@ -82,6 +82,7 @@ export function SearchView({
         <form
           className="mt-4"
           role="search"
+          autoComplete="off"
           onSubmit={(event) => {
             event.preventDefault();
           }}
@@ -92,6 +93,8 @@ export function SearchView({
             <input
               ref={inputRef}
               type="search"
+              name="memries-memory-search"
+              autoComplete="off"
               value={search.query}
               onChange={(event) => onSearchChange({ ...search, query: event.target.value })}
               placeholder="Yesterday, last winter, June…"

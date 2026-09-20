@@ -1,40 +1,28 @@
 #!/usr/bin/env node
 /**
- * Plan, record, and close isolated Playwright feature runs for Memries.
- * Children may author or update apps/e2e/ coverage, then run the feature.
- * The parent merges apps/e2e/ commits; lastCommit advances only on pass.
+ * Plan, record, and report the Memries Playwright suite (one Compose stack).
+ * The parent runs `make e2e` when plan says needs-run, then records id memries.
  *
  * Usage:
- *   node apps/scripts/e2e-docker/e2e-docker.mjs plan [--force] [--app <id> ...] [--wave <n[.n]>] [--base <branch>]
- *   node apps/scripts/e2e-docker/e2e-docker.mjs record [--commit <sha>] [--finding <json>] <id> [<id> ...]
+ *   node apps/scripts/e2e-docker/e2e-docker.mjs plan [--force] [--base <branch>]
+ *   node apps/scripts/e2e-docker/e2e-docker.mjs record [--commit <sha>] [--finding <json>] memries
  *   node apps/scripts/e2e-docker/e2e-docker.mjs status
- *   node apps/scripts/e2e-docker/e2e-docker.mjs close --here
- *   node apps/scripts/e2e-docker/e2e-docker.mjs close [--base-worktree] [--base <branch>] <id> [<id> ...]
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { closeOpenedWorktrees, parseWorktreeList } from './e2e-docker-close.mjs';
 import {
-  applyE2eRecord,
+  SUITE_COMPOSE_PROJECT,
+  SUITE_ID,
+  SUITE_ORIGIN,
+  SUITE_PATH,
   commitLastRunsIfNeeded,
   isAgentWorktreeBranch,
   parseFinding,
+  suiteLastRunsAfterRecord,
 } from './e2e-docker-last-runs.mjs';
-import {
-  applyBusySlotGate,
-  listActiveSlots,
-  stopFanoutProject,
-} from '../../e2e/scripts/e2e-slots.mjs';
-import {
-  composeProjectForId,
-  decideE2eFeatureStatus,
-  discoverE2eFeatures,
-  e2eDiffPaths,
-  e2eSequentialWaves,
-  parseWaveArg,
-} from './e2e-features.mjs';
+import { decideE2eFeatureStatus, discoverE2eFeatures, e2eDiffPaths } from './e2e-features.mjs';
 import { applyE2eLastRunsReadme, summarizeE2eLastRuns } from './e2e-last-runs-status.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -43,83 +31,57 @@ const LAST_RUNS_PATH = join(ROOT, LAST_RUNS_REL);
 const README_REL = 'README.md';
 const README_PATH = join(ROOT, README_REL);
 const SKILL_ID = 'e2e-docker';
-export const MAX_LAUNCH = 4;
 const MAX_CHANGED_FILES = 40;
 const SUITES = [{ id: 'memries', path: '', featuresDir: 'apps/e2e/features', gitlink: false }];
 
+export { SUITE_COMPOSE_PROJECT, SUITE_ID, SUITE_ORIGIN, SUITE_PATH };
+
 export function planE2eFeatures({
-  discovered,
   lastRunsApps = {},
   suiteHead,
   dockerAvailable = true,
   force = false,
   pathExists = () => true,
   commitExists = () => false,
-  changedFilesFor = () => [],
-  maxLaunch = MAX_LAUNCH,
-  waveSlice = null,
+  changedFiles = [],
   baseBranch,
   skillId = SKILL_ID,
-  listBusySlots = () => [],
 }) {
-  const apps = [];
-  for (const row of discovered) {
-    const recorded = lastRunsApps[row.id] ?? {};
-    const lastCommit = recorded.lastCommit ?? null;
-    const files = lastCommit && suiteHead ? changedFilesFor(row) : [];
-    const decided = decideE2eFeatureStatus({
-      gitlinkPinned: !row.gitlink || Boolean(suiteHead),
-      pathExists: pathExists(row),
-      dockerAvailable,
-      force,
-      lastCommit,
-      findingStatus: recorded.finding?.status ?? null,
-      commitExists: lastCommit ? commitExists(lastCommit) : false,
-      changedFiles: files,
-    });
-    const name = `${skillId}-${row.id}`;
-    const entry = {
-      id: row.id,
-      skill: skillId,
-      kind: row.kind,
-      workflow: row.workflow,
-      path: row.path,
-      agentName: name,
-      worktreeBranch: name,
-      baseBranch,
-      lastCommit,
-      status: decided.status,
-      reason: decided.reason,
-      changedFiles: files.slice(0, MAX_CHANGED_FILES),
-      changedFileCount: files.length,
-      featureFile: row.featureFile,
-      suiteId: row.suiteId,
-      suitePath: row.suitePath,
-      suiteCommit: suiteHead || null,
-    };
-    if (recorded.finding) entry.finding = recorded.finding;
-    apps.push(entry);
-  }
-
-  const needsRun = apps.filter((a) => a.status === 'needs-run');
-  const waves = e2eSequentialWaves(needsRun, {
-    maxLaunch,
-    startSlice: Number(waveSlice) > 0 ? Number(waveSlice) : 1,
-    waveIndex: 1,
+  const recorded = lastRunsApps[SUITE_ID] ?? {};
+  const lastCommit = recorded.lastCommit ?? null;
+  const files = Array.isArray(changedFiles) ? changedFiles : [];
+  const decided = decideE2eFeatureStatus({
+    pathExists: pathExists({ id: SUITE_ID, path: SUITE_PATH }),
+    dockerAvailable,
+    force,
+    lastCommit,
+    findingStatus: recorded.finding?.status ?? null,
+    commitExists: lastCommit ? commitExists(lastCommit) : false,
+    changedFiles: files,
   });
-  const launchSlice = waves[0]?.rows ?? [];
-  const isolatedById = new Map(launchSlice.map((row) => [row.id, row]));
-  for (const app of apps) {
-    const extra = isolatedById.get(app.id);
-    if (!extra?.composeProject) continue;
-    app.composeProject = extra.composeProject;
-    app.origin = extra.origin;
-    app.ports = extra.ports;
-    app.slot = extra.slot;
-  }
+  const app = {
+    id: SUITE_ID,
+    skill: skillId,
+    kind: 'e2e-suite',
+    workflow: null,
+    path: SUITE_PATH,
+    agentName: `${skillId}-${SUITE_ID}`,
+    worktreeBranch: `${skillId}-${SUITE_ID}`,
+    baseBranch,
+    lastCommit,
+    status: decided.status,
+    reason: decided.reason,
+    changedFiles: files.slice(0, MAX_CHANGED_FILES),
+    changedFileCount: files.length,
+    suiteId: SUITE_ID,
+    suitePath: '.',
+    suiteCommit: suiteHead || null,
+    composeProject: SUITE_COMPOSE_PROJECT,
+    origin: SUITE_ORIGIN,
+  };
+  if (recorded.finding) app.finding = recorded.finding;
 
-  const launchNow = launchSlice.map((a) => a.id);
-  const upToDate = apps.filter((a) => a.status === 'up-to-date').map((a) => a.id);
+  const needsRun = decided.status === 'needs-run';
   const plan = {
     skill: skillId,
     kind: 'atomic',
@@ -129,33 +91,24 @@ export function planE2eFeatures({
     head: suiteHead || null,
     lastRunsPath: LAST_RUNS_REL,
     force,
-    maxLaunch,
-    apps,
-    needsRun: needsRun.map((a) => a.id),
-    launchNow,
-    deferred: needsRun.slice(maxLaunch).map((a) => a.id),
-    waves: waves.map((wave) => ({
-      label: wave.label,
-      slice: wave.slice,
-      sequential: true,
-      launchNow: wave.rows.map((row) => row.id),
-    })),
-    upToDate,
-    skipped: apps.filter((a) => a.status === 'skipped').map((a) => a.id),
+    apps: [app],
+    needsRun: needsRun ? [SUITE_ID] : [],
+    launchNow: needsRun ? [SUITE_ID] : [],
+    deferred: [],
+    upToDate: decided.status === 'up-to-date' ? [SUITE_ID] : [],
+    skipped: decided.status === 'skipped' ? [SUITE_ID] : [],
   };
-  if (!force && launchNow.length === 0 && upToDate.length) {
-    plan.hint = 'pass --force to rerun every feature and refresh last-runs';
+  if (!force && plan.launchNow.length === 0 && plan.upToDate.length) {
+    plan.hint = 'pass --force to rerun the suite and refresh last-runs';
   }
-  return applyBusySlotGate(plan, listBusySlots());
+  return plan;
 }
 
 function usage() {
   console.error(`Usage:
-  node apps/scripts/e2e-docker/e2e-docker.mjs plan [--force] [--app <id> ...] [--wave <n[.n]>] [--base <branch>]
-  node apps/scripts/e2e-docker/e2e-docker.mjs record [--commit <sha>] [--finding <json>] <id> [<id> ...]
-  node apps/scripts/e2e-docker/e2e-docker.mjs status
-  node apps/scripts/e2e-docker/e2e-docker.mjs close --here
-  node apps/scripts/e2e-docker/e2e-docker.mjs close [--base-worktree] [--base <branch>] <id> [<id> ...]`);
+  node apps/scripts/e2e-docker/e2e-docker.mjs plan [--force] [--base <branch>]
+  node apps/scripts/e2e-docker/e2e-docker.mjs record [--commit <sha>] [--finding <json>] memries
+  node apps/scripts/e2e-docker/e2e-docker.mjs status`);
   process.exit(2);
 }
 
@@ -224,8 +177,8 @@ function refreshReadmeFromLastRuns(discovered, lastRunsApps) {
   return { changed, summary: applied.summary };
 }
 
-export function buildE2eStatus({ discovered, lastRunsApps = {} }) {
-  const summary = summarizeE2eLastRuns({ discovered, lastRunsApps });
+export function buildE2eStatus({ lastRunsApps = {} }) {
+  const summary = summarizeE2eLastRuns({ lastRunsApps });
   return {
     skill: SKILL_ID,
     ...summary,
@@ -275,84 +228,49 @@ function suiteChangedFiles(lastCommit, head, paths) {
   return out.split(/\r?\n/).filter(Boolean);
 }
 
-function dockerComposeDown(project) {
-  execFileSync('docker', ['compose', '-p', project, 'down', '-v', '--remove-orphans'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-}
-
-export function downFanoutProjects(ids, deps = {}) {
-  return ids.map((id) =>
-    stopFanoutProject(composeProjectForId(id), {
-      composeDown: deps.composeDown ?? dockerComposeDown,
-      leaseRoot: deps.leaseRoot,
-    }),
-  );
-}
-
-export function featureIdFromBranch(branch, skillId = SKILL_ID) {
-  const prefix = `${skillId}-`;
-  if (!branch || !String(branch).startsWith(prefix)) return null;
-  return String(branch).slice(prefix.length);
-}
-
 function plan(opts) {
   const branch = resolveBaseBranch(opts);
   const suiteHead = git(['rev-parse', 'HEAD'], { allowFail: true });
   const lastRuns = loadLastRuns();
-  const wanted = new Set(opts.apps);
-  const discovered = discoveredFeatures().filter((row) => !wanted.size || wanted.has(row.id));
+  const lastCommit = lastRuns.apps[SUITE_ID]?.lastCommit;
 
   return planE2eFeatures({
-    discovered,
     lastRunsApps: lastRuns.apps,
     suiteHead,
     dockerAvailable: dockerAvailable(),
     force: Boolean(opts.force),
-    pathExists: (row) => existsSync(join(ROOT, row.path)),
+    pathExists: () => existsSync(join(ROOT, SUITE_PATH)),
     commitExists: (sha) => gitOk(['cat-file', '-e', `${sha}^{commit}`]),
-    changedFilesFor: (row) =>
-      suiteChangedFiles(
-        lastRuns.apps[row.id]?.lastCommit,
-        suiteHead,
-        e2eDiffPaths(row.featuresDir, row.featureFile),
-      ),
-    maxLaunch: MAX_LAUNCH,
-    waveSlice: opts.wave?.slice,
+    changedFiles: suiteChangedFiles(lastCommit, suiteHead, e2eDiffPaths()),
     baseBranch: branch,
-    listBusySlots: () => listActiveSlots(),
   });
 }
 
 function record(ids, opts) {
-  if (!ids.length) usage();
+  if (ids.length !== 1 || ids[0] !== SUITE_ID) {
+    throw new Error(`record only accepts suite id '${SUITE_ID}'`);
+  }
   const finding = parseFinding(opts.finding);
-  const discovered = new Map(discoveredFeatures().map((a) => [a.id, a]));
   const lastRuns = loadLastRuns();
   const beforeApps = structuredClone(lastRuns.apps);
   const recordedAt = new Date().toISOString();
   const sha = opts.commit || git(['rev-parse', 'HEAD'], { allowFail: true }) || null;
 
-  for (const id of ids) {
-    const app = discovered.get(id);
-    if (!app) throw new Error(`unknown e2e feature id '${id}' — no matching feature file`);
-    lastRuns.apps[id] = applyE2eRecord({
-      previous: lastRuns.apps[id],
-      path: app.path,
-      sha,
-      recordedAt,
-      finding,
-    });
-  }
+  lastRuns.apps = suiteLastRunsAfterRecord({
+    previousApps: lastRuns.apps,
+    path: SUITE_PATH,
+    sha,
+    recordedAt,
+    finding,
+  });
 
   mkdirSync(dirname(LAST_RUNS_PATH), { recursive: true });
   writeFileSync(LAST_RUNS_PATH, `${JSON.stringify(lastRuns, null, 2)}\n`, 'utf8');
-  const readme = refreshReadmeFromLastRuns([...discovered.values()], lastRuns.apps);
+  const readme = refreshReadmeFromLastRuns(discoveredFeatures(), lastRuns.apps);
   const lastRunsCommit = commitLastRunsIfNeeded({
     beforeApps,
     afterApps: lastRuns.apps,
-    ids,
+    ids: [SUITE_ID],
     skillId: SKILL_ID,
     relPath: LAST_RUNS_REL,
     extraPaths: [README_REL],
@@ -363,7 +281,7 @@ function record(ids, opts) {
     skill: SKILL_ID,
     lastRunsPath: LAST_RUNS_REL,
     commit: sha,
-    ids,
+    ids: [SUITE_ID],
     lastRunsCommitted: lastRunsCommit.committed,
     readmeUpdated: readme.changed,
     allPassed: readme.summary.allPassed,
@@ -377,57 +295,8 @@ function record(ids, opts) {
 function status() {
   const lastRuns = loadLastRuns();
   return buildE2eStatus({
-    discovered: discoveredFeatures(),
     lastRunsApps: lastRuns.apps,
   });
-}
-
-function closeHelpers() {
-  return {
-    removeDir: (p) => rmSync(p, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 }),
-    exists: (p) => existsSync(p),
-  };
-}
-
-function closeHere() {
-  const here = process.cwd();
-  const listPorcelain = git(['worktree', 'list', '--porcelain']);
-  const listed = parseWorktreeList(listPorcelain);
-  const primaryPath = listed[0]?.path;
-  if (!primaryPath) {
-    throw new Error('cannot resolve the primary checkout from this directory');
-  }
-  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { allowFail: true });
-  const id = featureIdFromBranch(branch);
-  const stacks = id ? downFanoutProjects([id]) : [];
-  const closed = closeOpenedWorktrees({
-    here,
-    deleteBranch: false,
-    primaryPath,
-    listPorcelain,
-    runGit: (args, options) => git(args, options),
-    ...closeHelpers(),
-  });
-  return { ...closed, stacks };
-}
-
-function closeSkill(ids, opts) {
-  if (!opts.baseWorktree && !ids.length) usage();
-  const listPorcelain = git(['worktree', 'list', '--porcelain']);
-  const listed = parseWorktreeList(listPorcelain);
-  const primaryPath = listed[0]?.path || ROOT;
-  const branches = ids.map((id) => `${SKILL_ID}-${id}`);
-  const stacks = ids.length ? downFanoutProjects(ids) : [];
-  const closed = closeOpenedWorktrees({
-    branches,
-    baseWorktree: opts.baseWorktree ? resolveBaseBranch(opts) : null,
-    deleteBranch: true,
-    primaryPath,
-    listPorcelain,
-    runGit: (args, options) => git(args, options),
-    ...closeHelpers(),
-  });
-  return { ...closed, stacks };
 }
 
 export function buildE2ePlan(opts) {
@@ -444,7 +313,6 @@ export function main(argv = process.argv.slice(2)) {
   if (cmd === 'plan') result = plan(opts);
   else if (cmd === 'record') result = record(ids, opts);
   else if (cmd === 'status') result = status();
-  else if (cmd === 'close') result = opts.here ? closeHere() : closeSkill(ids, opts);
   else usage();
   console.log(JSON.stringify(result, null, 2));
   return result;
@@ -458,23 +326,16 @@ function parseArgs(argv) {
     commit: null,
     finding: null,
     base: null,
-    here: false,
-    baseWorktree: false,
-    wave: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--force') opts.force = true;
-    else if (arg === '--here') opts.here = true;
-    else if (arg === '--base-worktree') opts.baseWorktree = true;
     else if (arg === '--app') opts.apps.push(argv[++i]);
     else if (arg === '--commit') opts.commit = argv[++i];
     else if (arg === '--finding') opts.finding = argv[++i];
     else if (arg === '--base') opts.base = argv[++i];
     else if (arg === '--wave') {
-      const parsed = parseWaveArg(argv[++i]);
-      if (!parsed) usage();
-      opts.wave = parsed;
+      i += 1;
     } else if (arg.startsWith('-')) usage();
     else positional.push(arg);
   }
