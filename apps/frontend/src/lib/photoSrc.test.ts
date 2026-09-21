@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compactThumbSize,
   compactThumbUrl,
+  sizedThumbUrl,
   thumbUrl,
   timelineSrc,
   viewerFallbackSrc,
@@ -25,6 +26,12 @@ describe('photoSrc', () => {
   it('uses the viewport compact size for thumb and medium cards', () => {
     expect(timelineSrc(photo, 'thumb', 1280)).toBe(compactThumbUrl('abc123', 1280));
     expect(timelineSrc(photo, 'medium', 800)).toBe('/api/thumb/abc123?size=512');
+  });
+
+  it('picks the smallest thumb that stays sharp at 2x for justified tiles', () => {
+    expect(sizedThumbUrl('abc123', 120)).toBe('/api/thumb/abc123?size=256');
+    expect(sizedThumbUrl('abc123', 230)).toBe('/api/thumb/abc123?size=512');
+    expect(sizedThumbUrl('abc123', 420)).toBe('/api/thumb/abc123?size=1024');
   });
 
   it('falls back to the 1024 thumb when an original cannot load', () => {

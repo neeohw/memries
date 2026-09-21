@@ -47,7 +47,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'node scripts/stack.mjs up',
+    command: 'node scripts/stack.mjs up --hold',
     url: ORIGIN,
     reuseExistingServer: !profile.inCI,
     timeout: 180_000,

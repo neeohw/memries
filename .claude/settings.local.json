@@ -5,7 +5,8 @@
       "Bash(curl -fsS http://localhost/healthz)",
       "Bash(curl -sI http://localhost/api/me)",
       "Bash(curl -sI http://localhost/oauth/login)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(grep -rn -B2 -A6 \"Sync folder\\\\|'Filter'\\\\|data-nav-layout\\\\|data-theme-toggle\\\\|radio', { name\\\\|Current period\\\\|name: tab\\\\|Your memries\\\\|data-granularity\" steps)"
     ]
   }
 }

@@ -16,6 +16,12 @@ export function compactThumbUrl(id: string, viewportWidth: number): string {
   return thumbUrl(id, compactThumbSize(viewportWidth));
 }
 
+/** Smallest thumb that stays sharp at 2x for a tile whose long edge is `cssPx`. */
+export function sizedThumbUrl(id: string, cssPx: number): string {
+  const needed = cssPx * 2;
+  return thumbUrl(id, needed <= 256 ? 256 : needed <= 512 ? 512 : 1024);
+}
+
 export function timelineSrc(
   photo: Pick<Photo, 'id' | 'thumbnailUrl'>,
   density: PhotoDensity,

@@ -173,10 +173,20 @@ if (isMain) {
 
   if (cmd === 'up') {
     await up();
+    // Playwright's webServer expects a long-lived process; exiting right after `compose up -d`
+    // races its own URL poll and fails with "exited early". Stay alive until it stops us.
+    if (process.argv.includes('--hold')) {
+      const keepAlive = setInterval(() => {}, 1 << 30);
+      await new Promise((resolve) => {
+        process.once('SIGTERM', resolve);
+        process.once('SIGINT', resolve);
+      });
+      clearInterval(keepAlive);
+    }
   } else if (cmd === 'down') {
     await down(wipe);
   } else {
-    console.error('Usage: node scripts/stack.mjs <up|down> [--wipe]');
+    console.error('Usage: node scripts/stack.mjs <up [--hold]|down [--wipe]>');
     process.exit(1);
   }
 }

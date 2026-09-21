@@ -7,7 +7,7 @@ import { CurrentPeriod } from './CurrentPeriod';
 import { GranularitySelector } from './GranularitySelector';
 import { PhotoSkeleton } from './PhotoSkeleton';
 import { TimelineSection } from './TimelineSection';
-import { FilterIcon, TodayIcon } from './icons';
+import { FilterIcon, SyncIcon, TodayIcon } from './icons';
 
 export function Timeline({
   photos,
@@ -103,49 +103,53 @@ export function Timeline({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="px-4 pb-3 min-[640px]:px-6">
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="font-display text-[2.1rem] font-semibold leading-tight tracking-tight text-plum">
-            Your memries
-          </h1>
-          {onFilter && (
-            <button
-              type="button"
-              onClick={onFilter}
-              className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-surface/70 px-4 text-sm font-medium text-plum shadow-soft transition duration-200 active:scale-[0.98]"
-            >
-              <FilterIcon className="h-4 w-4" />
-              Filter
-            </button>
-          )}
+      <h1 className="sr-only">Your memries</h1>
+      <div className="relative z-20 flex items-center gap-2 px-3 py-2 min-[640px]:px-5">
+        {/* Narrow screens: the period floats over the photos as a pill while scrolling. */}
+        <div
+          className={`min-w-0 flex-1 max-[639px]:pointer-events-none max-[639px]:absolute max-[639px]:inset-x-0 max-[639px]:top-full max-[639px]:flex max-[639px]:justify-center max-[639px]:transition-opacity max-[639px]:duration-300 ${
+            scrolling ? '' : 'max-[639px]:opacity-0'
+          }`}
+        >
+          <div className="min-w-0 max-[639px]:rounded-full max-[639px]:bg-surface/90 max-[639px]:px-4 max-[639px]:shadow-lift max-[639px]:backdrop-blur-md">
+            {activeLabel && (
+              <CurrentPeriod
+                key={granularity}
+                label={activeLabel}
+                scrolling={scrolling}
+                direction={periodDirection}
+                reducedMotion={reducedMotion}
+              />
+            )}
+          </div>
         </div>
-        <p className="mt-1 max-w-prose text-sm leading-relaxed text-ink">
-          A quiet place for the days you want to keep.
-        </p>
-      </div>
-
-      <div className="sticky top-0 z-20 bg-cream/75 px-4 pb-2 pt-4 backdrop-blur-xl min-[640px]:px-6 min-[800px]:bg-surface/40">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <GranularitySelector value={granularity} onChange={handleGranularity} />
-          {onRescan && (
-            <button
-              type="button"
-              onClick={onRescan}
-              disabled={rescanning}
-              className="min-h-9 rounded-full px-3 text-xs font-medium text-ink transition hover:text-plum disabled:opacity-50"
-            >
-              {rescanning ? 'Syncing…' : 'Sync folder'}
-            </button>
-          )}
-        </div>
-        {activeLabel && (
-          <CurrentPeriod
-            key={granularity}
-            label={activeLabel}
-            scrolling={scrolling}
-            direction={periodDirection}
-            reducedMotion={reducedMotion}
-          />
+        <GranularitySelector
+          value={granularity}
+          onChange={handleGranularity}
+          className="max-[639px]:flex-1"
+        />
+        {onFilter && (
+          <button
+            type="button"
+            onClick={onFilter}
+            aria-label="Filter"
+            title="Filter"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
+          >
+            <FilterIcon className="h-5 w-5" />
+          </button>
+        )}
+        {onRescan && (
+          <button
+            type="button"
+            onClick={onRescan}
+            disabled={rescanning}
+            aria-label={rescanning ? 'Syncing…' : 'Sync folder'}
+            title={rescanning ? 'Syncing…' : 'Sync folder'}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95 disabled:opacity-50"
+          >
+            <SyncIcon className={`h-5 w-5 ${rescanning && !reducedMotion ? 'index-spin' : ''}`} />
+          </button>
         )}
       </div>
 
@@ -214,7 +218,7 @@ export function Timeline({
                   showHeading
                 />
               ))}
-              <div className="px-4 pb-8 min-[640px]:px-6">
+              <div className="px-3 pb-8 min-[640px]:px-5">
                 <LoadMoreMarker
                   onVisible={requestNextPage}
                   enabled={!!hasNextPage && !isFetchingNextPage && !fetchError}

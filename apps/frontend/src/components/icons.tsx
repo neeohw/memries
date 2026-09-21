@@ -126,3 +126,12 @@ export function MoonIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function SyncIcon(props: IconProps) {
+  return (
+    <svg {...icon(props)}>
+      <path d="M19.5 12a7.5 7.5 0 0 1-13.2 4.9M4.5 12a7.5 7.5 0 0 1 13.2-4.9" />
+      <path d="M18 3.5v3.8h-3.8M6 20.5v-3.8h3.8" />
+    </svg>
+  );
+}

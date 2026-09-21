@@ -12,9 +12,11 @@ const OPTIONS: { value: Granularity; label: string }[] = [
 export function GranularitySelector({
   value,
   onChange,
+  className = '',
 }: {
   value: Granularity;
   onChange: (value: Granularity) => void;
+  className?: string;
 }) {
   const { groupRef, setItemRef, box } = useSlidingHighlight(value);
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -30,13 +32,13 @@ export function GranularitySelector({
       ref={groupRef}
       role="radiogroup"
       aria-label="Group memories by"
-      className="relative grid grid-cols-4 rounded-full bg-surface/55 p-1 shadow-inner backdrop-blur-md"
+      className={`relative grid shrink-0 grid-cols-4 rounded-full bg-surface/55 p-0.5 shadow-inner backdrop-blur-md ${className}`}
     >
       <div
         aria-hidden
         data-granularity-indicator
         data-granularity={value}
-        className="pointer-events-none absolute top-1 h-[calc(100%-0.5rem)] rounded-full bg-surface shadow-lift transition-[left,width] duration-300 ease-out motion-reduce:transition-none"
+        className="pointer-events-none absolute top-0.5 h-[calc(100%-0.25rem)] rounded-full bg-surface shadow-lift transition-[left,width] duration-300 ease-out motion-reduce:transition-none"
         style={{ left: box.left, width: box.width }}
       />
       {OPTIONS.map((option, index) => {
@@ -71,7 +73,7 @@ export function GranularitySelector({
                 move(OPTIONS.length - 1);
               }
             }}
-            className={`relative z-10 min-h-11 rounded-full px-2 text-sm font-medium transition-colors duration-200 ${
+            className={`relative z-10 min-h-9 rounded-full px-2 text-xs font-medium min-[640px]:px-3 min-[640px]:text-sm transition-colors duration-200 ${
               checked ? 'text-plum' : 'text-ink hover:text-plum'
             }`}
           >

@@ -20,19 +20,19 @@ export function TimelineSection({
   const { ref, visible } = useRevealOnScroll<HTMLElement>();
 
   return (
-    <section className="px-4 pb-8 min-[640px]:px-6" aria-labelledby={`period-${group.key}`}>
+    <section className="px-3 pb-6 min-[640px]:px-5" aria-labelledby={`period-${group.key}`}>
       {showHeading && (
         <header
           ref={ref}
-          className={`mb-4 pt-2 ${reducedMotion ? '' : visible ? 'reveal-in' : 'reveal'}`}
+          className={`mb-2 flex items-baseline gap-2 pt-1 ${reducedMotion ? '' : visible ? 'reveal-in' : 'reveal'}`}
         >
           <h2
             id={`period-${group.key}`}
-            className="font-display text-[1.65rem] font-semibold leading-tight tracking-tight text-plum"
+            className="font-display text-base font-semibold leading-tight tracking-tight text-plum"
           >
             {group.label}
           </h2>
-          <p className="mt-0.5 text-sm text-ink">{group.sublabel}</p>
+          <p className="text-xs text-ink">{group.sublabel}</p>
         </header>
       )}
       <PhotoGrid

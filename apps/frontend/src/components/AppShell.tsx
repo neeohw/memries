@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { NavTab } from '../models/photo';
-import { BottomNavigation, NavButtons, SearchNavButton } from './BottomNavigation';
+import { BottomNavigation, NavButtons } from './BottomNavigation';
 import { ThemeToggle } from './ThemeToggle';
 import { TopHeader } from './TopHeader';
 
@@ -14,14 +14,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-cream text-plum">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-        <div className="absolute -left-16 -top-10 h-56 w-56 rounded-full bg-peach/25 blur-3xl" />
-        <div className="absolute right-[-4rem] top-24 h-64 w-64 rounded-full bg-mist/70 blur-3xl" />
-        <div className="absolute bottom-24 left-10 h-48 w-48 rounded-full bg-sage/50 blur-3xl" />
-        <div className="absolute -bottom-10 right-8 h-52 w-52 rounded-full bg-lavender/35 blur-3xl" />
-      </div>
-
+    <div className="relative flex h-dvh overflow-hidden bg-cream text-plum">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[70] focus:rounded-full focus:bg-plum focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-cream"
@@ -29,42 +22,34 @@ export function AppShell({
         Skip to content
       </a>
 
-      <div className="relative mx-auto flex h-dvh max-w-6xl min-[800px]:h-auto min-[800px]:min-h-dvh min-[800px]:px-4 min-[800px]:py-6">
-        <aside
-          data-nav-layout="side"
-          className="sticky top-6 hidden h-[calc(100dvh-3rem)] w-52 shrink-0 flex-col justify-between rounded-[1.8rem] bg-surface/45 p-5 shadow-soft backdrop-blur-xl min-[800px]:flex"
-        >
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="mb-8 flex items-center gap-2">
-              <span
-                className="grid h-9 w-9 place-items-center rounded-2xl bg-surface/80 shadow-soft"
-                aria-hidden
-              >
-                <span className="h-4 w-4 rounded-full bg-gradient-to-br from-peach to-blush" />
-              </span>
-              <p className="font-display text-2xl font-semibold tracking-tight">Memries</p>
-            </div>
-            <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
-              <NavButtons tab={tab} onChange={onTabChange} orientation="vertical" />
-              <div className="mt-auto">
-                <SearchNavButton tab={tab} onChange={onTabChange} />
-              </div>
-            </nav>
-          </div>
-          <ThemeToggle />
-        </aside>
-
-        <div className="flex h-dvh min-w-0 flex-1 flex-col min-[800px]:ml-5 min-[800px]:h-[calc(100dvh-3rem)] min-[800px]:overflow-hidden min-[800px]:rounded-[1.8rem] min-[800px]:bg-surface/30 min-[800px]:shadow-soft min-[800px]:backdrop-blur-md">
-          <TopHeader />
-          <main
-            id="main-content"
-            tabIndex={-1}
-            className="flex min-h-0 flex-1 flex-col outline-none min-[800px]:pt-6"
+      <aside
+        data-nav-layout="side"
+        className="relative z-30 hidden w-16 shrink-0 flex-col items-center justify-between border-r border-plum/5 py-4 min-[800px]:flex"
+      >
+        <div className="flex w-full flex-col items-center gap-6">
+          <span
+            className="grid h-9 w-9 place-items-center rounded-2xl bg-surface/80 shadow-soft"
+            title="Memries"
           >
-            {children}
-          </main>
-          <BottomNavigation tab={tab} onChange={onTabChange} />
+            <span
+              className="h-4 w-4 rounded-full bg-gradient-to-br from-peach to-blush"
+              aria-hidden
+            />
+            <span className="sr-only">Memries</span>
+          </span>
+          <nav aria-label="Main" className="w-full">
+            <NavButtons tab={tab} onChange={onTabChange} orientation="vertical" />
+          </nav>
         </div>
+        <ThemeToggle />
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopHeader />
+        <main id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col outline-none">
+          {children}
+        </main>
+        <BottomNavigation tab={tab} onChange={onTabChange} />
       </div>
     </div>
   );

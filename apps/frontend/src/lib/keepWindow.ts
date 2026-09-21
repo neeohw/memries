@@ -1,6 +1,9 @@
 export const COMPACT_ROW_OVERSCAN = 10;
 
 export function thumbsGridColumns(width: number): number {
+  if (width >= 2200) return 14;
+  if (width >= 1800) return 12;
+  if (width >= 1500) return 10;
   if (width >= 1280) return 8;
   if (width >= 800) return 7;
   if (width >= 680) return 6;
@@ -9,6 +12,9 @@ export function thumbsGridColumns(width: number): number {
 }
 
 export function searchGridColumns(width: number): number {
+  if (width >= 1800) return 8;
+  if (width >= 1400) return 6;
+  if (width >= 1024) return 5;
   if (width >= 800) return 4;
   if (width >= 640) return 3;
   return 2;

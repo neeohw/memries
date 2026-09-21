@@ -39,7 +39,7 @@ export function CurrentPeriod({
 
   return (
     <div
-      className="period-frame mt-2 px-1"
+      className="period-frame"
       data-period-scrolling={liveScrolling ? 'true' : 'false'}
       data-period-direction={direction}
     >
