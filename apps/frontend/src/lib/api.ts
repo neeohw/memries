@@ -1,4 +1,5 @@
 import { thumbUrl } from './photoSrc';
+import type { HistogramBucket } from './scrubberScale';
 import { wallClockFromExifValue } from './takenAt';
 import type { Album, Photo } from '../models/photo';
 import type { Me, Source, SourceInput, SourceType } from '../models/source';
@@ -12,6 +13,31 @@ export type ApiPhoto = {
   dims?: { w?: number; h?: number };
   favorite?: boolean;
 };
+
+export type ApiTimelineBucket = {
+  bucket: string;
+  count?: number;
+};
+
+/**
+ * Month histogram for the date scrubber (ADR 0017).
+ *
+ * Always month granularity, whatever the timeline's own granularity selector
+ * says: the scrubber's vocabulary is months and years, and `day` would return
+ * thousands of rows for a library this size. One row per month is a few
+ * hundred rows at most, so this is a single cheap request.
+ *
+ * This is the first consumer of `/api/timeline`, which ADR 0002 left unused
+ * when timeline grouping moved into the SPA.
+ */
+export async function fetchTimelineHistogram(): Promise<HistogramBucket[]> {
+  const res = await apiFetch('/api/timeline?granularity=month');
+  const body = (await res.json()) as { buckets?: ApiTimelineBucket[] | null };
+  return (body.buckets ?? []).map((bucket) => ({
+    key: bucket.bucket,
+    count: bucket.count ?? 0,
+  }));
+}
 
 export type ApiAlbumView = {
   id: string;
@@ -164,8 +190,20 @@ export async function startIndex(): Promise<IndexStatus> {
   return (await res.json()) as IndexStatus;
 }
 
+/**
+ * Photos per page.
+ *
+ * 500 is the server's cap (`db.ClampPhotoLimit`). The scrubber can ask to jump
+ * to a month that is not loaded yet, and the only way there under keyset
+ * pagination is to page forward, so the page size sets how many round trips a
+ * far jump costs: at 50 the oldest photo in a 12k library was ~240 requests,
+ * at 500 it is ~24 (ADR 0017). Photo rows are metadata only — thumbs load
+ * lazily per tile — so a page is roughly 100KB of JSON.
+ */
+export const PHOTO_PAGE_SIZE = 500;
+
 export async function fetchPhotosPage(cursor?: string, filter?: PhotoFilter): Promise<PhotosPage> {
-  const params = new URLSearchParams({ limit: '50' });
+  const params = new URLSearchParams({ limit: String(PHOTO_PAGE_SIZE) });
   if (cursor) params.set('cursor', cursor);
   if (filter?.favorite === true) params.set('favorite', 'true');
   if (filter?.favorite === false) params.set('favorite', 'false');

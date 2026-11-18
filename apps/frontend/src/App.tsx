@@ -18,6 +18,7 @@ import {
   useRemovePhotoFromAlbum,
 } from './hooks/useAlbums';
 import { useIndex } from './hooks/useIndex';
+import { useTimelineHistogram } from './hooks/useTimelineHistogram';
 import {
   meQueryKey,
   useCreateSource,
@@ -127,6 +128,9 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   const [indexVisible, setIndexVisible] = useState(true);
 
   const timelineQuery = usePhotos(isReadyForPhotos);
+  // Drives the date scrubber's track. Independent of which tab is open so the
+  // scrubber is ready the moment Memories is.
+  const histogramQuery = useTimelineHistogram(isReadyForPhotos);
   const favoritesQuery = usePhotos(isReadyForPhotos && tab === 'favorites', { favorite: true });
   const parsedDate = useMemo(() => parseSmartDate(search.query, new Date()), [search.query]);
   const searchFilter = useMemo(() => {
@@ -270,6 +274,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               onFilter={() => changeTab('search')}
               noFolders={indexStatus?.sources === 0}
               onAddFolder={admin ? () => changeTab('folders') : undefined}
+              histogram={histogramQuery.data}
             />
           )}
           {tab === 'folders' && admin && (

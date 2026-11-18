@@ -73,6 +73,18 @@ The album chrome (shell, Granularity selector, editorial rows, viewer, Favorites
 
 **Overall:** Strong — cite as the Memories feed / Granularity source of truth.
 
+## Amendment (ADR 0017)
+
+`/api/timeline` now has one consumer: the date scrubber reads it as a month
+histogram to build its track ([0017](0017-date-scrubber.md)).
+
+Everything this ADR decided still holds. The Memories feed is still
+`/api/photos`, grouping still happens in `groupPhotos`, Granularity is still
+the SPA's, and `/api/timeline` still cannot render the album for exactly the
+reason given in finding 1 — a cover id and a count are not a Photo list. The
+histogram is used as a navigation aid, not as a feed, which is the distinction
+this ADR was drawing.
+
 ## References
 
 - Domain language: [CONTEXT.md](../../CONTEXT.md)

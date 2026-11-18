@@ -10,6 +10,7 @@ import {
   type IndexStatus,
 } from '../lib/indexStatus';
 import { photoQueryKey } from './usePhotos';
+import { timelineHistogramQueryKey } from './useTimelineHistogram';
 
 export const indexQueryKey = ['index', 'status'] as const;
 
@@ -50,6 +51,9 @@ export function useIndex() {
     if (!status) return;
     if (shouldInvalidatePhotos(prevRef.current, status)) {
       void queryClient.invalidateQueries({ queryKey: photoQueryKey });
+      // The scrubber's month counts moved with the photos, so refresh its
+      // track too or it keeps describing the pre-sync library (ADR 0017).
+      void queryClient.invalidateQueries({ queryKey: timelineHistogramQueryKey });
     }
     prevRef.current = status;
   }, [queryClient, status]);

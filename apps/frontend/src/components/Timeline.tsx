@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { VList, type VListHandle } from 'virtua';
 import { groupPhotos, nearestGroupIndex } from '../lib/groupPhotos';
+import {
+  type HistogramBucket,
+  buildScrubberScale,
+  fractionForDate,
+  groupIndexForMonth,
+} from '../lib/scrubberScale';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import type { Granularity, Photo } from '../models/photo';
 import { CurrentPeriod } from './CurrentPeriod';
 import { GranularitySelector } from './GranularitySelector';
 import { PhotoSkeleton } from './PhotoSkeleton';
+import { Scrubber } from './Scrubber';
 import { TimelineSection } from './TimelineSection';
 import { FilterIcon, SyncIcon, TodayIcon } from './icons';
 
@@ -24,6 +31,7 @@ export function Timeline({
   noFolders,
   onAddFolder,
   onFilter,
+  histogram,
 }: {
   photos: Photo[];
   granularity: Granularity;
@@ -40,6 +48,8 @@ export function Timeline({
   noFolders?: boolean;
   onAddFolder?: () => void;
   onFilter?: () => void;
+  /** Month counts for the whole library, for the date scrubber (ADR 0017). */
+  histogram?: HistogramBucket[];
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const groups = useMemo(() => groupPhotos(photos, granularity), [photos, granularity]);
@@ -53,7 +63,20 @@ export function Timeline({
   const lastOffsetRef = useRef(0);
   const scrollIdleRef = useRef<number | undefined>(undefined);
 
+  // Index of the group at the top of the viewport. Kept in state as well as in
+  // the ref above because the scrubber thumb has to re-render when it moves.
+  const [startIndex, setStartIndex] = useState(0);
+  const [seekTarget, setSeekTarget] = useState<string | null>(null);
+
   const orderedPhotos = useMemo(() => groups.flatMap((group) => group.photos), [groups]);
+
+  const scale = useMemo(() => buildScrubberScale(histogram ?? []), [histogram]);
+  const hasScrubber = scale.segments.length >= 2;
+  // The month of each group's newest photo, newest-first.
+  const groupMonths = useMemo(
+    () => groups.map((group) => (group.photos[0]?.takenAt ?? '').slice(0, 7)),
+    [groups],
+  );
 
   const groupsRef = useRef(groups);
 
@@ -68,12 +91,15 @@ export function Timeline({
     setPeriodDirection('older');
     setScrolling(false);
     setShowToday(false);
+    setStartIndex(0);
     startIndexRef.current = 0;
     lastOffsetRef.current = 0;
     const anchor = anchorRef.current;
     if (!anchor || !listRef.current || current.length === 0) return;
     const index = nearestGroupIndex(current, anchor);
     listRef.current.scrollToIndex(index, { align: 'start' });
+    startIndexRef.current = index;
+    setStartIndex(index);
     if (index > 0) setShowToday(true);
     anchorRef.current = null;
   }, [granularity]);
@@ -105,6 +131,77 @@ export function Timeline({
     if (!hasNextPage || isFetchingNextPage || fetchError) return;
     fetchNextPage?.();
   }, [fetchError, fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  const scrollToGroup = useCallback((index: number) => {
+    const current = groupsRef.current;
+    const next = Math.min(Math.max(0, index), Math.max(0, current.length - 1));
+    listRef.current?.scrollToIndex(next, { align: 'start' });
+    startIndexRef.current = next;
+    setStartIndex(next);
+    const label = current[next]?.label;
+    if (label) setActiveLabel(label);
+    setShowToday(next > 0);
+  }, []);
+
+  /**
+   * Resolves a scrubber jump, or latches it until the month is loaded.
+   *
+   * The track covers the whole library but only part of it is loaded (ADR
+   * 0017), so a jump to an older month may have to page backwards first. The
+   * common case — the month is already loaded — is handled here, in the event
+   * handler, so no effect runs at all.
+   */
+  const seekToMonth = useCallback(
+    (monthKey: string) => {
+      const index = groupIndexForMonth(groupMonths, monthKey);
+      if (index >= 0) {
+        scrollToGroup(index);
+        return;
+      }
+      if (!hasNextPage || fetchError) {
+        // Nothing older is coming; land on the oldest photo there is rather
+        // than leaving the jump unresolved.
+        scrollToGroup(groupMonths.length - 1);
+        return;
+      }
+      setSeekTarget(monthKey);
+    },
+    [fetchError, groupMonths, hasNextPage, scrollToGroup],
+  );
+
+  // Only reached while a jump is waiting on pages. Each arriving page re-runs
+  // this until the month is reachable or the list is exhausted.
+  //
+  // set-state-in-effect is disabled deliberately for the two lines that
+  // release the latch. Whether newly arrived pages made the target reachable
+  // is knowable only after a render, so there is no handler to do it in, and
+  // leaving the latch set would re-scroll on every later page and fight the
+  // user. The scroll itself goes to an external system (the list handle).
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!seekTarget) return;
+    const index = groupIndexForMonth(groupMonths, seekTarget);
+    if (index >= 0) {
+      scrollToGroup(index);
+      setSeekTarget(null);
+      return;
+    }
+    if (fetchError || !hasNextPage) {
+      scrollToGroup(groupMonths.length - 1);
+      setSeekTarget(null);
+      return;
+    }
+    if (!isFetchingNextPage) fetchNextPage?.();
+  }, [
+    seekTarget,
+    groupMonths,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchError,
+    fetchNextPage,
+    scrollToGroup,
+  ]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -190,81 +287,94 @@ export function Timeline({
             )}
           </div>
         ) : (
-          <div
-            key={granularity}
-            data-timeline
-            data-group-count={groups.length}
-            data-timeline-motion={reducedMotion ? 'none' : 'fade-rise'}
-            className={`h-full ${reducedMotion ? '' : 'animate-fade-rise'}`}
-            ref={(node) => {
-              if (!node) return;
-              Object.assign(node, {
-                __scrollToGroup(index: number) {
-                  const current = groupsRef.current;
-                  const max = Math.max(0, current.length - 1);
-                  const next = Math.min(Math.max(0, index), max);
-                  listRef.current?.scrollToIndex(next, { align: 'start' });
-                  const label = current[next]?.label;
-                  if (label) setActiveLabel(label);
-                  setShowToday(next > 0);
-                },
-              });
-            }}
-          >
-            <VList
-              ref={listRef}
-              style={{ height: '100%' }}
-              onScroll={(offset) => {
-                const handle = listRef.current;
-                const start = handle?.findStartIndex() ?? 0;
-                setShowToday(offset > 280 && start > 0);
-                if (start !== startIndexRef.current) {
-                  setPeriodDirection(start > startIndexRef.current ? 'older' : 'newer');
-                  startIndexRef.current = start;
-                }
-                if (Math.abs(offset - lastOffsetRef.current) > 2) markScrolling();
-                lastOffsetRef.current = offset;
-                const label = groups[start]?.label;
-                if (label) setActiveLabel(label);
-                if (start >= Math.max(0, groups.length - 2)) requestNextPage();
+          <>
+            {hasScrubber && (
+              // Before the list in DOM order so Tab reaches it without walking
+              // every photo first; it is absolutely positioned either way.
+              <Scrubber
+                scale={scale}
+                value={fractionForDate(scale, groups[startIndex]?.photos[0]?.takenAt ?? '')}
+                onSeek={seekToMonth}
+                seeking={seekTarget !== null}
+                // `scrolling` is deliberately never set under reduced motion,
+                // so the track would otherwise only ever appear on hover for
+                // those users. Show it permanently instead of fading it in.
+                revealed={scrolling || seekTarget !== null || reducedMotion}
+                reducedMotion={reducedMotion}
+              />
+            )}
+            <div
+              key={granularity}
+              data-timeline
+              data-group-count={groups.length}
+              data-timeline-motion={reducedMotion ? 'none' : 'fade-rise'}
+              // Keep tiles out from under the scrubber's track; justifyRows
+              // measures the container, so the rows reflow to the new width.
+              className={`h-full ${hasScrubber ? 'pr-7' : ''} ${
+                reducedMotion ? '' : 'animate-fade-rise'
+              }`}
+              ref={(node) => {
+                if (!node) return;
+                // Test seam driven by apps/e2e/steps/fixtures.ts.
+                Object.assign(node, { __scrollToGroup: scrollToGroup });
               }}
             >
-              {groups.map((group) => (
-                <TimelineSection
-                  key={`${granularity}-${group.key}`}
-                  group={group}
-                  granularity={granularity}
-                  onOpen={openFrom}
-                  onActions={onActions}
-                  showHeading
-                />
-              ))}
-              <div className="px-3 pb-8 min-[640px]:px-5">
-                <LoadMoreMarker
-                  onVisible={requestNextPage}
-                  enabled={!!hasNextPage && !isFetchingNextPage && !fetchError}
-                />
-                {isFetchingNextPage && (
-                  <p className="py-3 text-center text-sm text-ink" role="status">
-                    Loading more memories…
-                  </p>
-                )}
-                {fetchError && (
-                  <div className="flex flex-col items-center gap-3 py-4 text-center" role="alert">
-                    <p className="text-sm text-ink">More memories did not load.</p>
-                    <button
-                      type="button"
-                      onClick={() => fetchNextPage?.()}
-                      className="min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
-                    >
-                      Try again
-                    </button>
-                  </div>
-                )}
-                {!hasNextPage && !isFetchingNextPage && <div className="h-8" />}
-              </div>
-            </VList>
-          </div>
+              <VList
+                ref={listRef}
+                style={{ height: '100%' }}
+                onScroll={(offset) => {
+                  const handle = listRef.current;
+                  const start = handle?.findStartIndex() ?? 0;
+                  setShowToday(offset > 280 && start > 0);
+                  if (start !== startIndexRef.current) {
+                    setPeriodDirection(start > startIndexRef.current ? 'older' : 'newer');
+                    startIndexRef.current = start;
+                    setStartIndex(start);
+                  }
+                  if (Math.abs(offset - lastOffsetRef.current) > 2) markScrolling();
+                  lastOffsetRef.current = offset;
+                  const label = groups[start]?.label;
+                  if (label) setActiveLabel(label);
+                  if (start >= Math.max(0, groups.length - 2)) requestNextPage();
+                }}
+              >
+                {groups.map((group) => (
+                  <TimelineSection
+                    key={`${granularity}-${group.key}`}
+                    group={group}
+                    granularity={granularity}
+                    onOpen={openFrom}
+                    onActions={onActions}
+                    showHeading
+                  />
+                ))}
+                <div className="px-3 pb-8 min-[640px]:px-5">
+                  <LoadMoreMarker
+                    onVisible={requestNextPage}
+                    enabled={!!hasNextPage && !isFetchingNextPage && !fetchError}
+                  />
+                  {isFetchingNextPage && (
+                    <p className="py-3 text-center text-sm text-ink" role="status">
+                      Loading more memories…
+                    </p>
+                  )}
+                  {fetchError && (
+                    <div className="flex flex-col items-center gap-3 py-4 text-center" role="alert">
+                      <p className="text-sm text-ink">More memories did not load.</p>
+                      <button
+                        type="button"
+                        onClick={() => fetchNextPage?.()}
+                        className="min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  )}
+                  {!hasNextPage && !isFetchingNextPage && <div className="h-8" />}
+                </div>
+              </VList>
+            </div>
+          </>
         )}
 
         {showToday && (
@@ -273,9 +383,9 @@ export function Timeline({
             onClick={() =>
               listRef.current?.scrollToIndex(0, { align: 'start', smooth: !reducedMotion })
             }
-            className={`absolute bottom-4 right-4 z-20 flex min-h-11 items-center gap-2 rounded-full bg-plum px-4 py-2 text-sm font-medium text-cream shadow-lift transition duration-200 active:scale-95 min-[800px]:bottom-6 min-[800px]:right-6 ${
-              reducedMotion ? '' : 'animate-fab-in'
-            }`}
+            className={`absolute bottom-4 z-20 flex min-h-11 items-center gap-2 rounded-full bg-plum px-4 py-2 text-sm font-medium text-cream shadow-lift transition duration-200 active:scale-95 min-[800px]:bottom-6 ${
+              hasScrubber ? 'right-14 min-[800px]:right-16' : 'right-4 min-[800px]:right-6'
+            } ${reducedMotion ? '' : 'animate-fab-in'}`}
             aria-label="Back to today"
             data-today-fab
           >
