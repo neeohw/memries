@@ -14,5 +14,16 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    files: ['steps/**/*.ts'],
+    rules: {
+      // playwright-bdd reads a step's first parameter by name to decide which
+      // fixtures to inject, and rejects anything that is not a destructuring
+      // pattern ("First argument must use the object destructuring pattern").
+      // A step that needs no fixture but does take Gherkin arguments has to
+      // write `async ({}, file)`, so the empty pattern is load-bearing here.
+      'no-empty-pattern': 'off',
+    },
+  },
   eslintConfigPrettier,
 );

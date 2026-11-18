@@ -3,11 +3,23 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page } from '@playwright/test';
 import { createBdd, test as base } from 'playwright-bdd';
+import { ownerEmail } from '../scripts/owners.mjs';
 
 export const test = base.extend({});
 
 const e2eRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const prepareScript = join(e2eRoot, 'scripts', 'prepare-fixtures.mjs');
+
+/**
+ * The account this worker owns (ADR 0012).
+ *
+ * `parallelIndex`, not `workerIndex`: a worker that is restarted after a crash
+ * gets a fresh `workerIndex` but keeps its parallel slot, so this stays within
+ * the accounts the stack bootstrapped.
+ */
+export function currentOwner(): string {
+  return ownerEmail(test.info().parallelIndex);
+}
 
 let restoreFixturesAfterTest = false;
 
@@ -15,8 +27,18 @@ export function markFixturesDirty() {
   restoreFixturesAfterTest = true;
 }
 
-export function runPrepareFixtures(args: string[] = []) {
-  const result = spawnSync(process.execPath, [prepareScript, ...args], {
+/**
+ * Runs the fixture script against this worker's own photo folder.
+ *
+ * Module state is per worker process, as is the folder, so a scenario that
+ * removes or relocates a photo cannot disturb a scenario running beside it.
+ *
+ * The default is `prepare-owner`, not the script's own default: bare
+ * `prepare-fixtures` rebuilds *every* worker's folder, which is right at stack
+ * up and destructive from inside a running scenario.
+ */
+export function runPrepareFixtures(args: string[] = ['prepare-owner']) {
+  const result = spawnSync(process.execPath, [prepareScript, ...args, '--owner', currentOwner()], {
     encoding: 'utf8',
     cwd: e2eRoot,
   });
@@ -63,7 +85,7 @@ export async function signIn(page: Page) {
   const login = page.locator('input[name="login"]');
   try {
     await login.waitFor({ state: 'visible', timeout: 20_000 });
-    await login.fill('admin@example.com');
+    await login.fill(currentOwner());
     await page.locator('input[name="password"]').fill('password');
     await page.locator('[type="submit"]').first().click();
   } catch {

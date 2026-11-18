@@ -20,8 +20,13 @@ services:
       # this exact literal, so a developer's own BOOTSTRAP_PASSWORD must not
       # reach this disposable stack (ADR 0016).
       MEMRIES_BOOTSTRAP_PASSWORD: password
-      # Likewise pinned, so the bootstrapped account is the one the suite uses.
-      MEMRIES_ADMIN_EMAILS: admin@example.com
+      # Likewise pinned, so the bootstrapped accounts are the ones the suite
+      # uses: one per Playwright worker, kept in sync with
+      # apps/e2e/scripts/owners.mjs. Local runs use four parallel workers
+      # against this one stack, and every worker needs an owner of its own —
+      # /api/e2e/reset is owner-scoped, so a shared account meant one worker's
+      # teardown wiped another's albums and favorites (ADR 0012).
+      MEMRIES_ADMIN_EMAILS: admin@example.com,worker-1@example.com,worker-2@example.com,worker-3@example.com
       MEMRIES_PUBLIC_URL: http://localhost:${CADDY_HOST_PORT:-18080}
       MEMRIES_E2E: "1"
     volumes:

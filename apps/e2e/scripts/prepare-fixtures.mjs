@@ -4,9 +4,23 @@ import { mkdir, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import jpeg from 'jpeg-js';
+import { E2E_OWNERS } from './owners.mjs';
 
 const e2eRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const photosRoot = join(e2eRoot, '.work', 'photos', 'admin@example.com');
+const photosDir = join(e2eRoot, '.work', 'photos');
+
+/**
+ * The index scope is a folder named after the owner's email, so each Playwright
+ * worker's account owns its own fixtures on disk (ADR 0012). That is what makes
+ * `remove-photo` and `relocate-photo` safe to run while other workers are
+ * mid-scenario: they mutate one worker's folder only.
+ */
+function photosRootFor(owner) {
+  if (!owner || owner.includes('/') || owner.includes('\\') || owner === '..') {
+    throw new Error(`refusing to use ${JSON.stringify(owner)} as a fixture folder name`);
+  }
+  return join(photosDir, owner);
+}
 const cacheRoot = join(e2eRoot, '.work', 'cache');
 const dbRoot = join(e2eRoot, '.work', 'db');
 const NO_EXIF_WHEN = new Date('2023-03-15T09:00:00.000Z');
@@ -95,7 +109,8 @@ function fixtureByName(file) {
   return spec;
 }
 
-export async function writeFixture(spec, datetime = spec.datetime) {
+export async function writeFixture(spec, datetime = spec.datetime, owner = E2E_OWNERS[0]) {
+  const photosRoot = photosRootFor(owner);
   await mkdir(photosRoot, { recursive: true });
   const dest = join(photosRoot, spec.file);
   let body = solidJpeg(...spec.rgb);
@@ -128,36 +143,70 @@ export async function setNoExifTimes(filePath) {
   }
 }
 
+/** Rebuilds one owner's fixture folder from scratch. */
+export async function prepareOwner(owner = E2E_OWNERS[0]) {
+  const photosRoot = photosRootFor(owner);
+  await rm(photosRoot, { recursive: true, force: true });
+  await mkdir(photosRoot, { recursive: true });
+  for (const spec of FIXTURES) {
+    await writeFixture(spec, spec.datetime, owner);
+  }
+}
+
+/**
+ * Prepares the stack's shared directories and every worker's fixtures.
+ *
+ * All slots are written at stack-up time rather than lazily per worker,
+ * because the frontend starts an index run itself the first time an owner's
+ * library is empty: the photos have to be on disk before any worker signs in.
+ */
 export async function prepareAll() {
   await mkdir(cacheRoot, { recursive: true });
   // The backend image runs as uid 1000, and Docker creates a missing
   // bind-mount directory as root. Creating it here, as the developer, keeps
   // the container able to write the SQLite catalog on Linux.
   await mkdir(dbRoot, { recursive: true });
-  await rm(photosRoot, { recursive: true, force: true });
-  await mkdir(photosRoot, { recursive: true });
-  for (const spec of FIXTURES) {
-    await writeFixture(spec);
+  for (const owner of E2E_OWNERS) {
+    await prepareOwner(owner);
   }
 }
 
-export async function setExif(file, datetime) {
-  await writeFixture(fixtureByName(file), datetime);
+export async function setExif(file, datetime, owner = E2E_OWNERS[0]) {
+  await writeFixture(fixtureByName(file), datetime, owner);
 }
 
-export async function removePhoto(file) {
-  await unlink(join(photosRoot, file));
+export async function removePhoto(file, owner = E2E_OWNERS[0]) {
+  await unlink(join(photosRootFor(owner), file));
 }
 
-export async function relocatePhoto(from, to) {
+export async function relocatePhoto(from, to, owner = E2E_OWNERS[0]) {
+  const photosRoot = photosRootFor(owner);
   await rename(join(photosRoot, from), join(photosRoot, to));
 }
 
 const isMain =
   !!process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
 
+/**
+ * Pulls `--owner <email>` out of the argument list, wherever it sits.
+ *
+ * Only a bootstrapped worker account is accepted: an unknown email would
+ * create a fixture folder nothing indexes, and the scenario that asked for it
+ * would then fail somewhere far from the typo.
+ */
+export function takeOwner(argv) {
+  const at = argv.indexOf('--owner');
+  if (at < 0) return { owner: E2E_OWNERS[0], rest: argv };
+  const owner = argv[at + 1];
+  if (!E2E_OWNERS.includes(owner)) {
+    throw new Error(`--owner must be one of ${E2E_OWNERS.join(', ')}, got ${String(owner)}`);
+  }
+  return { owner, rest: [...argv.slice(0, at), ...argv.slice(at + 2)] };
+}
+
 if (isMain) {
-  const [, , cmd, file, destOrDate, ...rest] = process.argv;
+  const { owner, rest: argv } = takeOwner(process.argv.slice(2));
+  const [cmd, file, destOrDate, ...rest] = argv;
   if (cmd === 'set-exif') {
     const datetime = [destOrDate, ...rest].filter(Boolean).join(' ');
     if (!file || !datetime) {
@@ -166,19 +215,21 @@ if (isMain) {
       );
       process.exit(1);
     }
-    await setExif(file, datetime);
+    await setExif(file, datetime, owner);
   } else if (cmd === 'remove-photo') {
     if (!file) {
       console.error('Usage: node scripts/prepare-fixtures.mjs remove-photo <file.jpg>');
       process.exit(1);
     }
-    await removePhoto(file);
+    await removePhoto(file, owner);
   } else if (cmd === 'relocate-photo') {
     if (!file || !destOrDate) {
       console.error('Usage: node scripts/prepare-fixtures.mjs relocate-photo <from.jpg> <to.jpg>');
       process.exit(1);
     }
-    await relocatePhoto(file, destOrDate);
+    await relocatePhoto(file, destOrDate, owner);
+  } else if (cmd === 'prepare-owner') {
+    await prepareOwner(owner);
   } else {
     await prepareAll();
   }
