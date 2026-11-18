@@ -19,3 +19,6 @@ func IsNotFound(err error) bool {
 	}
 	return strings.Contains(err.Error(), "path escape")
 }
+
+// ErrReadOnly is returned by write operations on indexed Sources.
+var ErrReadOnly = errors.New("storage is read-only")

@@ -9,7 +9,7 @@ RUN pnpm dlx turbo@2.10.12 prune @memries/backend --docker \
 
 FROM node:22-bookworm AS builder
 WORKDIR /repo
-ARG GO_VERSION=1.23.6
+ARG GO_VERSION=1.26.11
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates git \
     && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xz \

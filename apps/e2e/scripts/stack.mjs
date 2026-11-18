@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -11,16 +11,11 @@ const e2eRoot = dirname(scriptsDir);
 const repoRoot = join(e2eRoot, '..', '..');
 const composeFile = join(e2eRoot, 'docker-compose.yml');
 const envFile = join(repoRoot, '.env');
-const dexTemplateFile = join(e2eRoot, 'deploy', 'dex.yaml');
-const workDir = join(e2eRoot, '.work');
-const dexGeneratedFile = join(workDir, 'dex.yaml');
 
 export const DEFAULT_PORTS = {
   caddy: 18080,
   backend: 18081,
   frontend: 15173,
-  arango: 18529,
-  dex: 15556,
 };
 
 function envPort(env, name, fallback) {
@@ -35,8 +30,6 @@ export function resolveStackConfig(env = process.env) {
     caddy: envPort(env, 'CADDY_HOST_PORT', DEFAULT_PORTS.caddy),
     backend: envPort(env, 'BACKEND_HOST_PORT', DEFAULT_PORTS.backend),
     frontend: envPort(env, 'FRONTEND_HOST_PORT', DEFAULT_PORTS.frontend),
-    arango: envPort(env, 'ARANGO_HOST_PORT', DEFAULT_PORTS.arango),
-    dex: envPort(env, 'DEX_HOST_PORT', DEFAULT_PORTS.dex),
   };
   const origin = env.MEMRIES_E2E_ORIGIN || `http://localhost:${ports.caddy}`;
   const healthz = env.MEMRIES_E2E_HEALTHZ || `http://localhost:${ports.backend}/healthz`;
@@ -45,16 +38,12 @@ export function resolveStackConfig(env = process.env) {
     ports,
     origin,
     healthz,
-    oidcIssuer: `http://localhost:${ports.dex}`,
-    oidcRedirectUrl: `${origin.replace(/\/$/, '')}/oauth/callback`,
     publicUrl: origin,
     viteApiBase: origin,
     composeEnv: {
       CADDY_HOST_PORT: String(ports.caddy),
       BACKEND_HOST_PORT: String(ports.backend),
       FRONTEND_HOST_PORT: String(ports.frontend),
-      ARANGO_HOST_PORT: String(ports.arango),
-      DEX_HOST_PORT: String(ports.dex),
       MEMRIES_E2E_ORIGIN: origin,
     },
   };
@@ -68,12 +57,6 @@ export function resolveStackConfig(env = process.env) {
  */
 export function composeArgs(config, composePath, envPath, extra) {
   return ['compose', '-p', config.project, '-f', composePath, '--env-file', envPath, ...extra];
-}
-
-export function renderDexConfig(template, config) {
-  return String(template)
-    .replaceAll('http://localhost:15556', config.oidcIssuer)
-    .replaceAll('http://localhost:18080', config.publicUrl);
 }
 
 function run(cmd, args, env) {
@@ -111,12 +94,6 @@ async function waitFor(url, timeoutMs) {
   throw new Error(`Timed out waiting for ${url} (${lastErr})`);
 }
 
-function writeGeneratedDex(config) {
-  mkdirSync(workDir, { recursive: true });
-  const template = readFileSync(dexTemplateFile, 'utf8');
-  writeFileSync(dexGeneratedFile, renderDexConfig(template, config), 'utf8');
-}
-
 async function dumpLogs(config) {
   try {
     await run(
@@ -137,7 +114,6 @@ export async function up(options = {}) {
   const config = resolveStackConfig(env);
   const runDocker = options.runDocker ?? run;
   try {
-    writeGeneratedDex(config);
     if (!options.skipFixtures) {
       const fixtures = await import(pathToFileURL(join(scriptsDir, 'prepare-fixtures.mjs')).href);
       await fixtures.prepareAll();

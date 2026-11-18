@@ -4,7 +4,7 @@
 #   make down         Stop; keep volumes
 #   make down WIPE=1  Stop; delete Compose volumes
 #   make down-wipe    Same as WIPE=1
-#   make db-clear          Empty Arango collections; restart API
+#   make db-clear          Delete the SQLite catalog; restart API
 #   make install-requirements  Host Node, Go, and corepack pnpm
 #   make e2e-docker        Plan the one-stack e2e suite
 #   make e2e-docker FORCE=1
@@ -12,7 +12,7 @@
 #   make e2e-last-runs     Fail unless the suite last-run passed
 #
 # WIPE does not delete bind-mounted ./data/photos (or ./data/cache).
-# db-clear does not delete volumes or bind mounts.
+# db-clear deletes only the catalog file, never photos or thumbs.
 
 COMPOSE ?= docker compose
 PWSH ?= powershell
@@ -47,9 +47,9 @@ help:
 	$(info make down            Stop containers; keep volumes)
 	$(info make down WIPE=1     Stop, wipe Compose volumes)
 	$(info make down-wipe       Alias for make down WIPE=1)
-	$(info make db-clear        Empty Arango collections; restart the API)
+	$(info make db-clear        Delete the SQLite catalog; restart the API)
 	$(info make build           turbo run build (host Node/Go/pnpm required))
-	$(info make install-requirements  Host Node 20, Go 1.23, corepack pnpm)
+	$(info make install-requirements  Host Node 22, Go 1.26, corepack pnpm)
 	$(info make e2e             Playwright BDD against the isolated memries-e2e stack)
 	$(info make e2e-down        Stop the isolated e2e stack; keep volumes)
 	$(info make e2e-docker      Plan the one-stack e2e suite)
@@ -75,8 +75,9 @@ down-wipe:
 
 db-clear:
 	$(REQUIRE_ENV)
-	$(SCRIPT_RUN) ./apps/scripts/clear-arango.$(SCRIPT_EXT)
-	$(COMPOSE) restart backend
+	$(COMPOSE) stop backend
+	$(SCRIPT_RUN) ./apps/scripts/db-clear/db-clear.$(SCRIPT_EXT)
+	$(COMPOSE) start backend
 
 install-requirements:
 	$(SCRIPT_RUN) ./apps/scripts/install-requirements/install-requirements.$(SCRIPT_EXT)

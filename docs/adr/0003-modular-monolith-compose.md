@@ -75,6 +75,27 @@ Architecture detection from project files (Compose, Dockerfiles, `go.mod`, `pack
 
 **Overall:** Adequate for **stack and process shape**. Do not cite it for Photo identity, capture time, or thumb density.
 
+## Amendment (ADR 0014, ADR 0015, ADR 0016)
+
+The process shape in this ADR still holds — a modular monolith, two binaries on
+one Go module, Caddy at the edge, hexagonal only at storage. Three of its
+specifics do not, and the text above is kept as the record of what was decided
+at the time rather than rewritten:
+
+- **ArangoDB is gone.** The catalog is relational over `database/sql`, SQLite by
+  default and PostgreSQL optional ([0014](0014-pluggable-sql-store.md)).
+- **Dex and OIDC are gone**, and with them the whole "deliberate cycle break"
+  above: there is no issuer to agree on, no discovery at boot, no
+  `extra_hosts: localhost:host-gateway`, and no `depends_on` from the API to an
+  identity provider. Sign-in is a local password at `POST /auth/login`, Caddy
+  splits `/api` and `/auth`, and a 401 renders a form in the SPA instead of
+  redirecting to `/oauth/login` ([0016](0016-local-password-auth.md)).
+- **Thumbnailing has two backends**, selected by build tag
+  ([0015](0015-build-tagged-thumbnail-backend.md)).
+
+The Compose stack is now three services — backend, frontend, Caddy — with no
+database container and no identity provider.
+
 ## Notable quotes
 
 > “Memries is a modular monolith split into two runtimes that share a Go module.” ([Project_Architecture_Blueprint.md](../Project_Architecture_Blueprint.md) §1)
@@ -85,5 +106,5 @@ Architecture detection from project files (Compose, Dockerfiles, `go.mod`, `pack
 
 - Source: [docs/Project_Architecture_Blueprint.md](../Project_Architecture_Blueprint.md)
 - Seams: [backend/cmd/server/main.go](../../backend/cmd/server/main.go), [backend/internal/storage/storage.go](../../backend/internal/storage/storage.go), [frontend/src/lib/api.ts](../../frontend/src/lib/api.ts)
-- Ops: [docker-compose.yml](../../docker-compose.yml), [deploy/caddy/Caddyfile](../../deploy/caddy/Caddyfile), [deploy/dex/config.yaml](../../deploy/dex/config.yaml)
+- Ops: [docker-compose.yml](../../docker-compose.yml), [deploy/caddy/Caddyfile](../../deploy/caddy/Caddyfile) (`deploy/dex/config.yaml` was deleted by [0016](0016-local-password-auth.md))
 - Capture / identity / Albums: [0005-capture-time-stable-identity.md](0005-capture-time-stable-identity.md)

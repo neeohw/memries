@@ -38,7 +38,9 @@ func (l Library) RecentOriginalsMissing(ctx context.Context, ownerID string) (bo
 		if p.Storage.Path == "" {
 			continue
 		}
-		if _, err := l.Store.Stat(ctx, p.Storage.Path); err == nil {
+		// Only a definite "not found" counts: an unreachable network Source
+		// must not trigger a rescan on every page load.
+		if _, err := l.Store.Stat(ctx, p.Storage.Path); err == nil || !storage.IsNotFound(err) {
 			return false, nil
 		}
 	}

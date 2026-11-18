@@ -112,9 +112,31 @@ func (l *Local) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-func (l *Local) Walk(ctx context.Context, prefix string, fn func(ObjectInfo) error) error {
-	base, err := l.resolve(prefix)
+// OpenLocal opens an existing directory without creating it. A missing root is
+// an error so an unmounted share never looks like an empty library.
+func OpenLocal(root string) (*Local, error) {
+	abs, err := filepath.Abs(root)
 	if err != nil {
+		return nil, err
+	}
+	st, err := os.Stat(abs)
+	if err != nil {
+		return nil, err
+	}
+	if !st.IsDir() {
+		return nil, fmt.Errorf("not a directory: %s", abs)
+	}
+	return &Local{root: abs}, nil
+}
+
+func (l *Local) Walk(ctx context.Context, prefix string, fn func(ObjectInfo) error) error {
+	base := l.root
+	if strings.Trim(prefix, "/") != "" {
+		var err error
+		if base, err = l.resolve(prefix); err != nil {
+			return err
+		}
+	} else if _, err := os.Stat(base); err != nil {
 		return err
 	}
 	return filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {

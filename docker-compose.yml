@@ -1,57 +1,34 @@
 services:
-  arangodb:
-    image: arangodb:3.12
-    environment:
-      ARANGO_ROOT_PASSWORD: ${ARANGO_PASSWORD}
-    volumes:
-      - arango_data:/var/lib/arangodb3
-      - arango_apps:/var/lib/arangodb3-apps
-    ports:
-      - "127.0.0.1:8529:8529"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8529/_admin/server/availability >/dev/null || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 20s
-
-  dex:
-    image: ghcr.io/dexidp/dex:v2.41.1
-    command: ["dex", "serve", "/etc/dex/config.yaml"]
-    volumes:
-      - ./deploy/dex/config.yaml:/etc/dex/config.yaml:ro
-    ports:
-      - "127.0.0.1:5556:5556"
-
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     environment:
       MEMRIES_ADDR: ":8080"
-      MEMRIES_ARANGO_URL: http://arangodb:8529
-      MEMRIES_ARANGO_DB: memries
-      MEMRIES_ARANGO_USER: root
-      MEMRIES_ARANGO_PASSWORD: ${ARANGO_PASSWORD}
+      # sqlite (default) or postgres (ADR 0014).
+      MEMRIES_DB_DRIVER: ${DB_DRIVER:-sqlite}
+      MEMRIES_DB_DSN: ${DB_DSN:-/data/db/memries.db}
       MEMRIES_STORAGE_BACKEND: local
       MEMRIES_LOCAL_ROOT: /data/photos
       MEMRIES_CACHE_ROOT: /data/cache
-      MEMRIES_OIDC_ISSUER: http://localhost:5556
-      MEMRIES_OIDC_CLIENT_ID: memries
-      MEMRIES_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
-      MEMRIES_OIDC_REDIRECT_URL: http://localhost/oauth/callback
+      # Soft heap ceiling for the Go runtime (ADR 0015). Peak RSS measured at
+      # 230MiB with 4 index workers on 12MP frames, so this caps runaway GC
+      # growth with room to spare instead of letting the heap double freely.
+      GOMEMLIMIT: ${GOMEMLIMIT:-512MiB}
+      # Who may add/remove indexed folders (comma-separated emails).
+      MEMRIES_ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@example.com}
+      # Extra server directories local folders may live under (MEMRIES_LOCAL_ROOT is always allowed).
+      MEMRIES_SOURCE_ROOTS: ${SOURCE_ROOTS:-}
       MEMRIES_SESSION_KEY: ${SESSION_KEY}
+      # Gives the MEMRIES_ADMIN_EMAILS accounts a password on a fresh install
+      # (ADR 0016). It only ever fills an empty password, so leaving it set
+      # here does not undo a later change.
+      MEMRIES_BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD}
       MEMRIES_PUBLIC_URL: http://localhost
     volumes:
       - ./data/photos:/data/photos
       - ./data/cache:/data/cache
-    extra_hosts:
-      - "localhost:host-gateway"
-    depends_on:
-      arangodb:
-        condition: service_healthy
-      dex:
-        condition: service_started
+      - ./data/db:/data/db
     ports:
       - "127.0.0.1:8080:8080"
 
@@ -77,7 +54,5 @@ services:
       - frontend
 
 volumes:
-  arango_data:
-  arango_apps:
   caddy_data:
   caddy_config:

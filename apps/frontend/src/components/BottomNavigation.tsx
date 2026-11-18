@@ -1,6 +1,6 @@
 import { useSlidingHighlight } from '../hooks/useSlidingHighlight';
 import type { NavTab } from '../models/photo';
-import { AlbumIcon, FoldersIcon, HeartIcon, SearchIcon } from './icons';
+import { AlbumIcon, DriveIcon, FoldersIcon, HeartIcon, SearchIcon } from './icons';
 
 type NavItem = { id: NavTab; label: string; icon: typeof AlbumIcon };
 
@@ -10,6 +10,12 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'albums', label: 'Albums', icon: FoldersIcon },
   { id: 'search', label: 'Search', icon: SearchIcon },
 ];
+
+const ADMIN_ITEMS: NavItem[] = [{ id: 'folders', label: 'Folders', icon: DriveIcon }];
+
+function navItems(admin: boolean): NavItem[] {
+  return admin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
+}
 
 function NavButton({
   item,
@@ -76,19 +82,22 @@ export function NavButtons({
   tab,
   onChange,
   orientation,
+  admin = false,
 }: {
   tab: NavTab;
   onChange: (tab: NavTab) => void;
   orientation: 'horizontal' | 'vertical';
+  admin?: boolean;
 }) {
-  const selected = NAV_ITEMS.some((item) => item.id === tab) ? tab : NAV_ITEMS[0].id;
+  const items = navItems(admin);
+  const selected = items.some((item) => item.id === tab) ? tab : items[0].id;
   const { groupRef, setItemRef, box } = useSlidingHighlight(selected);
 
   if (orientation === 'vertical') {
     return (
       <div ref={groupRef} className="relative flex flex-col items-center gap-1">
         <SlidingIndicator box={box} />
-        {NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <NavButton
             key={item.id}
             item={item}
@@ -106,7 +115,7 @@ export function NavButtons({
     <div ref={groupRef} className="relative">
       <SlidingIndicator box={box} />
       <div className="nav-bar-mobile">
-        {NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <NavButton
             key={item.id}
             item={item}
@@ -124,9 +133,11 @@ export function NavButtons({
 export function BottomNavigation({
   tab,
   onChange,
+  admin = false,
 }: {
   tab: NavTab;
   onChange: (tab: NavTab) => void;
+  admin?: boolean;
 }) {
   return (
     <nav
@@ -134,7 +145,7 @@ export function BottomNavigation({
       aria-label="Main"
       className="border-t border-plum/10 bg-cream/80 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-xl min-[800px]:hidden"
     >
-      <NavButtons tab={tab} onChange={onChange} orientation="horizontal" />
+      <NavButtons tab={tab} onChange={onChange} orientation="horizontal" admin={admin} />
     </nav>
   );
 }

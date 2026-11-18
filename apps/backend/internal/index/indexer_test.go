@@ -3,11 +3,13 @@ package index
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/jpeg"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -37,11 +39,11 @@ func (m *memPhotos) GetPhoto(_ context.Context, key string) (*db.Photo, error) {
 	return m.clone(p), nil
 }
 
-func (m *memPhotos) GetPhotoByHash(_ context.Context, hash string) (*db.Photo, error) {
+func (m *memPhotos) GetPhotoByHash(_ context.Context, ownerID, hash string) (*db.Photo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, p := range m.byKey {
-		if p.Hash == hash {
+		if p.OwnerID == ownerID && p.Hash == hash {
 			return m.clone(p), nil
 		}
 	}
@@ -64,6 +66,9 @@ func (m *memPhotos) UpsertPhoto(_ context.Context, p *db.Photo) error {
 	defer m.mu.Unlock()
 	if m.byKey == nil {
 		m.byKey = map[string]*db.Photo{}
+	}
+	if existing, ok := m.byKey[p.Key]; ok && existing.OwnerID != p.OwnerID {
+		return db.ErrKeyOwnedByAnother
 	}
 	m.byKey[p.Key] = m.clone(p)
 	return nil
@@ -157,7 +162,7 @@ func TestIndexUsesFileTimeWhenExifMissing(t *testing.T) {
 	}
 	repo := &memPhotos{}
 	idx := newTestIndexer(t, root, repo)
-	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefixes: []string{"admin@example.com"}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(repo.byKey) != 1 {
@@ -180,7 +185,7 @@ func TestResyncKeepsIdentityAndFavoriteWhenContentChanges(t *testing.T) {
 	writeJPEG(t, full, 10, 200, 10)
 	repo := &memPhotos{}
 	idx := newTestIndexer(t, root, repo)
-	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefixes: []string{"admin@example.com"}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(repo.byKey) != 1 {
@@ -193,7 +198,7 @@ func TestResyncKeepsIdentityAndFavoriteWhenContentChanges(t *testing.T) {
 		p.Favorite = true
 	}
 	writeJPEG(t, full, 10, 10, 200)
-	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefixes: []string{"admin@example.com"}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(repo.byKey) != 1 {
@@ -218,7 +223,7 @@ func TestRestoredOriginalClearsSoftDelete(t *testing.T) {
 	writeJPEG(t, full, 10, 200, 10)
 	repo := &memPhotos{}
 	idx := newTestIndexer(t, root, repo)
-	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefixes: []string{"admin@example.com"}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(repo.byKey) != 1 {
@@ -232,12 +237,12 @@ func TestRestoredOriginalClearsSoftDelete(t *testing.T) {
 	if err := os.Remove(full); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefixes: []string{"admin@example.com"}}); err != nil {
 		t.Fatal(err)
 	}
 
 	writeJPEG(t, full, 10, 200, 10)
-	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefix: "admin@example.com"}); err != nil {
+	if _, err := idx.Run(context.Background(), Options{OwnerID: "owner", Prefixes: []string{"admin@example.com"}}); err != nil {
 		t.Fatal(err)
 	}
 	got := repo.byKey[id]
@@ -247,4 +252,140 @@ func TestRestoredOriginalClearsSoftDelete(t *testing.T) {
 	if got.DeletedAt != nil {
 		t.Fatal("expected DeletedAt cleared after same-path restore")
 	}
+}
+
+// failingPrefix walks like its inner store except for one prefix, which is
+// unreachable (e.g. a sleeping NAS).
+type failingPrefix struct {
+	storage.Storage
+	down string
+}
+
+func (f failingPrefix) Walk(ctx context.Context, prefix string, fn func(storage.ObjectInfo) error) error {
+	if prefix == f.down {
+		return errors.New("dial tcp: connection refused")
+	}
+	return f.Storage.Walk(ctx, prefix, fn)
+}
+
+func (f failingPrefix) Stat(ctx context.Context, key string) (storage.ObjectInfo, error) {
+	if strings.HasPrefix(key, f.down+"/") {
+		return storage.ObjectInfo{}, errors.New("dial tcp: connection refused")
+	}
+	return f.Storage.Stat(ctx, key)
+}
+
+func TestUnreachablePrefixFailsSoftAndKeepsItsPhotos(t *testing.T) {
+	root := t.TempDir()
+	writeJPEG(t, filepath.Join(root, "nas", "a.jpg"), 10, 200, 10)
+	writeJPEG(t, filepath.Join(root, "disk", "b.jpg"), 200, 10, 10)
+	repo := &memPhotos{}
+	idx := newTestIndexer(t, root, repo)
+	opts := Options{OwnerID: "owner", Prefixes: []string{"nas", "disk"}}
+	if _, err := idx.Run(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.byKey) != 2 {
+		t.Fatalf("photos %d", len(repo.byKey))
+	}
+
+	idx.Store = failingPrefix{Storage: idx.Store, down: "nas"}
+	res, err := idx.Run(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("one reachable source should not fail the run: %v", err)
+	}
+	if res.Failed != 1 || res.Discovered != 1 {
+		t.Fatalf("result = %+v", res)
+	}
+	for _, p := range repo.byKey {
+		if p.DeletedAt != nil {
+			t.Fatalf("pruned %s while its source was unreachable", p.Storage.Path)
+		}
+	}
+}
+
+// Identical bytes in two libraries must stay two Photos, and indexing the
+// second must not touch the first (docs/todos/p1-owner-scoped-dedup.md).
+func TestIndexerCreatesPhotoWhenAnotherOwnerAlreadyHasHash(t *testing.T) {
+	root := t.TempDir()
+	repo := &memPhotos{byKey: map[string]*db.Photo{}}
+	idx := newTestIndexer(t, root, repo)
+	ctx := context.Background()
+
+	writeJPEG(t, filepath.Join(root, "a@example.com", "shot.jpg"), 10, 20, 30)
+	if _, err := idx.Run(ctx, Options{
+		OwnerID: "owner-a", Prefixes: []string{"a@example.com"},
+	}); err != nil {
+		t.Fatalf("index owner A: %v", err)
+	}
+
+	before := snapshotPhotos(repo)
+	if len(before) != 1 {
+		t.Fatalf("owner A produced %d photos, want 1", len(before))
+	}
+	a := before[0]
+
+	// The same pixels, in the other Owner's folder.
+	writeJPEG(t, filepath.Join(root, "b@example.com", "shot.jpg"), 10, 20, 30)
+	if _, err := idx.Run(ctx, Options{
+		OwnerID: "owner-b", Prefixes: []string{"b@example.com"},
+	}); err != nil {
+		t.Fatalf("index owner B: %v", err)
+	}
+
+	after := snapshotPhotos(repo)
+	if len(after) != 2 {
+		t.Fatalf("got %d photos, want 2 (one per Owner)", len(after))
+	}
+
+	var kept, created *db.Photo
+	for _, p := range after {
+		if p.Key == a.Key {
+			kept = p
+		} else {
+			created = p
+		}
+	}
+	if kept == nil {
+		t.Fatal("owner A's photo key disappeared")
+	}
+	if created == nil {
+		t.Fatal("owner B got no photo of its own")
+	}
+
+	// Owner A is untouched.
+	if kept.OwnerID != "owner-a" {
+		t.Errorf("owner A row now owned by %q", kept.OwnerID)
+	}
+	if kept.Storage.Path != a.Storage.Path {
+		t.Errorf("owner A path moved to %q, want %q", kept.Storage.Path, a.Storage.Path)
+	}
+	if kept.Hash != a.Hash {
+		t.Errorf("owner A hash changed to %q", kept.Hash)
+	}
+
+	// Owner B has its own row, same content, different key.
+	if created.OwnerID != "owner-b" {
+		t.Errorf("new row owned by %q, want owner-b", created.OwnerID)
+	}
+	if created.Hash != a.Hash {
+		t.Errorf("new row hash = %q, want the shared content hash %q", created.Hash, a.Hash)
+	}
+	if created.Key == a.Key {
+		t.Error("both Owners share one photo key")
+	}
+	if created.Storage.Path != "b@example.com/shot.jpg" {
+		t.Errorf("new row path = %q", created.Storage.Path)
+	}
+}
+
+func snapshotPhotos(repo *memPhotos) []*db.Photo {
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	out := make([]*db.Photo, 0, len(repo.byKey))
+	for _, p := range repo.byKey {
+		cp := *p
+		out = append(out, &cp)
+	}
+	return out
 }

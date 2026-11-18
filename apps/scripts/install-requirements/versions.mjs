@@ -1,6 +1,6 @@
 export const NODE_MAJOR = 22;
 export const NODE_VERSION = '22.23.2';
-export const GO_VERSION = '1.23.6';
+export const GO_VERSION = '1.26.11';
 export const PNPM_VERSION = '9.15.9';
 
 export function parseNodeMajor(versionText) {
@@ -24,7 +24,7 @@ export function goSatisfies(versionText) {
   if (!v) return false;
   if (v.major > 1) return true;
   if (v.major < 1) return false;
-  return v.minor >= 23;
+  return v.minor >= 26;
 }
 
 export function linuxArch(arch) {

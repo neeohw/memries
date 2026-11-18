@@ -8,25 +8,29 @@ Stay in this repository. Do not read or edit parent directories.
 |-----|----------|
 | [0001](docs/adr/0001-agent-guidance-and-context-map.md) | AGENTS.md is the operating contract; CONTEXT-MAP.md is the persistent map; stay in this repo |
 | [0002](docs/adr/0002-spa-owned-timeline-groups.md) | Memories buckets Photos in the SPA; ignore `/api/timeline` |
-| [0003](docs/adr/0003-modular-monolith-compose.md) | Compose modular monolith (Go API, Arango, Dex, Caddy, React); not platform CDK |
+| [0003](docs/adr/0003-modular-monolith-compose.md) | Compose modular monolith (Go API, catalog, Caddy, React); not platform CDK. Its Arango and Dex parts are superseded by [0014](docs/adr/0014-pluggable-sql-store.md) / [0016](docs/adr/0016-local-password-auth.md) |
 | [0004](docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md) | Browser-started owner-scoped Index run; composite-cursor `/api/photos` |
 | [0005](docs/adr/0005-capture-time-stable-identity.md) | Capture clock, stable Photo `_key`, persisted owner library |
-| [0006](docs/adr/0006-truncate-arango-for-resync.md) | Truncate Arango for resync; keep photo volumes |
+| [0006](docs/adr/0006-truncate-arango-for-resync.md) | Superseded by [0014](docs/adr/0014-pluggable-sql-store.md) |
 | [0007](docs/adr/0007-viewport-forced-compact-thumbs.md) | Compact grids: 256 at viewport ≥1280px, else 512; no `srcset` |
 | [0008](docs/adr/0008-smart-date-search.md) | Search smart dates are SPA-parsed; `/api/photos` gets `month` / `local_from` / `local_to`; Filter opens Search |
 | [0009](docs/adr/0009-e2e-docker-skill-owns-isolated-stacks.md) | Superseded by [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) |
 | [0010](docs/adr/0010-memries-platform-quality-shelf.md) | Local `/platform-quality`: a11y → e2e suite → lint → format; e2e slices superseded by [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) |
 | [0011](docs/adr/0011-turborepo-pnpm-workspace.md) | pnpm + Turbo workspace under `apps/`; prune + fill-extras in Docker; quality shelf paths retargeted |
 | [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) | One `memries-e2e` stack; `/e2e-docker` plans and records id `memries`; local headed + 4 workers, CI one-by-one |
+| [0013](docs/adr/0013-admin-managed-sources.md) | Admin-managed Sources (local / SMB / WebDAV) replace the email folder; keys `<source id>/<path>`; thumbs stay on local disk |
+| [0014](docs/adr/0014-pluggable-sql-store.md) | Relational catalog over `database/sql`: SQLite default, PostgreSQL optional; ArangoDB dropped |
+| [0015](docs/adr/0015-build-tagged-thumbnail-backend.md) | Thumbnail backend chosen by build tag: pure Go default, `-tags vips` (3.3x) for the device; chained ladder; atomic writes |
+| [0016](docs/adr/0016-local-password-auth.md) | Local password sign-in (argon2id, `POST /auth/login`), rate limited by address and by account; Dex and OIDC dropped |
 
 ## Contexts
 
 | Context | Path | Start here |
 |---------|------|------------|
-| Photo library / API | [apps/backend/](apps/backend/), [CONTEXT.md](CONTEXT.md) | [cmd/server/main.go](apps/backend/cmd/server/main.go), [internal/api/api.go](apps/backend/internal/api/api.go), [internal/db/models.go](apps/backend/internal/db/models.go) |
-| Indexer | [apps/backend/cmd/indexer](apps/backend/cmd/indexer/main.go), [internal/index](apps/backend/internal/index/indexer.go) | HTTP job or CLI walks prefix → identity → EXIF → thumbs → upsert ([0004](docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md)) |
+| Photo library / API | [apps/backend/](apps/backend/), [CONTEXT.md](CONTEXT.md) | [cmd/server/main.go](apps/backend/cmd/server/main.go), [internal/api/api.go](apps/backend/internal/api/api.go), [internal/db/store.go](apps/backend/internal/db/store.go), [internal/db/models.go](apps/backend/internal/db/models.go) |
+| Indexer | [apps/backend/cmd/indexer](apps/backend/cmd/indexer/main.go), [internal/index](apps/backend/internal/index/indexer.go) | HTTP job or CLI walks each of the Owner's Sources → identity → EXIF → thumbs → upsert ([0013](docs/adr/0013-admin-managed-sources.md)) ([0004](docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md)) |
 | Timeline UI | [apps/frontend/src](apps/frontend/src) | [App.tsx](apps/frontend/src/App.tsx) → [Timeline.tsx](apps/frontend/src/components/Timeline.tsx) → [groupPhotos.ts](apps/frontend/src/lib/groupPhotos.ts); catalog in [lib/api.ts](apps/frontend/src/lib/api.ts) |
-| Local ops | [docker-compose.yml](docker-compose.yml), [deploy/](deploy/), [Makefile](Makefile) | Caddy routes; Dex issuer `http://localhost:5556`; catalog reset [docs/adr/0006-truncate-arango-for-resync.md](docs/adr/0006-truncate-arango-for-resync.md); images [Dockerfile.frontend](Dockerfile.frontend) / [Dockerfile.backend](Dockerfile.backend) |
+| Local ops | [docker-compose.yml](docker-compose.yml), [deploy/](deploy/), [Makefile](Makefile) | Caddy routes `/api` and `/auth`; catalog reset `make db-clear` ([0014](docs/adr/0014-pluggable-sql-store.md)); images [Dockerfile.frontend](Dockerfile.frontend) / [Dockerfile.backend](Dockerfile.backend) |
 | Isolated Playwright BDD | [apps/e2e/](apps/e2e/) | One suite on `memries-e2e` / 18080 ([0012](docs/adr/0012-e2e-one-suite-two-profiles.md)); skill [`.cursor/skills/e2e-docker/`](.cursor/skills/e2e-docker/) |
 | Quality shelf | [`.cursor/skills/`](.cursor/skills/) | `/platform-quality` waves and last-runs ([0010](docs/adr/0010-memries-platform-quality-shelf.md), [0012](docs/adr/0012-e2e-one-suite-two-profiles.md)); planner [`apps/scripts/app-fanout/app-fanout.mjs`](apps/scripts/app-fanout/app-fanout.mjs) |
 | Build graph | [package.json](package.json), [turbo.json](turbo.json) | pnpm workspace + Turbo ([0011](docs/adr/0011-turborepo-pnpm-workspace.md)); host install [apps/scripts/install-requirements/](apps/scripts/install-requirements/) |
@@ -37,83 +41,93 @@ flowchart LR
   caddy[Caddy_80]
   frontend[Frontend_nginx]
   backend[Go_server]
-  dex[Dex_5556]
-  arango[ArangoDB]
+  catalog[SQLite_catalog]
   photos[data_photos]
   cache[data_cache]
   indexer[Indexer_CLI]
 
   browser --> caddy
-  caddy -->|"/api /oauth"| backend
+  caddy -->|"/api /auth"| backend
   caddy -->|"/"| frontend
-  browser --> dex
-  backend --> dex
-  backend --> arango
+  backend --> catalog
   backend --> cache
   backend --> photos
   indexer --> photos
-  indexer --> arango
+  indexer --> catalog
   indexer --> cache
 ```
 
 ## Glossary
 
-- **Photo** — Arango `photos` doc; `_key` is stable identity (path-first on Sync); `hash` is sha256 of current bytes; `kind` is `photo` today (video reserved). See [docs/adr/0005-capture-time-stable-identity.md](docs/adr/0005-capture-time-stable-identity.md).
-- **Owner** — `users` doc keyed by sha1(lowercase email); photos filter `owner_id`.
+- **Photo** — a `photos` row; `key` is stable identity (path-first on Sync); `hash` is sha256 of current bytes; `kind` is `photo` today (video reserved). See [docs/adr/0005-capture-time-stable-identity.md](docs/adr/0005-capture-time-stable-identity.md).
+- **Owner** — `users` row keyed by sha1(lowercase email); photos filter `owner_id`.
 - **TakenAt** — EXIF `DateTimeOriginal` (then digitized / `DateTime`), else filesystem birth, else mtime; UI buckets on `taken_at_local` ([0005](docs/adr/0005-capture-time-stable-identity.md)).
-- **Granularity** — `year` / `month` / `week` / `day`; week is ISO year-week in AQL. Memories buckets in the SPA, not `/api/timeline` ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md)).
-- **Storage** — interface; `local` implemented; `s3` factory returns “phase 3”.
-- **Thumb** — JPEG cache under `MEMRIES_CACHE_ROOT`, paths `ab/<hash>/256.jpg` etc. Compact grids use 256 when the viewport is ≥1280px, else 512 ([docs/adr/0007-viewport-forced-compact-thumbs.md](docs/adr/0007-viewport-forced-compact-thumbs.md)).
-- **Album** — named owner-scoped set of Photos (`albums` + `in_album`). Domain language: [CONTEXT.md](CONTEXT.md).
-- **Index run** — persisted owner-scoped job; HTTP always scans `data/photos/<email>` ([docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md](docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md)).
+- **Granularity** — `year` / `month` / `week` / `day`; buckets come from `taken_at_local`, week as ISO year-week ([0014](docs/adr/0014-pluggable-sql-store.md)). Memories buckets in the SPA, not `/api/timeline` ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md)).
+- **Storage** — interface; `local`, read-only `smb` and `webdav` implemented; `sources.Registry` routes `<source id>/<path>` keys to them; `s3` factory returns “phase 3”.
+- **Source** — admin-managed folder (`sources` table) feeding one Owner's library; password sealed with a key derived from `MEMRIES_SESSION_KEY` ([0013](docs/adr/0013-admin-managed-sources.md)).
+- **Thumb** — JPEG cache under `MEMRIES_CACHE_ROOT`, paths `<key[:2]>/<key>/{s,m,l}.jpg` for 256 / 512 / 1024. Compact grids use 256 when the viewport is ≥1280px, else 512 ([docs/adr/0007-viewport-forced-compact-thumbs.md](docs/adr/0007-viewport-forced-compact-thumbs.md)).
+- **Album** — named owner-scoped set of Photos (`albums` + `album_photos`). Domain language: [CONTEXT.md](CONTEXT.md).
+- **Index run** — persisted owner-scoped job; walks every Source of the Owner (a legacy `data/photos/<email>` folder becomes a Source on first run) ([docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md](docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md)).
 - **Session** — cookie `memries`, 30 days, HttpOnly, Lax.
 
-Owner ACL today: session user key vs `photo.owner_id` / `album.owner_id`. Share edges (`owns`, `shared_with`, `album_shared`) are schema only.
+Owner ACL today: session user key vs `photo.owner_id` / `album.owner_id`. Sharing has no tables yet; [0014](docs/adr/0014-pluggable-sql-store.md) dropped the schema-only share edges until there is a query for them.
 
 ## HTTP (Caddy `:80`)
 
 - `/` → frontend
-- `/oauth/login`, `/oauth/callback`, `/oauth/logout` → backend (unauthenticated handlers)
-- `/api/*` → backend + auth middleware: `GET /me`, `/timeline`, `/photos` (`year`, `month`, `local_from`, `local_to`, `favorite`, `q`), `/photos/{id}`, `/photos/{id}/favorite`, `/albums`, `/albums/{id}`, `/albums/{id}/photos`, `/thumb/{id}`, `/original/{id}`, `/index`, `/index/status`
+- `POST /auth/login`, `POST /auth/logout` → backend. Outside `/api` on purpose: the session middleware guards `/api`, and you cannot present a session to get one ([0016](docs/adr/0016-local-password-auth.md))
+- `/api/*` → backend + auth middleware: `GET /me`, `/timeline`, `/photos` (`year`, `month`, `local_from`, `local_to`, `favorite`, `q`), `/photos/{id}`, `/photos/{id}/favorite`, `/albums`, `/albums/{id}`, `/albums/{id}/photos`, `/thumb/{id}`, `/original/{id}`, `/index`, `/index/status`; admin only (`MEMRIES_ADMIN_EMAILS`): `/admin/sources` (GET, POST), `/admin/sources/{id}` (PUT, DELETE), `/admin/sources/{id}/scan`
 - `/healthz` on the backend only (not via Caddy today)
 
 ## Module map (`apps/backend/internal/`)
 
 - `config` — `MEMRIES_*` env
-- `auth` — Dex OIDC + cookie + `/api/me`
+- `auth` — password sign-in (argon2id), cookie session, login rate limiting, `/api/me`
 - `db` — connect, schema, users, photos/timeline AQL
-- `storage` — `Storage` + `local.go`
-- `exif` / `thumb` / `index` — indexer pipeline
+- `storage` — `Storage` + `local.go`, `smb.go`, `webdav.go`
+- `sources` — Source catalog, validation, sealed passwords, composite read-only Storage, legacy folder migration
+- `exif` / `thumb` / `index` — indexer pipeline. `thumb`'s renderer is build-tagged ([0015](docs/adr/0015-build-tagged-thumbnail-backend.md)); only `cmd/indexer` ever needs the cgo build
 - `api` — JSON + byte streaming
 
 ## Frontend
 
-- Cookie `credentials: "include"`; 401 → `/oauth/login`
+- Cookie `credentials: "include"`; a 401 throws `UnauthorizedError`, and a 401 from `/api/me` is what makes `App` render `LoginScreen`
 - Splash polls `/api/index/status` and may `POST /api/index` ([0004](docs/adr/0004-owner-scoped-index-job-and-cursor-photos.md))
 - Memories pages `/api/photos` and groups in the SPA; `/api/timeline` is unused by the UI ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md))
 - Granularity is React state (not `localStorage`); theme is the only persisted UI key
 
 ## Photo layout
 
-The HTTP **Index run** always walks the session email prefix; the CLI may pass another `-prefix`. Recommended:
-
-```
-data/photos/<owner-email>/<yyyy>/<mm>/<file>.jpg
-```
+An **Index run** walks the Owner's Sources; the client never sends a path. Photo `storage.path` is `<source id>/<path inside the Source>` (`storage.backend` = `source`). CLI: `indexer -owner <email> [-source <id>]`.
 
 Accepted media extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
 
-## Arango collections
+## Catalog tables
 
-Document: `photos`, `users`, `albums`, `index_runs`.
+`photos`, `users`, `albums`, `album_photos` (Album membership), `index_runs`, `sources`, `schema_migrations`.
 
-Edges: `in_album` (Album membership). Schema only: `owns`, `shared_with`, `album_shared`.
+Timestamps are unix microseconds in `BIGINT`; `taken_at_local` stays TEXT because the date filters substring it.
 
-Indexes: persistent `taken_at`, `(owner_id, taken_at)`, unique `hash`, unique `email`.
+Indexes: `(owner_id, taken_at DESC, key DESC)` (the cursor's index scan), unique `(owner_id, hash)` (owner-scoped dedup), `(owner_id, storage_path)`, `(owner_id, taken_at_local)`, unique `email`.
+
+Migrations are embedded `.sql` under [internal/db/migrations](apps/backend/internal/db/migrations/), applied in order and tracked in `schema_migrations`.
 
 ## Known constraints (do not “fix” unless asked)
 
-- Dex listens on host `:5556` (not behind Caddy) so the backend can discover OIDC at boot; backend uses `extra_hosts: localhost:host-gateway`.
-- Arango root password is set on first init only. Empty the catalog with `make db-clear` ([docs/adr/0006-truncate-arango-for-resync.md](docs/adr/0006-truncate-arango-for-resync.md)); wipe volumes only when the password itself is wrong.
-- Dev login in [deploy/dex/config.yaml](deploy/dex/config.yaml): `admin@example.com` / `password`.
-- Share edges (`owns`, `shared_with`, `album_shared`) exist in schema only.
+- The SQLite catalog is one file (`MEMRIES_DB_DSN`, bind-mounted at `/data/db`). `make db-clear` deletes it and its `-wal` / `-shm` siblings; photos and thumbs are untouched.
+- SQLite runs with `MaxOpenConns(1)` on purpose: catalog work is microseconds next to JPEG decoding, so serializing it removes every `SQLITE_BUSY` race. Index runs must keep write batches bounded.
+- A Photo key is normally the content hash (ADR 0005). When another Owner already holds that key, the indexer derives a distinct one, so identical bytes in two libraries stay two Photos.
+- Dev login: `admin@example.com` with `BOOTSTRAP_PASSWORD` from `.env`. Bootstrap only fills an *empty* password, so a changed password is not reset on restart ([0016](docs/adr/0016-local-password-auth.md)).
+- Sign-in failures are uniform on purpose: wrong password, unknown address and "no password set" all return the same 401 body and spend the same time. Do not add a reason to that response.
+- `thumb.Generate` takes the original's `[]byte`, not an `io.Reader`: the indexer already holds them for the sha256, and a reader meant holding every frame twice.
+- Thumbs after the largest are resampled from the rung above, not from the full frame. Every step is a halving, so this is a speed win, not a quality tradeoff.
+- Indexer concurrency defaults to 4 (the board has four cores): measured 3.7x throughput at ~230 MiB peak RSS. `GOMEMLIMIT=512MiB` bounds the heap instead of cutting workers — but it does not bound `-tags vips`, whose pixels live in C (libvips' own cache is disabled at init instead).
+- The thumbnailer has two backends and `internal/thumb`'s tests must pass under both. Run the suite twice; `thumb.Backend` is logged at indexer start so the live build is identifiable:
+
+  ```sh
+  go test ./internal/thumb/                      # pure Go, the default
+  go build -tags vips ./cmd/indexer              # needs libvips + pkg-config
+  ```
+
+  On Homebrew, libarchive is keg-only, so prefix either vips command with `PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig"`.
+- Sharing has no tables. Add one when a query needs it, not before.

@@ -3,7 +3,7 @@
 }
 
 :80 {
-	@api path /api/* /oauth/*
+	@api path /api/* /auth/*
 	handle @api {
 		reverse_proxy backend:8080
 	}

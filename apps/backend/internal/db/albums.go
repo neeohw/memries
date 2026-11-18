@@ -3,12 +3,11 @@ package db
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
-
-	driver "github.com/arangodb/go-driver"
 )
 
 type AlbumView struct {
@@ -31,14 +30,10 @@ func newDocumentKey() string {
 	return hex.EncodeToString(b)
 }
 
-func (c *Client) CreateAlbum(ctx context.Context, ownerID, name string) (*AlbumView, error) {
+func (s *Store) CreateAlbum(ctx context.Context, ownerID, name string) (*AlbumView, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, errors.New("album name is required")
-	}
-	col, err := c.db.Collection(ctx, ColAlbums)
-	if err != nil {
-		return nil, err
 	}
 	a := Album{
 		Key:        newDocumentKey(),
@@ -47,99 +42,124 @@ func (c *Client) CreateAlbum(ctx context.Context, ownerID, name string) (*AlbumV
 		Visibility: "private",
 		CreatedAt:  time.Now().UTC(),
 	}
-	if _, err := col.CreateDocument(ctx, a); err != nil {
+	_, err := s.exec(ctx,
+		`INSERT INTO albums (key, name, owner_id, visibility, created_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		a.Key, a.Name, a.OwnerID, a.Visibility, micros(a.CreatedAt))
+	if err != nil {
 		return nil, err
 	}
 	return &AlbumView{ID: a.Key, Name: a.Name, CreatedAt: a.CreatedAt, PhotoIDs: []string{}}, nil
 }
 
-func (c *Client) ListAlbums(ctx context.Context, ownerID string) ([]AlbumView, error) {
-	q := `
-		FOR a IN albums
-		  FILTER a.owner_id == @uid
-		  SORT a.created_at DESC
-		  LET pics = (
-		    FOR e IN in_album
-		      FILTER e._to == a._id
-		      RETURN PARSE_IDENTIFIER(e._from).key
-		  )
-		  RETURN {
-		    id: a._key,
-		    name: a.name,
-		    created_at: a.created_at,
-		    photo_count: LENGTH(pics),
-		    cover_photo_id: pics[0],
-		    photo_ids: pics
-		  }`
-	cur, err := c.db.Query(ctx, q, map[string]interface{}{"uid": ownerID})
+// ListAlbums returns the Owner's Albums, newest first, each with its ordered
+// member keys.
+//
+// Membership here is deliberately NOT filtered on deleted_at, matching the
+// Arango original: photo_count still includes soft-deleted members, while
+// GetAlbumView excludes them. See docs/todos/p2-album-deleted-counts.md.
+func (s *Store) ListAlbums(ctx context.Context, ownerID string) ([]AlbumView, error) {
+	rows, err := s.query(ctx, `
+		SELECT a.key, a.name, a.created_at, p.key
+		FROM albums a
+		LEFT JOIN album_photos ap ON ap.album_key = a.key
+		LEFT JOIN photos p ON p.key = ap.photo_key
+		WHERE a.owner_id = ?
+		ORDER BY a.created_at DESC, a.key DESC,
+		         p.taken_at DESC, p.key DESC`, ownerID)
 	if err != nil {
 		return nil, err
 	}
-	defer cur.Close()
+	defer rows.Close()
 	out := []AlbumView{}
-	for cur.HasMore() {
-		var v AlbumView
-		if _, err := cur.ReadDocument(ctx, &v); err != nil {
+	index := map[string]int{}
+	for rows.Next() {
+		var (
+			key, name string
+			createdAt int64
+			photoKey  sql.NullString
+		)
+		if err := rows.Scan(&key, &name, &createdAt, &photoKey); err != nil {
 			return nil, err
 		}
-		if v.PhotoIDs == nil {
-			v.PhotoIDs = []string{}
+		at, ok := index[key]
+		if !ok {
+			out = append(out, AlbumView{
+				ID:        key,
+				Name:      name,
+				CreatedAt: fromMicros(createdAt),
+				PhotoIDs:  []string{},
+			})
+			at = len(out) - 1
+			index[key] = at
 		}
-		out = append(out, v)
+		if photoKey.Valid {
+			out[at].PhotoIDs = append(out[at].PhotoIDs, photoKey.String)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].PhotoCount = len(out[i].PhotoIDs)
+		if len(out[i].PhotoIDs) > 0 {
+			out[i].CoverPhotoID = out[i].PhotoIDs[0]
+		}
 	}
 	return out, nil
 }
 
-func (c *Client) GetAlbum(ctx context.Context, albumID string) (*Album, error) {
-	col, err := c.db.Collection(ctx, ColAlbums)
+func (s *Store) GetAlbum(ctx context.Context, albumID string) (*Album, error) {
+	var (
+		a         Album
+		createdAt int64
+	)
+	err := s.queryRow(ctx,
+		`SELECT key, name, owner_id, visibility, created_at FROM albums WHERE key = ?`,
+		albumID).Scan(&a.Key, &a.Name, &a.OwnerID, &a.Visibility, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
-	var a Album
-	if _, err := col.ReadDocument(ctx, albumID, &a); err != nil {
-		if driver.IsNotFound(err) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
+	a.CreatedAt = fromMicros(createdAt)
 	return &a, nil
 }
 
-func (c *Client) albumPhotos(ctx context.Context, albumID string) ([]Photo, []string, error) {
-	q := `
-		FOR e IN in_album
-		  FILTER e._to == @to
-		  FOR p IN photos
-		    FILTER p._id == e._from AND p.deleted_at == null
-		    SORT p.taken_at DESC, p._key DESC
-		    RETURN p`
-	cur, err := c.db.Query(ctx, q, map[string]interface{}{"to": ColAlbums + "/" + albumID})
+func (s *Store) albumPhotos(ctx context.Context, albumID string) ([]Photo, []string, error) {
+	rows, err := s.query(ctx, `
+		SELECT `+prefixColumns(photoColumns, "p")+`
+		FROM album_photos ap
+		JOIN photos p ON p.key = ap.photo_key
+		WHERE ap.album_key = ? AND p.deleted_at IS NULL
+		ORDER BY p.taken_at DESC, p.key DESC`, albumID)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer cur.Close()
+	defer rows.Close()
 	photos := []Photo{}
 	ids := []string{}
-	for cur.HasMore() {
-		var p Photo
-		if _, err := cur.ReadDocument(ctx, &p); err != nil {
+	for rows.Next() {
+		p, err := scanPhoto(rows)
+		if err != nil {
 			return nil, nil, err
 		}
-		photos = append(photos, p)
+		photos = append(photos, *p)
 		ids = append(ids, p.Key)
 	}
-	return photos, ids, nil
+	return photos, ids, rows.Err()
 }
 
-func (c *Client) GetAlbumView(ctx context.Context, ownerID, albumID string) (*AlbumDetail, error) {
-	album, err := c.GetAlbum(ctx, albumID)
+func (s *Store) GetAlbumView(ctx context.Context, ownerID, albumID string) (*AlbumDetail, error) {
+	album, err := s.GetAlbum(ctx, albumID)
 	if err != nil {
 		return nil, err
 	}
 	if album.OwnerID != ownerID {
 		return nil, ErrForbidden
 	}
-	photos, ids, err := c.albumPhotos(ctx, albumID)
+	photos, ids, err := s.albumPhotos(ctx, albumID)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +180,8 @@ func (c *Client) GetAlbumView(ctx context.Context, ownerID, albumID string) (*Al
 	}, nil
 }
 
-func (c *Client) albumViewForOwner(ctx context.Context, ownerID, albumID string) (*AlbumView, error) {
-	views, err := c.ListAlbums(ctx, ownerID)
+func (s *Store) albumViewForOwner(ctx context.Context, ownerID, albumID string) (*AlbumView, error) {
+	views, err := s.ListAlbums(ctx, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,15 +193,15 @@ func (c *Client) albumViewForOwner(ctx context.Context, ownerID, albumID string)
 	return nil, ErrNotFound
 }
 
-func (c *Client) AddPhotoToAlbum(ctx context.Context, ownerID, albumID, photoID string) (*AlbumView, error) {
-	album, err := c.GetAlbum(ctx, albumID)
+func (s *Store) AddPhotoToAlbum(ctx context.Context, ownerID, albumID, photoID string) (*AlbumView, error) {
+	album, err := s.GetAlbum(ctx, albumID)
 	if err != nil {
 		return nil, err
 	}
 	if album.OwnerID != ownerID {
 		return nil, ErrForbidden
 	}
-	photo, err := c.GetPhoto(ctx, photoID)
+	photo, err := s.GetPhoto(ctx, photoID)
 	if err != nil {
 		return nil, err
 	}
@@ -191,89 +211,58 @@ func (c *Client) AddPhotoToAlbum(ctx context.Context, ownerID, albumID, photoID 
 	if photo.DeletedAt != nil {
 		return nil, ErrNotFound
 	}
-	from := ColPhotos + "/" + photoID
-	to := ColAlbums + "/" + albumID
-	exists, err := c.inAlbumExists(ctx, from, to)
-	if err != nil {
+	// Idempotent: the primary key already enforces one row per pair.
+	if _, err := s.exec(ctx, `
+		INSERT INTO album_photos (album_key, photo_key, added_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT (album_key, photo_key) DO NOTHING`,
+		albumID, photoID, micros(time.Now().UTC())); err != nil {
 		return nil, err
 	}
-	if !exists {
-		col, err := c.db.Collection(ctx, ColInAlbum)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := col.CreateDocument(ctx, map[string]interface{}{"_from": from, "_to": to}); err != nil {
-			return nil, err
-		}
-	}
-	return c.albumViewForOwner(ctx, ownerID, albumID)
+	return s.albumViewForOwner(ctx, ownerID, albumID)
 }
 
-func (c *Client) RemovePhotoFromAlbum(ctx context.Context, ownerID, albumID, photoID string) (*AlbumView, error) {
-	album, err := c.GetAlbum(ctx, albumID)
+func (s *Store) RemovePhotoFromAlbum(ctx context.Context, ownerID, albumID, photoID string) (*AlbumView, error) {
+	album, err := s.GetAlbum(ctx, albumID)
 	if err != nil {
 		return nil, err
 	}
 	if album.OwnerID != ownerID {
 		return nil, ErrForbidden
 	}
-	from := ColPhotos + "/" + photoID
-	to := ColAlbums + "/" + albumID
-	q := `
-		FOR e IN in_album
-		  FILTER e._from == @from AND e._to == @to
-		  REMOVE e IN in_album`
-	cur, err := c.db.Query(ctx, q, map[string]interface{}{"from": from, "to": to})
-	if err != nil {
+	if _, err := s.exec(ctx,
+		`DELETE FROM album_photos WHERE album_key = ? AND photo_key = ?`,
+		albumID, photoID); err != nil {
 		return nil, err
 	}
-	cur.Close()
-	return c.albumViewForOwner(ctx, ownerID, albumID)
+	return s.albumViewForOwner(ctx, ownerID, albumID)
 }
 
-func (c *Client) inAlbumExists(ctx context.Context, from, to string) (bool, error) {
-	q := `
-		FOR e IN in_album
-		  FILTER e._from == @from AND e._to == @to
-		  LIMIT 1
-		  RETURN 1`
-	cur, err := c.db.Query(ctx, q, map[string]interface{}{"from": from, "to": to})
-	if err != nil {
-		return false, err
-	}
-	defer cur.Close()
-	return cur.HasMore(), nil
+// ClearOwnerAlbumsAndFavorites drops the Owner's Albums and unsets every
+// favorite. One transaction, so a reset is all-or-nothing.
+func (s *Store) ClearOwnerAlbumsAndFavorites(ctx context.Context, ownerID string) error {
+	return s.tx(ctx, func(t *sql.Tx) error {
+		if _, err := t.ExecContext(ctx, s.rebind(`
+			DELETE FROM album_photos
+			WHERE album_key IN (SELECT key FROM albums WHERE owner_id = ?)`),
+			ownerID); err != nil {
+			return err
+		}
+		if _, err := t.ExecContext(ctx, s.rebind(
+			`DELETE FROM albums WHERE owner_id = ?`), ownerID); err != nil {
+			return err
+		}
+		_, err := t.ExecContext(ctx, s.rebind(
+			`UPDATE photos SET favorite = ? WHERE owner_id = ?`), false, ownerID)
+		return err
+	})
 }
 
-func (c *Client) ClearOwnerAlbumsAndFavorites(ctx context.Context, ownerID string) error {
-	q := `
-		FOR a IN albums
-		  FILTER a.owner_id == @uid
-		  FOR e IN in_album
-		    FILTER e._to == a._id
-		    REMOVE e IN in_album`
-	cur, err := c.db.Query(ctx, q, map[string]interface{}{"uid": ownerID})
-	if err != nil {
-		return err
+// prefixColumns qualifies every name in a column list with a table alias.
+func prefixColumns(cols, alias string) string {
+	parts := strings.Split(compactColumns(cols), ", ")
+	for i := range parts {
+		parts[i] = alias + "." + parts[i]
 	}
-	cur.Close()
-	q = `
-		FOR a IN albums
-		  FILTER a.owner_id == @uid
-		  REMOVE a IN albums`
-	cur, err = c.db.Query(ctx, q, map[string]interface{}{"uid": ownerID})
-	if err != nil {
-		return err
-	}
-	cur.Close()
-	q = `
-		FOR p IN photos
-		  FILTER p.owner_id == @uid
-		  UPDATE p WITH { favorite: false } IN photos`
-	cur, err = c.db.Query(ctx, q, map[string]interface{}{"uid": ownerID})
-	if err != nil {
-		return err
-	}
-	cur.Close()
-	return nil
+	return strings.Join(parts, ", ")
 }

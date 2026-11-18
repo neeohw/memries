@@ -2,45 +2,46 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
-
-	driver "github.com/arangodb/go-driver"
 )
 
 var ErrNotFound = errors.New("not found")
 var ErrForbidden = errors.New("forbidden")
 
-func (c *Client) UpsertPhoto(ctx context.Context, p *Photo) error {
-	col, err := c.db.Collection(ctx, ColPhotos)
+// ErrKeyOwnedByAnother reports that the Photo key is already held by a
+// different Owner. Photo keys are table-unique, so an upsert must never
+// quietly overwrite someone else's row (ADR 0014).
+var ErrKeyOwnedByAnother = errors.New("photo key belongs to another owner")
+
+func (s *Store) UpsertPhoto(ctx context.Context, p *Photo) error {
+	cols := compactColumns(photoColumns)
+	// The guard makes a cross-owner key collision affect zero rows instead of
+	// replacing the other Owner's Photo.
+	q := `INSERT INTO photos (` + cols + `) VALUES (` + placeholders(photoColumnCount) + `)
+		ON CONFLICT (key) DO UPDATE SET ` + excludedAssignments(cols, "key") + `
+		WHERE photos.owner_id = excluded.owner_id`
+	res, err := s.exec(ctx, q, photoValues(p)...)
 	if err != nil {
 		return err
 	}
-	_, err = col.CreateDocument(ctx, p)
-	if err == nil {
-		return nil
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrKeyOwnedByAnother
 	}
-	if driver.IsConflict(err) {
-		_, err = col.UpdateDocument(ctx, p.Key, p)
-		return err
-	}
-	return err
+	return nil
 }
 
-func (c *Client) GetPhoto(ctx context.Context, key string) (*Photo, error) {
-	col, err := c.db.Collection(ctx, ColPhotos)
-	if err != nil {
-		return nil, err
+func (s *Store) GetPhoto(ctx context.Context, key string) (*Photo, error) {
+	row := s.queryRow(ctx,
+		`SELECT `+photoColumns+` FROM photos WHERE key = ?`, key)
+	p, err := scanPhoto(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
 	}
-	var p Photo
-	if _, err := col.ReadDocument(ctx, key, &p); err != nil {
-		if driver.IsNotFound(err) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	return &p, nil
+	return p, err
 }
 
 type Bucket struct {
@@ -51,41 +52,52 @@ type Bucket struct {
 	Last         time.Time `json:"last"`
 }
 
-func (c *Client) Timeline(ctx context.Context, ownerID, granularity string, from, to time.Time) ([]Bucket, error) {
-	pattern := granularityToPattern(granularity)
+// Timeline groups the Owner's Photos into calendar buckets. Buckets come from
+// taken_at_local, not taken_at: the UI reasons in the capture clock (ADR 0005),
+// and a substring of the local text is identical in both dialects where an
+// epoch conversion would not be. Rows with no local capture clock are skipped.
+func (s *Store) Timeline(ctx context.Context, ownerID, granularity string, from, to time.Time) ([]Bucket, error) {
+	bucket := s.bucketExpr(granularity)
 	q := `
-		FOR p IN photos
-		  FILTER p.taken_at >= @from AND p.taken_at < @to
-		  FILTER p.deleted_at == null
-		  FILTER p.owner_id == @uid
-		  LET bucket = ` + bucketExpr(granularity, "p.taken_at", pattern) + `
-		  COLLECT b = bucket INTO g KEEP p
-		  SORT b DESC
-		  RETURN {
-		    bucket: b,
-		    count: LENGTH(g),
-		    cover_photo_id: g[0].p._key,
-		    first: MIN(g[*].p.taken_at),
-		    last:  MAX(g[*].p.taken_at)
-		  }`
-	cur, err := c.db.Query(ctx, q, map[string]interface{}{
-		"from": from,
-		"to":   to,
-		"uid":  ownerID,
-	})
+		WITH ranked AS (
+		  SELECT key, taken_at, ` + bucket + ` AS bucket,
+		         ROW_NUMBER() OVER (
+		           PARTITION BY ` + bucket + `
+		           ORDER BY taken_at DESC, key DESC
+		         ) AS rn
+		  FROM photos
+		  WHERE owner_id = ?
+		    AND deleted_at IS NULL
+		    AND taken_at >= ? AND taken_at < ?
+		    AND taken_at_local <> ''
+		)
+		SELECT bucket, COUNT(*) AS n,
+		       MIN(taken_at) AS first_at, MAX(taken_at) AS last_at,
+		       MIN(CASE WHEN rn = 1 THEN key END) AS cover
+		FROM ranked
+		GROUP BY bucket
+		ORDER BY bucket DESC`
+	rows, err := s.query(ctx, q, ownerID, micros(from), micros(to))
 	if err != nil {
 		return nil, err
 	}
-	defer cur.Close()
+	defer rows.Close()
 	var out []Bucket
-	for cur.HasMore() {
-		var b Bucket
-		if _, err := cur.ReadDocument(ctx, &b); err != nil {
+	for rows.Next() {
+		var (
+			b               Bucket
+			firstAt, lastAt int64
+			cover           sql.NullString
+		)
+		if err := rows.Scan(&b.Bucket, &b.Count, &firstAt, &lastAt, &cover); err != nil {
 			return nil, err
 		}
+		b.First = fromMicros(firstAt)
+		b.Last = fromMicros(lastAt)
+		b.CoverPhotoID = cover.String
 		out = append(out, b)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 type PhotoFilter struct {
@@ -97,76 +109,57 @@ type PhotoFilter struct {
 	LocalTo   string
 }
 
-func (c *Client) Photos(ctx context.Context, ownerID string, from, to time.Time, limit int, cursor string) ([]Photo, string, error) {
-	return c.PhotosFiltered(ctx, ownerID, from, to, limit, cursor, PhotoFilter{})
+func (s *Store) Photos(ctx context.Context, ownerID string, from, to time.Time, limit int, cursor string) ([]Photo, string, error) {
+	return s.PhotosFiltered(ctx, ownerID, from, to, limit, cursor, PhotoFilter{})
 }
 
-func (c *Client) PhotosFiltered(ctx context.Context, ownerID string, from, to time.Time, limit int, cursor string, filter PhotoFilter) ([]Photo, string, error) {
+func (s *Store) PhotosFiltered(ctx context.Context, ownerID string, from, to time.Time, limit int, cursor string, filter PhotoFilter) ([]Photo, string, error) {
 	limit = ClampPhotoLimit(limit)
-	bind := map[string]interface{}{
-		"from":  from,
-		"to":    to,
-		"uid":   ownerID,
-		"limit": limit + 1,
-	}
-	cursorFilter := ""
+	where := []string{"owner_id = ?", "deleted_at IS NULL", "taken_at >= ?", "taken_at < ?"}
+	args := []any{ownerID, micros(from), micros(to)}
+
+	appendPhotoFilter(filter, &where, &args)
+
 	if cursor != "" {
 		taken, key, err := DecodeCursor(cursor)
 		if err != nil {
 			return nil, "", err
 		}
-		bind["cursorTaken"] = taken
-		bind["cursorKey"] = key
-		cursorFilter = `FILTER p.taken_at < @cursorTaken OR (p.taken_at == @cursorTaken AND p._key < @cursorKey)`
+		where = append(where, "(taken_at < ? OR (taken_at = ? AND key < ?))")
+		args = append(args, micros(taken), micros(taken), key)
 	}
-	extra := photoFilterAQL(filter, bind)
-	q := `
-		FOR p IN photos
-		  FILTER p.taken_at >= @from AND p.taken_at < @to
-		  FILTER p.deleted_at == null
-		  FILTER p.owner_id == @uid
-		  ` + extra + `
-		  ` + cursorFilter + `
-		  SORT p.taken_at DESC, p._key DESC
-		  LIMIT @limit
-		  RETURN p`
-	cur, err := c.db.Query(ctx, q, bind)
+	args = append(args, limit+1)
+
+	q := `SELECT ` + photoColumns + ` FROM photos
+		WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY taken_at DESC, key DESC
+		LIMIT ?`
+	rows, err := s.query(ctx, q, args...)
 	if err != nil {
 		return nil, "", err
 	}
-	defer cur.Close()
+	defer rows.Close()
 	var out []Photo
-	for cur.HasMore() {
-		var p Photo
-		if _, err := cur.ReadDocument(ctx, &p); err != nil {
+	for rows.Next() {
+		p, err := scanPhoto(rows)
+		if err != nil {
 			return nil, "", err
 		}
-		out = append(out, p)
+		out = append(out, *p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
 	}
 	page, next := ClipPage(out, limit)
 	return page, next, nil
 }
 
-func (c *Client) CountOwnerPhotos(ctx context.Context, ownerID string) (int64, error) {
-	q := `
-		FOR p IN photos
-		  FILTER p.owner_id == @uid
-		  FILTER p.deleted_at == null
-		  COLLECT WITH COUNT INTO n
-		  RETURN n`
-	cur, err := c.db.Query(ctx, q, map[string]interface{}{"uid": ownerID})
-	if err != nil {
-		return 0, err
-	}
-	defer cur.Close()
-	if !cur.HasMore() {
-		return 0, nil
-	}
+func (s *Store) CountOwnerPhotos(ctx context.Context, ownerID string) (int64, error) {
 	var n int64
-	if _, err := cur.ReadDocument(ctx, &n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	err := s.queryRow(ctx,
+		`SELECT COUNT(*) FROM photos WHERE owner_id = ? AND deleted_at IS NULL`,
+		ownerID).Scan(&n)
+	return n, err
 }
 
 type PhotoStorageRef struct {
@@ -174,169 +167,184 @@ type PhotoStorageRef struct {
 	Path string `json:"path"`
 }
 
-func (c *Client) ListOwnerPhotoStorage(ctx context.Context, ownerID string) ([]PhotoStorageRef, error) {
-	q := `
-		FOR p IN photos
-		  FILTER p.owner_id == @uid
-		  FILTER p.deleted_at == null
-		  RETURN { _key: p._key, path: p.storage.path }`
-	cur, err := c.db.Query(ctx, q, map[string]interface{}{"uid": ownerID})
+func (s *Store) ListOwnerPhotoStorage(ctx context.Context, ownerID string) ([]PhotoStorageRef, error) {
+	rows, err := s.query(ctx,
+		`SELECT key, storage_path FROM photos
+		 WHERE owner_id = ? AND deleted_at IS NULL`, ownerID)
 	if err != nil {
 		return nil, err
 	}
-	defer cur.Close()
+	defer rows.Close()
 	var out []PhotoStorageRef
-	for cur.HasMore() {
+	for rows.Next() {
 		var ref PhotoStorageRef
-		if _, err := cur.ReadDocument(ctx, &ref); err != nil {
+		if err := rows.Scan(&ref.Key, &ref.Path); err != nil {
 			return nil, err
 		}
 		out = append(out, ref)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
-func (c *Client) SoftDeletePhoto(ctx context.Context, key string) error {
-	col, err := c.db.Collection(ctx, ColPhotos)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	_, err = col.UpdateDocument(ctx, key, map[string]interface{}{"deleted_at": now})
+func (s *Store) SoftDeletePhoto(ctx context.Context, key string) error {
+	_, err := s.exec(ctx,
+		`UPDATE photos SET deleted_at = ? WHERE key = ?`,
+		micros(time.Now().UTC()), key)
 	return err
 }
 
-func granularityToPattern(g string) string {
-	switch g {
+// bucketExpr renders the calendar bucket label from taken_at_local. ISO
+// year-week is the one expression the two dialects spell differently.
+func (s *Store) bucketExpr(granularity string) string {
+	switch granularity {
 	case "year":
-		return "%yyyy"
-	case "month":
-		return "%yyyy-%mm"
+		return "substr(taken_at_local, 1, 4)"
 	case "day":
-		return "%yyyy-%mm-%dd"
-	default:
-		return "%yyyy-%mm"
+		return "substr(taken_at_local, 1, 10)"
+	case "week":
+		return s.weekExpr("taken_at_local")
+	default: // month
+		return "substr(taken_at_local, 1, 7)"
 	}
 }
 
-// bucketExpr returns AQL expression producing the bucket string.
-// Week granularity uses ISO year+week. ArangoDB lacks DATE_ISOWEEK_YEAR, so the ISO
-// year is derived from the Thursday of the ISO week (calendar year of Thursday == ISO year).
-func bucketExpr(g, field, pattern string) string {
-	if g == "week" {
-		// ISO day-of-week 1..7 (Mon..Sun) derived from DATE_DAYOFWEEK (Sun=0..Sat=6).
-		isoDow := `(((DATE_DAYOFWEEK(` + field + `) + 6) % 7) + 1)`
-		thursday := `DATE_ADD(` + field + `, 4 - ` + isoDow + `, "day")`
-		return `CONCAT(DATE_YEAR(` + thursday + `), "-W", RIGHT(CONCAT("00", TO_STRING(DATE_ISOWEEK(` + field + `))), 2))`
-	}
-	return `DATE_FORMAT(` + field + `, "` + pattern + `")`
-}
-
-func photoFilterAQL(filter PhotoFilter, bind map[string]interface{}) string {
-	var parts []string
+func appendPhotoFilter(filter PhotoFilter, where *[]string, args *[]any) {
 	if len(filter.Years) > 0 {
-		bind["years"] = filter.Years
-		parts = append(parts, `FILTER SUBSTRING(p.taken_at_local, 0, 4) IN @years`)
+		*where = append(*where, inClause("substr(taken_at_local, 1, 4)", filter.Years, args))
 	}
 	if len(filter.Months) > 0 {
-		bind["months"] = filter.Months
-		parts = append(parts, `FILTER SUBSTRING(p.taken_at_local, 5, 2) IN @months`)
+		*where = append(*where, inClause("substr(taken_at_local, 6, 2)", filter.Months, args))
 	}
 	if filter.LocalFrom != "" {
-		bind["localFrom"] = filter.LocalFrom
-		parts = append(parts, `FILTER SUBSTRING(p.taken_at_local, 0, 10) >= @localFrom`)
+		*where = append(*where, "substr(taken_at_local, 1, 10) >= ?")
+		*args = append(*args, filter.LocalFrom)
 	}
 	if filter.LocalTo != "" {
-		bind["localTo"] = filter.LocalTo
-		parts = append(parts, `FILTER SUBSTRING(p.taken_at_local, 0, 10) < @localTo`)
+		*where = append(*where, "substr(taken_at_local, 1, 10) < ?")
+		*args = append(*args, filter.LocalTo)
 	}
 	if filter.Favorite != nil {
-		bind["favorite"] = *filter.Favorite
-		parts = append(parts, `FILTER p.favorite == @favorite`)
+		*where = append(*where, "favorite = ?")
+		*args = append(*args, *filter.Favorite)
 	}
 	if q := strings.ToLower(strings.TrimSpace(filter.Query)); q != "" {
-		bind["q"] = q
-		parts = append(parts, `FILTER CONTAINS(LOWER(p.taken_at_local), @q)`)
+		// The Arango original matched a literal substring, so LIKE wildcards
+		// in the user's query must not act as wildcards.
+		*where = append(*where, `LOWER(taken_at_local) LIKE ? ESCAPE '\'`)
+		*args = append(*args, "%"+escapeLike(q)+"%")
 	}
-	return strings.Join(parts, "\n		  ")
 }
 
-func (c *Client) GetPhotoByHash(ctx context.Context, hash string) (*Photo, error) {
-	q := `
-		FOR p IN photos
-		  FILTER p.hash == @hash
-		  SORT p.deleted_at == null DESC
-		  LIMIT 1
-		  RETURN p`
-	return c.readPhotoQuery(ctx, q, map[string]interface{}{"hash": hash})
-}
-
-func (c *Client) GetPhotoByOwnerPath(ctx context.Context, ownerID, path string) (*Photo, error) {
-	q := `
-		FOR p IN photos
-		  FILTER p.owner_id == @uid
-		  FILTER p.storage.path == @path
-		  SORT p.deleted_at == null DESC
-		  LIMIT 1
-		  RETURN p`
-	return c.readPhotoQuery(ctx, q, map[string]interface{}{"uid": ownerID, "path": path})
-}
-
-func (c *Client) readPhotoQuery(ctx context.Context, q string, bind map[string]interface{}) (*Photo, error) {
-	cur, err := c.db.Query(ctx, q, bind)
-	if err != nil {
-		return nil, err
+// escapeLike neutralises LIKE metacharacters so the pattern matches literally.
+func escapeLike(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r == '\\' || r == '%' || r == '_' {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
 	}
-	defer cur.Close()
-	if !cur.HasMore() {
+	return b.String()
+}
+
+// GetPhotoByHash finds a Photo of this Owner by content hash. Owner-scoped, so
+// identical bytes in two libraries stay two Photos (ADR 0014). Live rows win
+// over soft-deleted ones.
+func (s *Store) GetPhotoByHash(ctx context.Context, ownerID, hash string) (*Photo, error) {
+	return s.readPhoto(ctx,
+		`SELECT `+photoColumns+` FROM photos
+		 WHERE owner_id = ? AND hash = ?
+		 ORDER BY (deleted_at IS NULL) DESC
+		 LIMIT 1`, ownerID, hash)
+}
+
+func (s *Store) GetPhotoByOwnerPath(ctx context.Context, ownerID, path string) (*Photo, error) {
+	return s.readPhoto(ctx,
+		`SELECT `+photoColumns+` FROM photos
+		 WHERE owner_id = ? AND storage_path = ?
+		 ORDER BY (deleted_at IS NULL) DESC
+		 LIMIT 1`, ownerID, path)
+}
+
+func (s *Store) readPhoto(ctx context.Context, q string, args ...any) (*Photo, error) {
+	p, err := scanPhoto(s.queryRow(ctx, q, args...))
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	var p Photo
-	if _, err := cur.ReadDocument(ctx, &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
+	return p, err
 }
 
-func (c *Client) UpdateIndexedPhoto(ctx context.Context, p *Photo) error {
-	col, err := c.db.Collection(ctx, ColPhotos)
-	if err != nil {
-		return err
+// UpdateIndexedPhoto refreshes everything an Index run can learn about a Photo
+// and clears deleted_at, so rediscovered content comes back with its identity,
+// favorite flag and Album membership intact.
+func (s *Store) UpdateIndexedPhoto(ctx context.Context, p *Photo) error {
+	var lat, lon any
+	if p.EXIF.GPS != nil {
+		lat, lon = p.EXIF.GPS.Lat, p.EXIF.GPS.Lon
 	}
-	patch := map[string]interface{}{
-		"taken_at":        p.TakenAt,
-		"taken_at_local":  p.TakenAtLocal,
-		"taken_at_source": p.TakenAtSource,
-		"tz_offset":       p.TZOffset,
-		"storage":         p.Storage,
-		"hash":            p.Hash,
-		"size_bytes":      p.SizeBytes,
-		"mime":            p.MIME,
-		"dims":            p.Dims,
-		"orientation":     p.Orientation,
-		"exif":            p.EXIF,
-		"thumbs":          p.Thumbs,
-		"deleted_at":      nil,
-	}
-	_, err = col.UpdateDocument(ctx, p.Key, patch)
+	_, err := s.exec(ctx, `
+		UPDATE photos SET
+		  taken_at = ?, taken_at_local = ?, taken_at_source = ?, tz_offset = ?,
+		  storage_backend = ?, storage_path = ?, storage_bucket = ?, storage_mtime = ?,
+		  hash = ?, size_bytes = ?, mime = ?, width = ?, height = ?, orientation = ?,
+		  exif_camera = ?, exif_lens = ?, exif_iso = ?, exif_f_number = ?,
+		  exif_shutter = ?, exif_gps_lat = ?, exif_gps_lon = ?,
+		  thumb_256 = ?, thumb_512 = ?, thumb_1024 = ?,
+		  deleted_at = NULL
+		WHERE key = ?`,
+		micros(p.TakenAt), p.TakenAtLocal, p.TakenAtSource, p.TZOffset,
+		p.Storage.Backend, p.Storage.Path, p.Storage.Bucket, nullMicros(p.Storage.ModTime),
+		p.Hash, p.SizeBytes, p.MIME, p.Dims.W, p.Dims.H, p.Orientation,
+		p.EXIF.Camera, p.EXIF.Lens, p.EXIF.ISO, p.EXIF.FNum,
+		p.EXIF.Shutter, lat, lon,
+		p.Thumbs.S256, p.Thumbs.S512, p.Thumbs.S1024,
+		p.Key)
 	return err
 }
 
-func (c *Client) SetFavorite(ctx context.Context, ownerID, photoID string, favorite bool) (*Photo, error) {
-	p, err := c.GetPhoto(ctx, photoID)
+func (s *Store) SetFavorite(ctx context.Context, ownerID, photoID string, favorite bool) (*Photo, error) {
+	p, err := s.GetPhoto(ctx, photoID)
 	if err != nil {
 		return nil, err
 	}
 	if p.OwnerID != ownerID {
 		return nil, ErrForbidden
 	}
-	col, err := c.db.Collection(ctx, ColPhotos)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := col.UpdateDocument(ctx, photoID, map[string]interface{}{"favorite": favorite}); err != nil {
+	if _, err := s.exec(ctx,
+		`UPDATE photos SET favorite = ? WHERE key = ?`, favorite, photoID); err != nil {
 		return nil, err
 	}
 	p.Favorite = favorite
 	return p, nil
+}
+
+// --- column plumbing ----------------------------------------------------
+
+// photoColumnCount must match the number of names in photoColumns.
+var photoColumnCount = len(strings.Split(compactColumns(photoColumns), ", "))
+
+// compactColumns collapses the multi-line photoColumns constant onto one line.
+func compactColumns(cols string) string {
+	parts := strings.Split(cols, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return strings.Join(parts, ", ")
+}
+
+// excludedAssignments renders "a = excluded.a, b = excluded.b" for an upsert,
+// skipping the conflict key.
+func excludedAssignments(cols string, skip ...string) string {
+	skipped := map[string]bool{}
+	for _, s := range skip {
+		skipped[s] = true
+	}
+	var parts []string
+	for _, c := range strings.Split(cols, ", ") {
+		if skipped[c] {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s = excluded.%s", c, c))
+	}
+	return strings.Join(parts, ", ")
 }

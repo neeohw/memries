@@ -135,3 +135,23 @@ export function SyncIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function DriveIcon(props: IconProps) {
+  return (
+    <svg {...icon(props)}>
+      <rect x="3.5" y="5" width="17" height="6" rx="1.8" />
+      <rect x="3.5" y="13" width="17" height="6" rx="1.8" />
+      <path d="M7 8h.01M7 16h.01M11 8h6M11 16h6" />
+    </svg>
+  );
+}
+
+export function SignOutIcon(props: IconProps) {
+  return (
+    <svg {...icon(props)}>
+      <path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3" />
+      <path d="M10 8l-4 4 4 4" />
+      <path d="M6 12h9" />
+    </svg>
+  );
+}

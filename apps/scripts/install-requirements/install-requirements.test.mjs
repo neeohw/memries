@@ -14,18 +14,18 @@ import {
 } from './versions.mjs';
 
 describe('version helpers', () => {
-  it('accepts Node 22+ and Go 1.23+', () => {
+  it('accepts Node 22+ and Go 1.26+', () => {
     assert.equal(parseNodeMajor('v22.23.2'), 22);
     assert.equal(nodeSatisfies('v20.18.2'), false);
     assert.equal(nodeSatisfies('v22.23.2'), true);
-    assert.deepEqual(parseGoVersion('go version go1.23.6 linux/amd64'), {
+    assert.deepEqual(parseGoVersion('go version go1.26.11 linux/amd64'), {
       major: 1,
-      minor: 23,
-      patch: 6,
+      minor: 26,
+      patch: 11,
     });
-    assert.equal(goSatisfies('go version go1.22.5 windows/amd64'), false);
-    assert.equal(goSatisfies('go version go1.23.6 windows/amd64'), true);
-    assert.equal(goSatisfies('go version go1.24.0 linux/amd64'), true);
+    assert.equal(goSatisfies('go version go1.25.0 windows/amd64'), false);
+    assert.equal(goSatisfies('go version go1.26.11 windows/amd64'), true);
+    assert.equal(goSatisfies('go version go1.27.4 linux/amd64'), true);
   });
 
   it('builds official linux tarball URLs', () => {
@@ -63,7 +63,7 @@ describe('main', () => {
       nodeOk: () => false,
       goFound: () => true,
       goOk: () => true,
-      goVersion: () => 'go version go1.23.6 windows/amd64',
+      goVersion: () => 'go version go1.26.11 windows/amd64',
       wingetInstall: (id) => winget.push(id),
       enableCorepack: () => logs.push('corepack'),
       log: (msg) => logs.push(String(msg)),
@@ -82,7 +82,7 @@ describe('main', () => {
       goFound: () => true,
       goOk: () => true,
       nodeVersion: () => 'v22.23.2',
-      goVersion: () => 'go version go1.23.6 windows/amd64',
+      goVersion: () => 'go version go1.26.11 windows/amd64',
       wingetInstall: (id) => winget.push(id),
       enableCorepack: () => {},
       log: () => {},

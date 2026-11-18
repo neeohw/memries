@@ -22,9 +22,10 @@ type EXIF struct {
 }
 
 type StoragePtr struct {
-	Backend string `json:"backend"`
-	Path    string `json:"path"`
-	Bucket  string `json:"bucket,omitempty"`
+	Backend string     `json:"backend"`
+	Path    string     `json:"path"`
+	Bucket  string     `json:"bucket,omitempty"`
+	ModTime *time.Time `json:"mtime,omitempty"` // Source mtime at last index; with size, skips re-reading unchanged files
 }
 
 type Thumbs struct {
@@ -55,11 +56,32 @@ type Photo struct {
 }
 
 type User struct {
-	Key       string    `json:"_key"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
+	Key   string `json:"_key"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
+	// PasswordHash is an encoded argon2id hash (ADR 0016), empty when the user
+	// has no password yet. It is never serialised: no handler returns it, and
+	// `json:"-"` keeps it out of a response if one ever marshals a User.
+	PasswordHash    string    `json:"-"`
+	CreatedAt       time.Time `json:"created_at"`
+	SourcesMigrated bool      `json:"sources_migrated,omitempty"`
+}
+
+// Source is an admin-managed folder (local path, SMB share, or WebDAV
+// collection) whose media is indexed into one Owner's library. Photo storage
+// paths are "<source _key>/<path inside the source>".
+type Source struct {
+	Key        string    `json:"_key,omitempty"`
+	Name       string    `json:"name"`
+	Type       string    `json:"type"`     // local|smb|webdav
+	Location   string    `json:"location"` // /abs/path, smb://host/share/dir, https://host/dav/dir
+	Username   string    `json:"username,omitempty"`
+	Secret     string    `json:"secret,omitempty"` // sealed password; never leaves the backend
+	OwnerID    string    `json:"owner_id"`
+	OwnerEmail string    `json:"owner_email"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type Album struct {

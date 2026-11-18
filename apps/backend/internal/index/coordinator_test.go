@@ -142,7 +142,7 @@ func TestCoordinatorDerivesPrefixFromEmail(t *testing.T) {
 		t.Fatal("runner did not start")
 	}
 	opts := runner.last()
-	if opts.OwnerID != "owner1" || opts.Prefix != "admin@example.com" {
+	if opts.OwnerID != "owner1" || len(opts.Prefixes) != 1 || opts.Prefixes[0] != "admin@example.com" {
 		t.Fatalf("opts = %+v", opts)
 	}
 	close(runner.block)
@@ -335,5 +335,54 @@ func TestCoordinatorCompleteWithErrors(t *testing.T) {
 	s := waitStatus(t, c, "owner1", "admin@example.com", StatusCompleteWithErrors)
 	if s.Failed != 1 {
 		t.Fatalf("failed = %d", s.Failed)
+	}
+}
+
+type fixedScopes []Scope
+
+func (f fixedScopes) Scopes(context.Context, string, string) ([]Scope, error) { return f, nil }
+
+func TestCoordinatorWalksEverySourceScope(t *testing.T) {
+	runner := &fakeRunner{}
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).
+		WithScopes(fixedScopes{{Prefix: "101"}, {Prefix: "202", Remote: true}})
+	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	s := waitStatus(t, c, "owner1", "admin@example.com", StatusComplete)
+	if s.Sources != 2 {
+		t.Fatalf("sources = %d", s.Sources)
+	}
+	if got := runner.last().Prefixes; len(got) != 2 || got[0] != "101" || got[1] != "202" {
+		t.Fatalf("prefixes = %v", got)
+	}
+}
+
+func TestCoordinatorRemoteScopesSkipDiskCount(t *testing.T) {
+	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 4}, memMediaCounter{n: 3165}, nil, nil).
+		WithScopes(fixedScopes{{Prefix: "202", Remote: true}})
+	s, err := c.Status(context.Background(), "owner1", "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Status != StatusComplete {
+		t.Fatalf("got %q; remote sources must not be listed on every status read", s.Status)
+	}
+}
+
+func TestCoordinatorRescanQueuesFollowUpRun(t *testing.T) {
+	runner := &fakeRunner{started: make(chan struct{}), block: make(chan struct{})}
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil)
+	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	<-runner.started
+	if _, err := c.Rescan(context.Background(), "owner1", "admin@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	close(runner.block)
+	waitStatus(t, c, "owner1", "admin@example.com", StatusComplete)
+	if runner.nCalls() != 2 {
+		t.Fatalf("calls = %d, want follow-up run after Rescan", runner.nCalls())
 	}
 }

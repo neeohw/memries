@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AlbumPage } from './components/AlbumPage';
+import { LoginScreen } from './components/LoginScreen';
 import { AlbumsView } from './components/AlbumsView';
 import { AppShell } from './components/AppShell';
 import { FavoritesView } from './components/FavoritesView';
@@ -7,6 +9,7 @@ import { IndexingScreen } from './components/IndexingScreen';
 import { PhotoActionsMenu } from './components/PhotoActionsMenu';
 import { PhotoViewer } from './components/PhotoViewer';
 import { SearchView } from './components/SearchView';
+import { SourcesView } from './components/SourcesView';
 import { Timeline } from './components/Timeline';
 import {
   useAddPhotoToAlbum,
@@ -15,6 +18,16 @@ import {
   useRemovePhotoFromAlbum,
 } from './hooks/useAlbums';
 import { useIndex } from './hooks/useIndex';
+import {
+  meQueryKey,
+  useCreateSource,
+  useDeleteSource,
+  useMe,
+  useScanSource,
+  useSources,
+  useUpdateSource,
+} from './hooks/useSources';
+import { isUnauthorized, signIn, signOut } from './lib/api';
 import { flattenPhotos, usePhotos, useToggleFavorite } from './hooks/usePhotos';
 import { parseSmartDate } from './lib/parseSmartDate';
 import type { Granularity, NavTab, Photo, SearchState } from './models/photo';
@@ -26,7 +39,71 @@ const INITIAL_SEARCH: SearchState = {
   openCategory: null,
 };
 
+/**
+ * Auth gate (ADR 0016). `/api/me` answering 401 is what shows the sign-in
+ * form; the library and its queries are not mounted until there is a session,
+ * so nothing fires a request that is bound to fail.
+ */
 export default function App() {
+  const queryClient = useQueryClient();
+  const me = useMe();
+
+  const handleSignIn = useCallback(
+    async (login: string, password: string) => {
+      const user = await signIn(login, password);
+      queryClient.setQueryData(meQueryKey, user);
+      // Anything attempted while signed out failed; let it all run again.
+      await queryClient.invalidateQueries();
+    },
+    [queryClient],
+  );
+
+  const handleSignOut = useCallback(() => {
+    // Drop the cache either way: on a failed sign-out the photos still should
+    // not stay on screen.
+    void signOut().finally(() => queryClient.clear());
+  }, [queryClient]);
+
+  if (me.isPending) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-cream" role="status">
+        <span className="sr-only">Loading</span>
+        <span
+          className="h-10 w-10 animate-pulse rounded-full bg-gradient-to-br from-peach to-blush"
+          aria-hidden
+        />
+      </div>
+    );
+  }
+
+  if (me.isError) {
+    if (isUnauthorized(me.error)) {
+      return <LoginScreen onSignIn={handleSignIn} />;
+    }
+    return (
+      <div
+        className="flex min-h-dvh flex-col items-center justify-center bg-cream px-6 text-center text-plum"
+        role="alert"
+      >
+        <p className="font-display text-2xl font-semibold tracking-tight">
+          We could not reach the server
+        </p>
+        <p className="mt-2 max-w-xs text-sm text-ink">Check that Memries is running, then retry.</p>
+        <button
+          type="button"
+          onClick={() => void me.refetch()}
+          className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return <Library onSignOut={handleSignOut} />;
+}
+
+function Library({ onSignOut }: { onSignOut: () => void }) {
   const {
     status: indexStatus,
     isError: indexError,
@@ -69,6 +146,14 @@ export default function App() {
   }, [parsedDate, search.favoritesOnly, search.query, search.years]);
   const searchQuery = usePhotos(isReadyForPhotos && tab === 'search', searchFilter);
 
+  const meQuery = useMe();
+  const admin = meQuery.data?.admin === true;
+  const sourcesQuery = useSources(admin && tab === 'folders');
+  const createSourceMutation = useCreateSource();
+  const updateSourceMutation = useUpdateSource();
+  const deleteSourceMutation = useDeleteSource();
+  const scanSourceMutation = useScanSource();
+
   const albumsQuery = useAlbums();
   const favoriteMutation = useToggleFavorite();
   const createAlbumMutation = useCreateAlbum();
@@ -77,6 +162,7 @@ export default function App() {
 
   const activeQuery =
     tab === 'favorites' ? favoritesQuery : tab === 'search' ? searchQuery : timelineQuery;
+  const showQueryError = activeQuery.isError && tab !== 'folders';
 
   const loadSettled = activeQuery.isSuccess || activeQuery.isError;
   const canLeaveIndex = isReadyForPhotos && loadSettled && !rescanning && !indexRetrying;
@@ -145,8 +231,8 @@ export default function App() {
   return (
     <>
       {showGallery && (
-        <AppShell tab={tab} onTabChange={changeTab}>
-          {activeQuery.isError && (
+        <AppShell tab={tab} onTabChange={changeTab} admin={admin} onSignOut={onSignOut}>
+          {showQueryError && (
             <div
               className="flex flex-1 flex-col items-center justify-center px-6 text-center"
               role="alert"
@@ -182,6 +268,20 @@ export default function App() {
               onRescan={handleRescan}
               rescanning={rescanning}
               onFilter={() => changeTab('search')}
+              noFolders={indexStatus?.sources === 0}
+              onAddFolder={admin ? () => changeTab('folders') : undefined}
+            />
+          )}
+          {tab === 'folders' && admin && (
+            <SourcesView
+              sources={sourcesQuery.data ?? []}
+              loading={sourcesQuery.isLoading}
+              loadError={sourcesQuery.isError}
+              defaultOwner={meQuery.data?.email ?? ''}
+              onCreate={(input) => createSourceMutation.mutateAsync(input)}
+              onUpdate={(id, input) => updateSourceMutation.mutateAsync({ id, input })}
+              onDelete={(id) => deleteSourceMutation.mutateAsync(id)}
+              onScan={(id) => scanSourceMutation.mutateAsync(id)}
             />
           )}
           {tab === 'albums' && selectedAlbumId && (

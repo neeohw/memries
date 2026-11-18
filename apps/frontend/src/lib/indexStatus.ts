@@ -4,6 +4,8 @@ export type IndexPhase =
 export type IndexStatus = {
   status: IndexPhase;
   prefix: string;
+  /** Folders feeding this library; 0 means nothing is connected yet. */
+  sources?: number;
   discovered: number;
   processed: number;
   indexed: number;

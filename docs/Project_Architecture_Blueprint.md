@@ -1,14 +1,26 @@
 # Project Architecture Blueprint — Memries
 
-Generated: 2026-08-25; refreshed 2026-08-25 after wiring the SPA to the Go indexer and paginated photos API (`apps/memries`, remote [mikepattyn/memries](https://github.com/mikepattyn/memries)).
+Generated: 2026-08-25.
 
-This is the architecture reference for keeping new work consistent with what the code actually does. Prefer this file over README sketches when they disagree.
-
-**Detected stacks:** Go 1.23 HTTP API (chi) · ArangoDB 3.12 · React 18 + Vite 5 + Tailwind 3 · OIDC (Dex) · Caddy 2 reverse proxy · Docker Compose.
-
-**Detected patterns:** Modular monolith with a plugin storage port; document/graph database with ACL filters in AQL; React composition with a Query cache over authenticated `/api` pages. Not Clean Architecture, not microservices, not platform CDK.
-
-**Platform context:** Memries is a gitlink (`update = none`), not a mikepattyn Application. It does not use `infra/cdk/`. Start here; the umbrella map is [CONTEXT-MAP.md](../../../CONTEXT-MAP.md) in the parent repo. `apps/memries/CONTEXT.md` is referenced there but is not present in this tree.
+> ## ⚠️ Stale as of 2026-11-17 — do not treat this as current
+>
+> **The live architecture map is [CONTEXT-MAP.md](../CONTEXT-MAP.md), with the
+> decisions in [docs/adr/](adr/). Prefer those over this file wherever they
+> disagree.** This document still describes the August architecture and is kept
+> only as a record of it. Its earlier instruction to prefer this file over the
+> README has been removed, because the following sections are now wrong rather
+> than merely incomplete:
+>
+> | What it describes | What is actually true |
+> | --- | --- |
+> | ArangoDB 3.12, AQL queries, document/graph collections, edge collections, graph traversals | Relational catalog over `database/sql`; SQLite by default, PostgreSQL optional. ArangoDB is gone ([ADR 0014](adr/0014-pluggable-sql-store.md)) |
+> | OIDC through a Dex container, `/oauth/*` routes, issuer and discovery at boot | Local password sign-in (argon2id) at `POST /auth/login`. Dex, OIDC and `/oauth/*` are gone ([ADR 0016](adr/0016-local-password-auth.md)) |
+> | Go 1.23 | Go 1.26 |
+> | Thumbnails as a single pure-Go path | Backend selected at build time, pure Go or libvips ([ADR 0015](adr/0015-build-tagged-thumbnail-backend.md)) |
+> | Platform/gitlink framing and a `CONTEXT-MAP.md` in a parent repo | This repository stands alone. Per [AGENTS.md](../AGENTS.md), do not follow pointers out of this folder |
+>
+> Sections 1–3 and 6–9 are the most affected. Regenerating this blueprint
+> against the current tree is a separate task that has not been done.
 
 ---
 

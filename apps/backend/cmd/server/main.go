@@ -19,6 +19,7 @@ import (
 	"github.com/memries/memries/internal/config"
 	"github.com/memries/memries/internal/db"
 	"github.com/memries/memries/internal/index"
+	"github.com/memries/memries/internal/sources"
 	"github.com/memries/memries/internal/storage"
 	"github.com/memries/memries/internal/thumb"
 )
@@ -48,19 +49,39 @@ func main() {
 		log.Error("thumb", "err", err)
 		os.Exit(1)
 	}
-	a, err := auth.New(ctx, cfg, dbc)
+	a, err := auth.New(cfg, dbc, log)
 	if err != nil {
 		log.Error("auth", "err", err)
 		os.Exit(1)
 	}
-	idx := &index.Indexer{Store: store, DB: dbc, Thumb: tg, Log: log}
-	lib := index.Library{Photos: dbc, Store: store}
-	coord := index.NewCoordinator(ctx, idx, dbc, dbc, idx, lib, log)
+	if err := a.Bootstrap(ctx); err != nil {
+		log.Error("auth bootstrap", "err", err)
+		os.Exit(1)
+	}
+	sealer, err := sources.NewSealer(cfg.SessionKey)
+	if err != nil {
+		log.Error("sources", "err", err)
+		os.Exit(1)
+	}
+	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.SourceRoots, LegacyRoot: cfg.LocalRoot, Log: log}
+	idx := &index.Indexer{Store: reg, DB: dbc, Thumb: tg, Log: log}
+	lib := index.Library{Photos: dbc, Store: reg}
+	coord := index.NewCoordinator(ctx, idx, dbc, dbc, idx, lib, log).WithScopes(reg)
 	if err := coord.Reconcile(ctx); err != nil {
 		log.Error("index reconcile", "err", err)
 		os.Exit(1)
 	}
-	apiH := &api.API{DB: dbc, Store: store, Thumb: tg, Index: coord, E2E: os.Getenv("MEMRIES_E2E") == "1"}
+	apiH := &api.API{
+		DB:          dbc,
+		Store:       store,
+		SourceStore: reg,
+		Thumb:       tg,
+		Index:       coord,
+		Sources:     reg,
+		Rescan:      coord,
+		IsAdmin:     cfg.IsAdmin,
+		E2E:         os.Getenv("MEMRIES_E2E") == "1",
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -76,9 +97,10 @@ func main() {
 	}))
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
-	r.Get("/oauth/login", a.LoginHandler)
-	r.Get("/oauth/callback", a.CallbackHandler)
-	r.Get("/oauth/logout", a.LogoutHandler)
+	// Sign-in is deliberately outside /api, which the session middleware
+	// guards: you cannot present a session to get one.
+	r.Post("/auth/login", a.LoginHandler)
+	r.Post("/auth/logout", a.LogoutHandler)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(a.Middleware)

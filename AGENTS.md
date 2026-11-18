@@ -19,9 +19,9 @@ Lightweight photo manager: date-scroll timeline with year / month / week / day g
 In scope:
 
 - Timeline browse (virtual scroll, lightbox)
-- OIDC cookie session (Dex in local Compose)
+- Local password sign-in, cookie session ([0016](docs/adr/0016-local-password-auth.md))
 - Indexer CLI (EXIF, sha256 dedup, 256 / 512 / 1024 thumbs)
-- Local filesystem storage
+- Admin-managed Sources: local path, SMB share, WebDAV ([0013](docs/adr/0013-admin-managed-sources.md))
 - Per-owner ACL (`session user key` vs `photo.owner_id`)
 
 Out of scope unless the user asks: video, S3 storage, WebSockets, sharing graph, Piwigo import.
@@ -29,9 +29,9 @@ Out of scope unless the user asks: video, S3 storage, WebSockets, sharing graph,
 ## Stack
 
 - pnpm + Turborepo workspace under `apps/` (`@memries/frontend`, `@memries/backend`, `@memries/e2e`, `@memries/scripts`)
-- Go 1.23 module `github.com/memries/memries` — chi, Arango driver, OIDC, gorilla sessions, imaging
+- Go 1.26 module `github.com/memries/memries` — chi, `database/sql` (SQLite default, PostgreSQL optional), gorilla sessions, argon2id, imaging
 - React 18 + Vite + Tailwind + TanStack Query + virtua
-- ArangoDB, Dex, Caddy, Docker Compose
+- SQLite (or PostgreSQL), Caddy, Docker Compose
 
 ## Non-negotiables
 
@@ -46,10 +46,10 @@ Out of scope unless the user asks: video, S3 storage, WebSockets, sharing graph,
 Follow the README quick start (Compose + `.env`). Host Turbo builds need `make install-requirements` then `pnpm install`. Initial index:
 
 ```bash
-docker compose exec backend indexer -owner admin@example.com -prefix admin@example.com
+docker compose exec backend indexer -owner admin@example.com
 ```
 
-Dev login is documented in [deploy/dex/config.yaml](deploy/dex/config.yaml). Troubleshooting and host ports are in the README.
+Dev login is `admin@example.com` plus `BOOTSTRAP_PASSWORD` from `.env` ([0016](docs/adr/0016-local-password-auth.md)). Troubleshooting and host ports are in the README.
 
 ## Seams
 
@@ -57,7 +57,7 @@ Public seams for new behavior and tests:
 
 - HTTP: [apps/backend/internal/api](apps/backend/internal/api/api.go) and [apps/backend/internal/auth](apps/backend/internal/auth/auth.go)
 - Storage: [apps/backend/internal/storage](apps/backend/internal/storage/storage.go)
-- Schema and queries: [apps/backend/internal/db](apps/backend/internal/db/arango.go)
+- Schema and queries: [apps/backend/internal/db](apps/backend/internal/db/store.go)
 
 New tests belong next to those seams (`*_test.go` / frontend tests), not inside UI widgets.
 

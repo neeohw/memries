@@ -2,18 +2,23 @@ package index
 
 import (
 	"context"
+	"strings"
 
 	"github.com/memries/memries/internal/db"
 	"github.com/memries/memries/internal/storage"
 )
 
-func (i *Indexer) pruneMissingOriginals(ctx context.Context, ownerID string) error {
+// pruneMissingOriginals soft-deletes the Owner's Photos whose Original is
+// gone. Paths seen in this run's walk are known present; paths under a
+// prefix whose walk failed are left alone because the Source may only be
+// unreachable, not empty.
+func (i *Indexer) pruneMissingOriginals(ctx context.Context, ownerID string, seen map[string]bool, unreadable []string) error {
 	refs, err := i.DB.ListOwnerPhotoStorage(ctx, ownerID)
 	if err != nil {
 		return err
 	}
 	for _, ref := range refs {
-		if ref.Path == "" {
+		if ref.Path == "" || seen[ref.Path] || underAny(ref.Path, unreadable) {
 			continue
 		}
 		if _, err := i.Store.Stat(ctx, ref.Path); err == nil {
@@ -28,6 +33,16 @@ func (i *Indexer) pruneMissingOriginals(ctx context.Context, ownerID string) err
 		i.Log.Info("prune missing original", "key", ref.Key, "path", ref.Path)
 	}
 	return nil
+}
+
+func underAny(p string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		prefix = strings.Trim(prefix, "/")
+		if p == prefix || strings.HasPrefix(p, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (i *Indexer) touchRelocatedPath(ctx context.Context, existing *db.Photo, key, hash string) error {

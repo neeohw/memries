@@ -1,24 +1,37 @@
 module github.com/memries/memries
 
-go 1.23
+go 1.26.0
 
 require (
-	github.com/arangodb/go-driver v1.6.2
-	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-chi/cors v1.2.1
 	github.com/gorilla/sessions v1.4.0
+	github.com/hirochachacha/go-smb2 v1.1.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
+	github.com/studio-b12/gowebdav v0.10.0
+	golang.org/x/crypto v0.31.0
 	golang.org/x/image v0.20.0
-	golang.org/x/oauth2 v0.23.0
-	golang.org/x/sync v0.8.0
+	golang.org/x/net v0.33.0
+	golang.org/x/sync v0.24.0
+	modernc.org/sqlite v1.62.0
 )
 
 require (
-	github.com/arangodb/go-velocypack v0.0.0-20200318135517-5af53c29c67e // indirect
-	github.com/go-jose/go-jose/v4 v4.0.2 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/geoffgarside/ber v1.1.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
-	golang.org/x/crypto v0.25.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/ncruces/go-strftime v1.1.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.12.1 // indirect
 )

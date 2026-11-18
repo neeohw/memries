@@ -101,3 +101,15 @@ Decisions were made by implementing the public seams (`internal/index`, `interna
 - Seams: [backend/internal/index/capture.go](../../backend/internal/index/capture.go), [identity.go](../../backend/internal/index/identity.go), [backend/internal/api/api.go](../../backend/internal/api/api.go) (`parseRange`)
 - Compact thumbs (unrelated): [0007-viewport-forced-compact-thumbs.md](0007-viewport-forced-compact-thumbs.md)
 - E2E ops: [e2e/README.md](../../e2e/README.md)
+
+## Amendment (ADR 0014)
+
+Content `hash` uniqueness is **owner-scoped**: the unique index is
+`(owner_id, hash)`, not `hash`. Relocate-by-hash is therefore intra-owner only
+— the hash lookup takes an `ownerID`.
+
+The path-first table above is unchanged. One addition: a Photo key is still the
+content hash on create, but keys are table-unique, so when another Owner
+already holds that key the indexer derives a distinct one
+(`sha256(ownerID + ":" + hash)`). Identical bytes in two libraries stay two
+Photos.

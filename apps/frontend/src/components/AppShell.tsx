@@ -1,16 +1,21 @@
 import type { ReactNode } from 'react';
 import type { NavTab } from '../models/photo';
 import { BottomNavigation, NavButtons } from './BottomNavigation';
+import { SignOutButton } from './SignOutButton';
 import { ThemeToggle } from './ThemeToggle';
 import { TopHeader } from './TopHeader';
 
 export function AppShell({
   tab,
   onTabChange,
+  admin = false,
+  onSignOut,
   children,
 }: {
   tab: NavTab;
   onTabChange: (tab: NavTab) => void;
+  admin?: boolean;
+  onSignOut?: () => void;
   children: ReactNode;
 }) {
   return (
@@ -38,18 +43,21 @@ export function AppShell({
             <span className="sr-only">Memries</span>
           </span>
           <nav aria-label="Main" className="w-full">
-            <NavButtons tab={tab} onChange={onTabChange} orientation="vertical" />
+            <NavButtons tab={tab} onChange={onTabChange} orientation="vertical" admin={admin} />
           </nav>
         </div>
-        <ThemeToggle />
+        <div className="flex w-full flex-col items-center">
+          <ThemeToggle />
+          {onSignOut && <SignOutButton onSignOut={onSignOut} />}
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopHeader />
+        <TopHeader onSignOut={onSignOut} />
         <main id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col outline-none">
           {children}
         </main>
-        <BottomNavigation tab={tab} onChange={onTabChange} />
+        <BottomNavigation tab={tab} onChange={onTabChange} admin={admin} />
       </div>
     </div>
   );

@@ -14,16 +14,23 @@ import (
 	"github.com/memries/memries/internal/auth"
 	"github.com/memries/memries/internal/db"
 	"github.com/memries/memries/internal/index"
+	"github.com/memries/memries/internal/sources"
 	"github.com/memries/memries/internal/storage"
 	"github.com/memries/memries/internal/thumb"
 )
 
 type API struct {
-	DB    Library
+	DB Library
+	// Store reads Originals indexed before Sources existed (backend "local").
 	Store storage.Storage
-	Thumb *thumb.Generator
-	Index *index.Coordinator
-	E2E   bool
+	// SourceStore reads Originals under admin-managed Sources (backend "source").
+	SourceStore storage.Storage
+	Thumb       *thumb.Generator
+	Index       *index.Coordinator
+	Sources     SourceAdmin
+	Rescan      Rescanner
+	IsAdmin     func(email string) bool
+	E2E         bool
 }
 
 func (a *API) Routes(r chi.Router) {
@@ -40,6 +47,7 @@ func (a *API) Routes(r chi.Router) {
 	r.Get("/original/{id}", a.original)
 	r.Get("/index/status", a.indexStatus)
 	r.Post("/index", a.startIndex)
+	r.Route("/admin", a.adminRoutes)
 	if a.E2E {
 		r.Post("/e2e/reset", a.e2eReset)
 	}
@@ -191,7 +199,11 @@ func (a *API) original(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	rc, err := a.Store.Get(r.Context(), p.Storage.Path)
+	store := a.Store
+	if p.Storage.Backend == sources.Backend && a.SourceStore != nil {
+		store = a.SourceStore
+	}
+	rc, err := store.Get(r.Context(), p.Storage.Path)
 	ctype := p.MIME
 	if err != nil {
 		slog.Warn("open original", "id", id, "path", p.Storage.Path, "err", err)

@@ -1,6 +1,7 @@
+import { SignOutButton } from './SignOutButton';
 import { ThemeToggle } from './ThemeToggle';
 
-export function TopHeader() {
+export function TopHeader({ onSignOut }: { onSignOut?: () => void }) {
   return (
     <header className="flex items-center justify-between gap-3 px-3 py-1.5 min-[800px]:hidden">
       <div className="flex items-center gap-2">
@@ -10,7 +11,10 @@ export function TopHeader() {
         />
         <p className="font-display text-lg font-semibold tracking-tight text-plum">Memries</p>
       </div>
-      <ThemeToggle />
+      <div className="flex items-center">
+        <ThemeToggle />
+        {onSignOut && <SignOutButton onSignOut={onSignOut} />}
+      </div>
     </header>
   );
 }

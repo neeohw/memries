@@ -7,7 +7,7 @@ Locally (no `CI`) Playwright is headed and uses at most four workers. In a pipel
 ## First run
 
 1. Docker Desktop (Compose v2) running.
-2. App `.env` present (same secrets as local dev: `ARANGO_PASSWORD`, `OIDC_CLIENT_SECRET`, `SESSION_KEY`).
+2. App `.env` present (same secrets as local dev: `SESSION_KEY`, and `BOOTSTRAP_PASSWORD` if you want a password other than the suite default).
 3. Chromium for Playwright, once per machine:
 
 ```bash
@@ -26,7 +26,7 @@ pnpm --filter @memries/e2e test
 `make e2e-docker` plans the suite; `make e2e-docker-force` marks it `needs-run` so `/e2e-docker --force` can refresh last-runs.
 What the suite proves — and whether its last-run passed — is on the [main README](../../README.md#end-to-end-tests). `make e2e-last-runs` fails unless that last-run is green.
 
-Login is Dex `admin@example.com` / `password`. Fixture JPEGs live in `apps/e2e/.work/photos/admin@example.com/` and are regenerated before every `stack:up`.
+Login is `admin@example.com` / `password`: the e2e Compose file pins `MEMRIES_BOOTSTRAP_PASSWORD` to `password` so the suite's `signIn` has a known credential ([ADR 0016](../../docs/adr/0016-local-password-auth.md)). Fixture JPEGs live in `apps/e2e/.work/photos/admin@example.com/` and are regenerated before every `stack:up`.
 
 ## Cleanup
 
@@ -35,13 +35,13 @@ make e2e-down
 # or: pnpm --filter @memries/e2e run stack:down
 ```
 
-That stops containers and keeps named volumes (`arango_e2e_data`, and so on). To wipe volumes:
+That stops containers and keeps named volumes (`caddy_e2e_data`, and so on). To wipe volumes:
 
 ```bash
 pnpm --filter @memries/e2e run stack:wipe
 ```
 
-`.work/` photos/cache/generated Dex, `.features-gen/`, and `node_modules/` are gitignored. This does not touch `./data/photos` from the developer stack.
+`.work/` photos/cache/db, `.features-gen/`, and `node_modules/` are gitignored. This does not touch `./data/photos` from the developer stack.
 
 ## Optional: one feature file
 

@@ -111,7 +111,7 @@ describe('catalogRowsFromFeatures', () => {
       {
         id: 'memries-login',
         source: `Feature: Sign in
-  Dex login puts the owner on Memories.
+  The password form puts the owner on Memories.
 
   Scenario: Admin sees memories after login
     Given I am signed in
@@ -122,7 +122,7 @@ describe('catalogRowsFromFeatures', () => {
       {
         id: 'memries-login',
         title: 'Sign in',
-        blurb: 'Dex login puts the owner on Memories.',
+        blurb: 'The password form puts the owner on Memories.',
       },
     ]);
   });
@@ -132,7 +132,7 @@ describe('renderE2eCatalog', () => {
   it('marks every feature from the suite finding', () => {
     const markdown = renderE2eCatalog(
       [
-        { id: 'memries-login', title: 'Sign in', blurb: 'Dex login puts the owner on Memories.' },
+        { id: 'memries-login', title: 'Sign in', blurb: 'The password form puts the owner on Memories.' },
         { id: 'memries-search', title: 'Search', blurb: 'Filter on Memories opens Search.' },
       ],
       {
@@ -141,7 +141,7 @@ describe('renderE2eCatalog', () => {
     );
     assert.equal(
       markdown,
-      '- ✅ **Sign in** — Dex login puts the owner on Memories.\n- ✅ **Search** — Filter on Memories opens Search.',
+      '- ✅ **Sign in** — The password form puts the owner on Memories.\n- ✅ **Search** — Filter on Memories opens Search.',
     );
   });
 });
@@ -163,7 +163,7 @@ old catalog
   it('refreshes the tag and catalog from the suite finding and Feature blurbs', () => {
     const sources = {
       'memries-login': `Feature: Sign in
-  Dex login puts the owner on Memories.
+  The password form puts the owner on Memories.
 `,
       'memries-search': `Feature: Search
   Filter on Memories opens Search.
@@ -184,7 +184,7 @@ old catalog
     );
     assert.match(
       result.markdown,
-      /<!-- e2e-last-runs-catalog:start -->\n- ❌ \*\*Sign in\*\* — Dex login puts the owner on Memories\.\n- ❌ \*\*Search\*\* — Filter on Memories opens Search\.\n<!-- e2e-last-runs-catalog:end -->/,
+      /<!-- e2e-last-runs-catalog:start -->\n- ❌ \*\*Sign in\*\* — The password form puts the owner on Memories\.\n- ❌ \*\*Search\*\* — Filter on Memories opens Search\.\n<!-- e2e-last-runs-catalog:end -->/,
     );
   });
 

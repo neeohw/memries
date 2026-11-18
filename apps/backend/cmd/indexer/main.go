@@ -11,15 +11,15 @@ import (
 	"github.com/memries/memries/internal/config"
 	"github.com/memries/memries/internal/db"
 	"github.com/memries/memries/internal/index"
-	"github.com/memries/memries/internal/storage"
+	"github.com/memries/memries/internal/sources"
 	"github.com/memries/memries/internal/thumb"
 )
 
 func main() {
 	owner := flag.String("owner", "", "owner email (required)")
-	prefix := flag.String("prefix", "", "storage key prefix to limit walk")
+	source := flag.String("source", "", "index only this source id (default: all of the owner's sources)")
 	conc := flag.Int("concurrency", 4, "worker count")
-	force := flag.Bool("force", false, "reindex + regenerate thumbs even if hash already present")
+	force := flag.Bool("force", false, "reindex + regenerate thumbs even if files look unchanged")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -37,11 +37,6 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	store, err := storage.New(cfg)
-	if err != nil {
-		log.Error("storage", "err", err)
-		os.Exit(1)
-	}
 	dbc, err := db.Connect(ctx, cfg)
 	if err != nil {
 		log.Error("db", "err", err)
@@ -57,8 +52,30 @@ func main() {
 		log.Error("thumb gen", "err", err)
 		os.Exit(1)
 	}
-	idx := &index.Indexer{Store: store, DB: dbc, Thumb: tg, Log: log}
-	if _, err := idx.Run(ctx, index.Options{OwnerID: user.Key, Prefix: *prefix, Concurrency: *conc, Force: *force}); err != nil {
+	sealer, err := sources.NewSealer(cfg.SessionKey)
+	if err != nil {
+		log.Error("sources", "err", err)
+		os.Exit(1)
+	}
+	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.SourceRoots, LegacyRoot: cfg.LocalRoot, Log: log}
+	scopes, err := reg.Scopes(ctx, user.Key, user.Email)
+	if err != nil {
+		log.Error("sources", "err", err)
+		os.Exit(1)
+	}
+	var prefixes []string
+	for _, s := range scopes {
+		if *source == "" || s.Prefix == *source {
+			prefixes = append(prefixes, s.Prefix)
+		}
+	}
+	if *source != "" && len(prefixes) == 0 {
+		log.Error("source not found for owner", "source", *source, "owner", user.Email)
+		os.Exit(2)
+	}
+	idx := &index.Indexer{Store: reg, DB: dbc, Thumb: tg, Log: log}
+	log.Info("indexer start", "thumb_backend", thumb.Backend, "concurrency", *conc)
+	if _, err := idx.Run(ctx, index.Options{OwnerID: user.Key, Prefixes: prefixes, Concurrency: *conc, Force: *force}); err != nil {
 		log.Error("index", "err", err)
 		os.Exit(1)
 	}

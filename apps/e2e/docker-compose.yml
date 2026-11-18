@@ -2,60 +2,32 @@
 # Host ports default to the single-instance band (18080). Fan-out overrides via env.
 
 services:
-  arangodb:
-    image: arangodb:3.12
-    environment:
-      ARANGO_ROOT_PASSWORD: ${ARANGO_PASSWORD}
-    volumes:
-      - arango_e2e_data:/var/lib/arangodb3
-      - arango_e2e_apps:/var/lib/arangodb3-apps
-    ports:
-      - "127.0.0.1:${ARANGO_HOST_PORT:-18529}:8529"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8529/_admin/server/availability >/dev/null || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 20s
-
-  dex:
-    image: ghcr.io/dexidp/dex:v2.41.1
-    command: ["dex", "serve", "/etc/dex/config.yaml"]
-    volumes:
-      - ./.work/dex.yaml:/etc/dex/config.yaml:ro
-    ports:
-      - "127.0.0.1:${DEX_HOST_PORT:-15556}:5556"
-
   backend:
     build:
       context: ../..
       dockerfile: Dockerfile.backend
     environment:
       MEMRIES_ADDR: ":8080"
-      MEMRIES_ARANGO_URL: http://arangodb:8529
-      MEMRIES_ARANGO_DB: memries
-      MEMRIES_ARANGO_USER: root
-      MEMRIES_ARANGO_PASSWORD: ${ARANGO_PASSWORD}
+      MEMRIES_DB_DRIVER: sqlite
+      MEMRIES_DB_DSN: /data/db/memries.db
       MEMRIES_STORAGE_BACKEND: local
       MEMRIES_LOCAL_ROOT: /data/photos
       MEMRIES_CACHE_ROOT: /data/cache
-      MEMRIES_OIDC_ISSUER: http://localhost:${DEX_HOST_PORT:-15556}
-      MEMRIES_OIDC_CLIENT_ID: memries
-      MEMRIES_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
-      MEMRIES_OIDC_REDIRECT_URL: http://localhost:${CADDY_HOST_PORT:-18080}/oauth/callback
+      # Extra server directories local folders may live under (MEMRIES_LOCAL_ROOT is always allowed).
+      MEMRIES_SOURCE_ROOTS: ${SOURCE_ROOTS:-}
       MEMRIES_SESSION_KEY: ${SESSION_KEY}
+      # Pinned, NOT read from .env: apps/e2e/steps/fixtures.ts signs in with
+      # this exact literal, so a developer's own BOOTSTRAP_PASSWORD must not
+      # reach this disposable stack (ADR 0016).
+      MEMRIES_BOOTSTRAP_PASSWORD: password
+      # Likewise pinned, so the bootstrapped account is the one the suite uses.
+      MEMRIES_ADMIN_EMAILS: admin@example.com
       MEMRIES_PUBLIC_URL: http://localhost:${CADDY_HOST_PORT:-18080}
       MEMRIES_E2E: "1"
     volumes:
       - ./.work/photos:/data/photos
       - ./.work/cache:/data/cache
-    extra_hosts:
-      - "localhost:host-gateway"
-    depends_on:
-      arangodb:
-        condition: service_healthy
-      dex:
-        condition: service_started
+      - ./.work/db:/data/db
     ports:
       - "127.0.0.1:${BACKEND_HOST_PORT:-18081}:8080"
 
@@ -81,7 +53,5 @@ services:
       - frontend
 
 volumes:
-  arango_e2e_data:
-  arango_e2e_apps:
   caddy_e2e_data:
   caddy_e2e_config:

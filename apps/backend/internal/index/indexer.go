@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,7 +26,7 @@ import (
 
 type PhotoRepository interface {
 	GetPhoto(ctx context.Context, key string) (*db.Photo, error)
-	GetPhotoByHash(ctx context.Context, hash string) (*db.Photo, error)
+	GetPhotoByHash(ctx context.Context, ownerID, hash string) (*db.Photo, error)
 	GetPhotoByOwnerPath(ctx context.Context, ownerID, path string) (*db.Photo, error)
 	UpsertPhoto(ctx context.Context, p *db.Photo) error
 	UpdateIndexedPhoto(ctx context.Context, p *db.Photo) error
@@ -41,10 +42,12 @@ type Indexer struct {
 }
 
 type Options struct {
-	OwnerID     string
-	Prefix      string // restrict walk; "" = whole storage
+	OwnerID string
+	// Prefixes are the storage roots to walk (one per Source). Empty walks
+	// nothing but still prunes the Owner's Photos whose files are gone.
+	Prefixes    []string
 	Concurrency int
-	Force       bool // reindex even if hash already present
+	Force       bool // reindex even if size, mtime, and hash are unchanged
 	OnProgress  func(Result)
 }
 
@@ -68,28 +71,49 @@ func (i *Indexer) Run(ctx context.Context, opts Options) (Result, error) {
 		return res, fmt.Errorf("OwnerID required")
 	}
 
-	var keys []string
-	if err := i.Store.Walk(ctx, opts.Prefix, func(o storage.ObjectInfo) error {
-		if !isMedia(o.Key) {
+	var objects []storage.ObjectInfo
+	seen := map[string]bool{}
+	var unreadable []string
+	var walkErrs []error
+	for _, prefix := range opts.Prefixes {
+		err := i.Store.Walk(ctx, prefix, func(o storage.ObjectInfo) error {
+			if !isMedia(o.Key) {
+				return nil
+			}
+			objects = append(objects, o)
+			seen[o.Key] = true
+			mu.Lock()
+			res.Discovered++
+			mu.Unlock()
+			report()
 			return nil
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				return res, ctx.Err()
+			}
+			// One unreachable Source (NAS asleep, bad password) must not
+			// fail the others or prune what it holds.
+			i.Log.Error("walk source", "prefix", prefix, "err", err)
+			unreadable = append(unreadable, prefix)
+			walkErrs = append(walkErrs, fmt.Errorf("%s: %w", prefix, err))
+			mu.Lock()
+			res.Failed++
+			mu.Unlock()
+			report()
 		}
-		keys = append(keys, o.Key)
-		mu.Lock()
-		res.Discovered++
-		mu.Unlock()
-		report()
-		return nil
-	}); err != nil {
-		return res, err
+	}
+	if len(opts.Prefixes) > 0 && len(unreadable) == len(opts.Prefixes) {
+		return res, errors.Join(walkErrs...)
 	}
 
-	jobs := make(chan string, opts.Concurrency*2)
+	jobs := make(chan storage.ObjectInfo, opts.Concurrency*2)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		defer close(jobs)
-		for _, key := range keys {
+		for _, o := range objects {
 			select {
-			case jobs <- key:
+			case jobs <- o:
 			case <-gctx.Done():
 				return gctx.Err()
 			}
@@ -98,8 +122,8 @@ func (i *Indexer) Run(ctx context.Context, opts Options) (Result, error) {
 	})
 	for w := 0; w < opts.Concurrency; w++ {
 		g.Go(func() error {
-			for key := range jobs {
-				skipped, err := i.indexOne(gctx, key, opts.OwnerID, opts.Force)
+			for o := range jobs {
+				skipped, err := i.indexOne(gctx, o, opts.OwnerID, opts.Force)
 				mu.Lock()
 				res.Processed++
 				if err != nil {
@@ -111,7 +135,7 @@ func (i *Indexer) Run(ctx context.Context, opts Options) (Result, error) {
 				}
 				mu.Unlock()
 				if err != nil {
-					i.Log.Error("index", "key", key, "err", err)
+					i.Log.Error("index", "key", o.Key, "err", err)
 				}
 				report()
 			}
@@ -123,68 +147,49 @@ func (i *Indexer) Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	// After relocating paths for rediscovered content, soft-delete rows whose
 	// original file is still missing so /api/original stops 500ing on ghosts.
-	if err := i.pruneMissingOriginals(ctx, opts.OwnerID); err != nil {
+	if err := i.pruneMissingOriginals(ctx, opts.OwnerID, seen, unreadable); err != nil {
 		i.Log.Error("prune missing", "owner", opts.OwnerID, "err", err)
 	}
 	return res, nil
 }
 
-func (i *Indexer) indexOne(ctx context.Context, key, ownerID string, force bool) (bool, error) {
-	rc, err := i.Store.Get(ctx, key)
-	if err != nil {
-		return false, err
-	}
-	defer rc.Close()
-
-	hasher := sha256.New()
-	var exifBuf [1 << 16]byte
-	exifRead := 0
-	exifPeek := exifBuf[:0]
-	buf := make([]byte, 32*1024)
-	var size int64
-	for {
-		n, rerr := rc.Read(buf)
-		if n > 0 {
-			hasher.Write(buf[:n])
-			size += int64(n)
-			if exifRead < len(exifBuf) {
-				take := len(exifBuf) - exifRead
-				if take > n {
-					take = n
-				}
-				exifPeek = append(exifPeek, buf[:take]...)
-				exifRead += take
-			}
-		}
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			return false, rerr
-		}
-	}
-	hash := hex.EncodeToString(hasher.Sum(nil))
-
-	info, err := i.Store.Stat(ctx, key)
-	if err != nil {
-		info = storage.ObjectInfo{Key: key}
-	}
-
-	var exifRes exif.Result
-	if r, err := exif.Parse(bytesReader(exifPeek)); err == nil {
-		exifRes = r
-	}
-	cap := ResolveCaptureTime(exifRes, info)
-
+func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, ownerID string, force bool) (bool, error) {
+	key := info.Key
 	byPath, err := lookupPhoto(i.DB.GetPhotoByOwnerPath(ctx, ownerID, key))
 	if err != nil {
 		return false, err
 	}
-	byHash, err := lookupPhoto(i.DB.GetPhotoByHash(ctx, hash))
+	// Remote Sources make every byte expensive: trust size + mtime like rsync.
+	if !force && byPath != nil && byPath.DeletedAt == nil && unchangedOnDisk(byPath, info) &&
+		i.Thumb.HasAll(byPath.Thumbs.S256, byPath.Thumbs.S512, byPath.Thumbs.S1024) {
+		return true, nil
+	}
+
+	data, err := i.read(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	sum := sha256.Sum256(data)
+	hash := hex.EncodeToString(sum[:])
+	size := int64(len(data))
+
+	var exifRes exif.Result
+	if r, err := exif.Parse(bytes.NewReader(data[:min(len(data), 1<<16)])); err == nil {
+		exifRes = r
+	}
+	cap := ResolveCaptureTime(exifRes, info)
+
+	byHash, err := lookupPhoto(i.DB.GetPhotoByHash(ctx, ownerID, hash))
 	if err != nil {
 		return false, err
 	}
 	keepKey, action := ResolveIdentity(key, hash, byPath, byHash)
+	if action == IdentityCreate {
+		keepKey, err = i.freeKeyFor(ctx, ownerID, keepKey)
+		if err != nil {
+			return false, err
+		}
+	}
 
 	mimeType := mime.TypeByExtension(strings.ToLower(filepath.Ext(key)))
 	if mimeType == "" {
@@ -195,6 +200,7 @@ func (i *Indexer) indexOne(ctx context.Context, key, ownerID string, force bool)
 	if existing == nil {
 		existing = byHash
 	}
+	ptr := i.storagePtr(info)
 
 	if !force && existing != nil && existing.Hash == hash && i.Thumb.HasAll(existing.Thumbs.S256, existing.Thumbs.S512, existing.Thumbs.S1024) {
 		changed := CaptureChanged(*existing, cap)
@@ -203,9 +209,10 @@ func (i *Indexer) indexOne(ctx context.Context, key, ownerID string, force bool)
 				return false, err
 			}
 		}
-		if changed || existing.Storage.Path != key || existing.DeletedAt != nil {
+		if changed || existing.Storage.Path != key || existing.DeletedAt != nil || !unchangedOnDisk(existing, info) {
 			applyCapture(existing, cap)
-			existing.Storage, _ = relocatedStorage(existing.Storage, key, i.Store.Backend())
+			existing.Storage = ptr
+			existing.SizeBytes = size
 			existing.DeletedAt = nil
 			if err := i.DB.UpdateIndexedPhoto(ctx, existing); err != nil {
 				return false, err
@@ -217,12 +224,7 @@ func (i *Indexer) indexOne(ctx context.Context, key, ownerID string, force bool)
 		return true, nil
 	}
 
-	rc2, err := i.Store.Get(ctx, key)
-	if err != nil {
-		return false, err
-	}
-	defer rc2.Close()
-	thumbRes, err := i.Thumb.Generate(keepKey, rc2, exifRes.Orientation)
+	thumbRes, err := i.Thumb.Generate(keepKey, data, exifRes.Orientation)
 	if err != nil {
 		return false, fmt.Errorf("thumb: %w", err)
 	}
@@ -231,7 +233,7 @@ func (i *Indexer) indexOne(ctx context.Context, key, ownerID string, force bool)
 		Key:         keepKey,
 		Kind:        "photo",
 		OwnerID:     ownerID,
-		Storage:     db.StoragePtr{Backend: i.Store.Backend(), Path: key},
+		Storage:     ptr,
 		Hash:        hash,
 		SizeBytes:   size,
 		MIME:        mimeType,
@@ -261,6 +263,47 @@ func (i *Indexer) indexOne(ctx context.Context, key, ownerID string, force bool)
 	return false, nil
 }
 
+// freeKeyFor keeps ADR 0005's content-hash key unless another Owner already
+// holds it. Photo keys are table-unique, so identical bytes in two libraries
+// need two keys. The fallback is derived from the Owner and the content, so a
+// re-index lands on the same key instead of creating another Photo.
+func (i *Indexer) freeKeyFor(ctx context.Context, ownerID, key string) (string, error) {
+	existing, err := lookupPhoto(i.DB.GetPhoto(ctx, key))
+	if err != nil {
+		return "", err
+	}
+	if existing == nil || existing.OwnerID == ownerID {
+		return key, nil
+	}
+	sum := sha256.Sum256([]byte(ownerID + ":" + key))
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// read pulls the whole Original once; hash, EXIF, and thumbs share the bytes
+// so network Sources are not downloaded twice.
+func (i *Indexer) read(ctx context.Context, key string) ([]byte, error) {
+	rc, err := i.Store.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
+}
+
+func (i *Indexer) storagePtr(info storage.ObjectInfo) db.StoragePtr {
+	ptr := db.StoragePtr{Backend: i.Store.Backend(), Path: info.Key}
+	if !info.ModTime.IsZero() {
+		mt := info.ModTime.UTC()
+		ptr.ModTime = &mt
+	}
+	return ptr
+}
+
+func unchangedOnDisk(p *db.Photo, info storage.ObjectInfo) bool {
+	return p.Storage.ModTime != nil && !info.ModTime.IsZero() &&
+		p.Storage.ModTime.Equal(info.ModTime) && p.SizeBytes == info.Size
+}
+
 func lookupPhoto(p *db.Photo, err error) (*db.Photo, error) {
 	if err == nil {
 		return p, nil
@@ -288,20 +331,4 @@ func isMedia(key string) bool {
 		return true
 	}
 	return false
-}
-
-type bytesReadCloser struct {
-	b []byte
-	i int
-}
-
-func bytesReader(b []byte) io.Reader { return &bytesReadCloser{b: b} }
-
-func (r *bytesReadCloser) Read(p []byte) (int, error) {
-	if r.i >= len(r.b) {
-		return 0, io.EOF
-	}
-	n := copy(p, r.b[r.i:])
-	r.i += n
-	return n, nil
 }

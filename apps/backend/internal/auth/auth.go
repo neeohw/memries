@@ -1,23 +1,47 @@
+// Package auth owns the cookie session and local password sign-in (ADR 0016).
+//
+// There is no identity provider. Memries is a single-household photo manager
+// on a 2GB board, where running Dex cost more memory than the application it
+// authenticated for and still required an OIDC round trip through a container
+// that only ever held one static password.
 package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"mime"
+	"net"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/sessions"
-	"golang.org/x/oauth2"
 
 	"github.com/memries/memries/internal/config"
 	"github.com/memries/memries/internal/db"
 )
 
 const sessionName = "memries"
+
+// maxCredentialBytes caps the request body. A password is run through argon2id
+// at 19MiB a go, so an unbounded one would be a cheap way to spend the host's
+// memory and CPU.
+const maxCredentialBytes = 4 << 10
+
+// maxPasswordBytes bounds what reaches the hash function, for the same reason.
+const maxPasswordBytes = 1024
+
+// concurrentVerifications bounds how many password hashes may be computed at
+// once. Each costs 19MiB, so without this a handful of simultaneous attempts
+// would push the process past its memory limit.
+const concurrentVerifications = 2
 
 type ctxKey int
 
@@ -33,128 +57,227 @@ func init() {
 	gob.Register(&SessionUser{})
 }
 
-type Auth struct {
-	cfg      *config.Config
-	store    *sessions.CookieStore
-	verifier *oidc.IDTokenVerifier
-	oauth    *oauth2.Config
-	db       *db.Client
+// UserStore is the slice of the catalog this package needs. Narrowing it keeps
+// the handlers testable without a database.
+type UserStore interface {
+	GetUserByEmail(ctx context.Context, email string) (*db.User, error)
+	UpsertUserByEmail(ctx context.Context, email, name string) (*db.User, error)
+	SetPasswordHash(ctx context.Context, key, hash string) error
 }
 
-func New(ctx context.Context, cfg *config.Config, dbc *db.Client) (*Auth, error) {
+type Auth struct {
+	cfg   *config.Config
+	store *sessions.CookieStore
+	db    UserStore
+	log   *slog.Logger
+
+	byAddr  *limiter
+	byLogin *limiter
+	// verifying is a counting semaphore, not a lock: see
+	// concurrentVerifications.
+	verifying chan struct{}
+}
+
+func New(cfg *config.Config, store UserStore, log *slog.Logger) (*Auth, error) {
 	key, err := base64.StdEncoding.DecodeString(cfg.SessionKey)
 	if err != nil || len(key) < 32 {
 		return nil, errors.New("MEMRIES_SESSION_KEY must be base64-encoded, at least 32 bytes")
 	}
-	store := sessions.NewCookieStore(key)
-	store.Options = &sessions.Options{
+	if log == nil {
+		log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	cookies := sessions.NewCookieStore(key)
+	cookies.Options = &sessions.Options{
 		Path:     "/",
 		MaxAge:   60 * 60 * 24 * 30,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		// Only promise Secure when the deployment is actually https; setting it
+		// on a plain-http LAN install would make the cookie unusable.
+		Secure: strings.HasPrefix(strings.ToLower(cfg.PublicURL), "https://"),
 	}
-	discoveryCtx := ctx
-	if cfg.OIDCDiscoveryURL != "" && cfg.OIDCDiscoveryURL != cfg.OIDCIssuer {
-		discoveryCtx = oidc.InsecureIssuerURLContext(ctx, cfg.OIDCIssuer)
-		// Use discovery URL as the provider lookup but trust stated issuer.
-		provider, err := oidc.NewProvider(discoveryCtx, cfg.OIDCDiscoveryURL)
+	return &Auth{
+		cfg:       cfg,
+		store:     cookies,
+		db:        store,
+		log:       log,
+		byAddr:    newLimiter(loginBurst, loginRefill),
+		byLogin:   newLimiter(loginBurst, loginRefill),
+		verifying: make(chan struct{}, concurrentVerifications),
+	}, nil
+}
+
+// Bootstrap gives the configured admin addresses a password from
+// MEMRIES_BOOTSTRAP_PASSWORD, so a fresh install can be signed into.
+//
+// It only ever fills an empty password. Re-applying the variable on every
+// restart would silently undo a password change, and leaving the variable set
+// is the normal case for a Compose or systemd unit.
+func (a *Auth) Bootstrap(ctx context.Context) error {
+	if a.cfg.BootstrapPassword == "" {
+		a.warnIfNobodyCanSignIn(ctx)
+		return nil
+	}
+	if len(a.cfg.AdminEmails) == 0 {
+		return errors.New("MEMRIES_BOOTSTRAP_PASSWORD is set but MEMRIES_ADMIN_EMAILS is empty, so there is no account to apply it to")
+	}
+	if len(a.cfg.BootstrapPassword) > maxPasswordBytes {
+		return fmt.Errorf("MEMRIES_BOOTSTRAP_PASSWORD must be at most %d bytes", maxPasswordBytes)
+	}
+	for _, email := range a.cfg.AdminEmails {
+		user, err := a.db.UpsertUserByEmail(ctx, email, "")
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("bootstrap %s: %w", email, err)
 		}
-		oa := &oauth2.Config{
-			ClientID:     cfg.OIDCClientID,
-			ClientSecret: cfg.OIDCClientSecret,
-			Endpoint:     provider.Endpoint(),
-			RedirectURL:  cfg.OIDCRedirectURL,
-			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		if user.PasswordHash != "" {
+			continue
 		}
-		v := provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID})
-		return &Auth{cfg: cfg, store: store, verifier: v, oauth: oa, db: dbc}, nil
+		hash, err := HashPassword(a.cfg.BootstrapPassword)
+		if err != nil {
+			return fmt.Errorf("bootstrap %s: %w", email, err)
+		}
+		if err := a.db.SetPasswordHash(ctx, user.Key, hash); err != nil {
+			return fmt.Errorf("bootstrap %s: %w", email, err)
+		}
+		// Never log the password itself, only that one was applied.
+		a.log.Info("bootstrap password applied", "email", email)
 	}
-	provider, err := oidc.NewProvider(ctx, cfg.OIDCIssuer)
+	return nil
+}
+
+// warnIfNobodyCanSignIn reports the one configuration that leaves a healthy
+// install nobody can get into: no bootstrap password, and no existing account
+// with a password either.
+//
+// Sign-in failures are deliberately uniform, so without this the operator sees
+// only "invalid login or password" and has nothing to go on. It warns rather
+// than failing, because an install whose passwords were set on an earlier run
+// is perfectly normal and must still start.
+func (a *Auth) warnIfNobodyCanSignIn(ctx context.Context) {
+	for _, email := range a.cfg.AdminEmails {
+		user, err := a.db.GetUserByEmail(ctx, email)
+		if err != nil || user == nil {
+			continue
+		}
+		if user.PasswordHash != "" {
+			return
+		}
+	}
+	a.log.Warn("no account has a password, so sign-in cannot succeed; " +
+		"set MEMRIES_BOOTSTRAP_PASSWORD (with MEMRIES_ADMIN_EMAILS) and restart")
+}
+
+type credentials struct {
+	Login    string `json:"login"`
+	Password string `json:"password"`
+}
+
+// LoginHandler verifies a password and starts a session.
+//
+// Every failure answers with the same status and message. Distinguishing
+// "no such account" from "wrong password" would turn the form into an address
+// oracle, so the two paths are kept identical in wording and in cost.
+func (a *Auth) LoginHandler(w http.ResponseWriter, r *http.Request) {
+	creds, err := readCredentials(w, r)
 	if err != nil {
+		http.Error(w, "malformed credentials", http.StatusBadRequest)
+		return
+	}
+	login := strings.ToLower(strings.TrimSpace(creds.Login))
+	if login == "" || creds.Password == "" {
+		http.Error(w, "login and password are required", http.StatusBadRequest)
+		return
+	}
+	if len(creds.Password) > maxPasswordBytes {
+		http.Error(w, "password is too long", http.StatusBadRequest)
+		return
+	}
+
+	addr := clientAddr(r)
+	if ok, retry := a.byAddr.allow(addr); !ok {
+		a.tooMany(w, retry, "addr", addr)
+		return
+	}
+	if ok, retry := a.byLogin.allow(login); !ok {
+		a.tooMany(w, retry, "login", login)
+		return
+	}
+
+	user, err := a.authenticate(r.Context(), login, creds.Password)
+	if err != nil {
+		// Logged without the password, and at info: a wrong password is an
+		// expected event, not a fault.
+		a.log.Info("login rejected", "login", login, "addr", addr, "reason", err)
+		http.Error(w, "invalid login or password", http.StatusUnauthorized)
+		return
+	}
+
+	// The attempt succeeded, so the earlier typos that led here should not
+	// leave this person or this address throttled.
+	a.byAddr.reset(addr)
+	a.byLogin.reset(login)
+
+	sess, _ := a.store.Get(r, sessionName)
+	// Replace the whole value map rather than merging, so nothing from a prior
+	// session survives into this one.
+	sess.Values = map[any]any{
+		"user": &SessionUser{Key: user.Key, Email: user.Email, Name: user.Name},
+	}
+	if err := sess.Save(r, w); err != nil {
+		http.Error(w, "session save", http.StatusInternalServerError)
+		return
+	}
+	a.log.Info("login accepted", "login", login, "addr", addr)
+	a.writeUser(w, &SessionUser{Key: user.Key, Email: user.Email, Name: user.Name})
+}
+
+// authenticate resolves and checks the credentials, spending the same work
+// whether or not the account exists.
+func (a *Auth) authenticate(ctx context.Context, login, password string) (*db.User, error) {
+	a.verifying <- struct{}{}
+	defer func() { <-a.verifying }()
+
+	user, err := a.db.GetUserByEmail(ctx, login)
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		return nil, fmt.Errorf("lookup: %w", err)
+	}
+	if user == nil || user.PasswordHash == "" {
+		// No stored hash to compare against. Spend the work anyway so the
+		// response time does not reveal that.
+		BurnPassword(password)
+		return nil, errors.New("no password set for this login")
+	}
+	if err := VerifyPassword(user.PasswordHash, password); err != nil {
+		if !errors.Is(err, ErrPasswordMismatch) {
+			// The stored hash is unusable. That is an operator problem, but the
+			// client still only learns that sign-in failed.
+			a.log.Error("stored password hash is unusable", "login", login, "err", err)
+		}
 		return nil, err
 	}
-	oa := &oauth2.Config{
-		ClientID:     cfg.OIDCClientID,
-		ClientSecret: cfg.OIDCClientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  cfg.OIDCRedirectURL,
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
-	}
-	v := provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID})
-	return &Auth{cfg: cfg, store: store, verifier: v, oauth: oa, db: dbc}, nil
+	return user, nil
 }
 
-func (a *Auth) LoginHandler(w http.ResponseWriter, r *http.Request) {
-	state, err := randomString(24)
-	if err != nil {
-		http.Error(w, "rand", http.StatusInternalServerError)
-		return
+func (a *Auth) tooMany(w http.ResponseWriter, retry time.Duration, field, value string) {
+	seconds := int(retry.Seconds())
+	if seconds < 1 {
+		seconds = 1
 	}
-	sess, _ := a.store.Get(r, sessionName)
-	sess.Values["oauth_state"] = state
-	if err := sess.Save(r, w); err != nil {
-		http.Error(w, "session save", http.StatusInternalServerError)
-		return
-	}
-	http.Redirect(w, r, a.oauth.AuthCodeURL(state), http.StatusFound)
+	a.log.Warn("login throttled", field, value, "retry_after_s", seconds)
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	http.Error(w, "too many sign-in attempts, try again later", http.StatusTooManyRequests)
 }
 
-func (a *Auth) CallbackHandler(w http.ResponseWriter, r *http.Request) {
-	sess, _ := a.store.Get(r, sessionName)
-	wantState, _ := sess.Values["oauth_state"].(string)
-	delete(sess.Values, "oauth_state")
-	if wantState == "" || r.URL.Query().Get("state") != wantState {
-		http.Error(w, "bad state", http.StatusBadRequest)
-		return
-	}
-	code := r.URL.Query().Get("code")
-	tok, err := a.oauth.Exchange(r.Context(), code)
-	if err != nil {
-		http.Error(w, "exchange: "+err.Error(), http.StatusUnauthorized)
-		return
-	}
-	rawID, ok := tok.Extra("id_token").(string)
-	if !ok {
-		http.Error(w, "no id_token", http.StatusUnauthorized)
-		return
-	}
-	idToken, err := a.verifier.Verify(r.Context(), rawID)
-	if err != nil {
-		http.Error(w, "verify: "+err.Error(), http.StatusUnauthorized)
-		return
-	}
-	var claims struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
-	}
-	if err := idToken.Claims(&claims); err != nil {
-		http.Error(w, "claims", http.StatusUnauthorized)
-		return
-	}
-	if claims.Email == "" {
-		http.Error(w, "email claim missing", http.StatusUnauthorized)
-		return
-	}
-	u, err := a.db.UpsertUserByEmail(r.Context(), claims.Email, claims.Name)
-	if err != nil {
-		http.Error(w, "user upsert: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	sess.Values["user"] = &SessionUser{Key: u.Key, Email: u.Email, Name: u.Name}
-	if err := sess.Save(r, w); err != nil {
-		http.Error(w, "session save", http.StatusInternalServerError)
-		return
-	}
-	http.Redirect(w, r, "/", http.StatusFound)
-}
-
+// LogoutHandler drops the session cookie.
 func (a *Auth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	sess, _ := a.store.Get(r, sessionName)
+	sess.Values = map[any]any{}
 	sess.Options.MaxAge = -1
-	_ = sess.Save(r, w)
-	http.Redirect(w, r, "/", http.StatusFound)
+	if err := sess.Save(r, w); err != nil {
+		http.Error(w, "session save", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *Auth) MeHandler(w http.ResponseWriter, r *http.Request) {
@@ -163,8 +286,15 @@ func (a *Auth) MeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	a.writeUser(w, u)
+}
+
+func (a *Auth) writeUser(w http.ResponseWriter, u *SessionUser) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(u)
+	_ = json.NewEncoder(w).Encode(struct {
+		*SessionUser
+		Admin bool `json:"admin"`
+	}{u, a.cfg.IsAdmin(u.Email)})
 }
 
 func (a *Auth) Middleware(next http.Handler) http.Handler {
@@ -189,10 +319,38 @@ func WithUser(ctx context.Context, u *SessionUser) context.Context {
 	return context.WithValue(ctx, userKey, u)
 }
 
-func randomString(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+// readCredentials accepts either a JSON body or a form post. The SPA sends
+// JSON; the form path keeps a plain HTML submit working, which is what the
+// browser falls back to with JavaScript disabled.
+func readCredentials(w http.ResponseWriter, r *http.Request) (credentials, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCredentialBytes)
+
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err == nil && mediaType == "application/json" {
+		var c credentials
+		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+			return credentials{}, err
+		}
+		return c, nil
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	if err := r.ParseForm(); err != nil {
+		return credentials{}, err
+	}
+	return credentials{
+		Login:    r.PostFormValue("login"),
+		Password: r.PostFormValue("password"),
+	}, nil
+}
+
+// clientAddr is the rate-limiting key for a request's origin.
+//
+// chi's RealIP middleware has already rewritten RemoteAddr from
+// X-Forwarded-For, which a client could forge if the process were exposed
+// directly. It sits behind Caddy here, and the per-account limiter covers the
+// case where the per-address one is evaded.
+func clientAddr(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

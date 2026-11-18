@@ -8,6 +8,7 @@ import jpeg from 'jpeg-js';
 const e2eRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const photosRoot = join(e2eRoot, '.work', 'photos', 'admin@example.com');
 const cacheRoot = join(e2eRoot, '.work', 'cache');
+const dbRoot = join(e2eRoot, '.work', 'db');
 const NO_EXIF_WHEN = new Date('2023-03-15T09:00:00.000Z');
 
 export const FIXTURES = [
@@ -129,6 +130,10 @@ export async function setNoExifTimes(filePath) {
 
 export async function prepareAll() {
   await mkdir(cacheRoot, { recursive: true });
+  // The backend image runs as uid 1000, and Docker creates a missing
+  // bind-mount directory as root. Creating it here, as the developer, keeps
+  // the container able to write the SQLite catalog on Linux.
+  await mkdir(dbRoot, { recursive: true });
   await rm(photosRoot, { recursive: true, force: true });
   await mkdir(photosRoot, { recursive: true });
   for (const spec of FIXTURES) {

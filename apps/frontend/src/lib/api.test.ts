@@ -1,9 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import { flattenPhotoPages, mapAlbum, mapPhoto, redirectForStatus, wallClockFromApi } from './api';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  SIGN_IN_FAILED,
+  UnauthorizedError,
+  flattenPhotoPages,
+  isUnauthorized,
+  mapAlbum,
+  mapPhoto,
+  signIn,
+  signOut,
+  wallClockFromApi,
+} from './api';
 import type { Photo } from '../models/photo';
 
 describe('api mapping', () => {
-  it('maps Arango photos onto the UI model', () => {
+  it('maps catalog photos onto the UI model', () => {
     const photo = mapPhoto({
       _key: 'abc123',
       taken_at: '2024-08-25T18:30:01.123456789Z',
@@ -66,9 +76,72 @@ describe('api mapping', () => {
     expect(pages.map((photo) => photo.id)).toEqual(['a', 'b', 'c']);
   });
 
-  it('sends unauthorized callers to login', () => {
-    expect(redirectForStatus(401)).toBe('/oauth/login');
-    expect(redirectForStatus(200)).toBeNull();
-    expect(redirectForStatus(500)).toBeNull();
+  it('recognises only its own unauthorized error', () => {
+    expect(isUnauthorized(new UnauthorizedError())).toBe(true);
+    expect(isUnauthorized(new Error('unauthorized'))).toBe(false);
+    expect(isUnauthorized(null)).toBe(false);
+    expect(isUnauthorized('unauthorized')).toBe(false);
+  });
+});
+
+describe('signIn', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubFetch(response: Partial<Response>) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: '',
+      headers: new Headers(),
+      text: async () => '',
+      json: async () => ({}),
+      ...response,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('posts the credentials as JSON with the session cookie', async () => {
+    const fetchMock = stubFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({ Email: 'admin@example.com', Name: 'Admin', admin: true }),
+    });
+
+    await expect(signIn('admin@example.com', 'password')).resolves.toEqual({
+      email: 'admin@example.com',
+      name: 'Admin',
+      admin: true,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/auth/login');
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+    expect(JSON.parse(init.body)).toEqual({ login: 'admin@example.com', password: 'password' });
+  });
+
+  it('reports a rejected sign-in without saying which field was wrong', async () => {
+    stubFetch({ ok: false, status: 401 });
+    await expect(signIn('admin@example.com', 'nope')).rejects.toThrow(SIGN_IN_FAILED);
+    // The message must not hint at whether the account exists.
+    expect(SIGN_IN_FAILED).not.toMatch(/unknown|no such|exist|account/i);
+  });
+
+  it('turns a throttled response into a wait time', async () => {
+    stubFetch({ ok: false, status: 429, headers: new Headers({ 'Retry-After': '90' }) });
+    await expect(signIn('admin@example.com', 'nope')).rejects.toThrow(/2 minute/);
+  });
+
+  it('falls back to a generic throttle message without Retry-After', async () => {
+    stubFetch({ ok: false, status: 429 });
+    await expect(signIn('admin@example.com', 'nope')).rejects.toThrow(/Too many attempts/);
+  });
+
+  it('treats an already-expired session as a successful sign-out', async () => {
+    stubFetch({ ok: false, status: 401 });
+    await expect(signOut()).resolves.toBeUndefined();
   });
 });

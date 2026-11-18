@@ -21,6 +21,8 @@ export function Timeline({
   fetchError,
   onRescan,
   rescanning,
+  noFolders,
+  onAddFolder,
   onFilter,
 }: {
   photos: Photo[];
@@ -34,6 +36,9 @@ export function Timeline({
   fetchError?: boolean;
   onRescan?: () => void;
   rescanning?: boolean;
+  /** No folder feeds this library yet; admins get a shortcut to add one. */
+  noFolders?: boolean;
+  onAddFolder?: () => void;
   onFilter?: () => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
@@ -156,8 +161,24 @@ export function Timeline({
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {groups.length === 0 ? (
           <div className="flex flex-col items-center px-6 py-12 text-center" role="status">
-            <p className="text-ink">No memories here yet.</p>
-            {onRescan && (
+            <p className="text-ink">
+              {noFolders ? 'No photo folders are connected yet.' : 'No memories here yet.'}
+            </p>
+            {noFolders && !onAddFolder && (
+              <p className="mt-2 max-w-xs text-sm text-ink">
+                Ask an admin to add a folder for your account.
+              </p>
+            )}
+            {noFolders && onAddFolder && (
+              <button
+                type="button"
+                onClick={onAddFolder}
+                className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
+              >
+                Add a folder
+              </button>
+            )}
+            {onRescan && !noFolders && (
               <button
                 type="button"
                 onClick={onRescan}
