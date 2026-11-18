@@ -37,6 +37,9 @@ func (a *API) Routes(r chi.Router) {
 	r.Get("/timeline", a.timeline)
 	r.Get("/photos", a.photos)
 	r.Get("/photos/{id}", a.photo)
+	// Batch route before the single one is not required by chi, which matches
+	// on segment count, but keeps the pair readable (ADR 0018).
+	r.Put("/photos/favorite", a.setFavorites)
 	r.Put("/photos/{id}/favorite", a.setFavorite)
 	r.Get("/albums", a.albums)
 	r.Post("/albums", a.createAlbum)

@@ -1,10 +1,11 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import {
   Given,
   Then,
   When,
   albumOpenButton,
   collectTimelineLabels,
+  escapeRegExp,
   markFixturesDirty,
   openTab,
   photoActionsDialog,
@@ -396,3 +397,56 @@ function parseLibraryClock(day: string): string {
   if (!stamp) throw new Error(`unknown library clock ${day}`);
   return stamp;
 }
+
+// --- multi-select (ADR 0018) -------------------------------------------
+
+/** The tile's checkbox, which carries the capture time like the open label. */
+function selectBoxByDay(page: Page, day: string): Locator {
+  return page.getByRole('checkbox', {
+    name: new RegExp(`(Select|Deselect) photo, ${escapeRegExp(day)}`),
+  });
+}
+
+function selectionToolbar(page: Page): Locator {
+  return page.getByRole('toolbar', { name: 'Selected photos' });
+}
+
+When('I select the photo from {string}', async ({ page }, day: string) => {
+  const box = selectBoxByDay(page, day).first();
+  await box.scrollIntoViewIfNeeded();
+  await box.click();
+});
+
+Then('the selection toolbar should show {int} selected', async ({ page }, count: number) => {
+  await expect(selectionToolbar(page)).toBeVisible();
+  await expect(selectionToolbar(page).getByText(`${count} selected`)).toBeVisible();
+});
+
+Then('the selection toolbar should be gone', async ({ page }) => {
+  await expect(selectionToolbar(page)).toHaveCount(0);
+});
+
+Then('the granularity selector should be hidden', async ({ page }) => {
+  await expect(page.getByRole('radiogroup', { name: 'Group memories by' })).toHaveCount(0);
+});
+
+Then('the granularity selector should be visible', async ({ page }) => {
+  await expect(page.getByRole('radiogroup', { name: 'Group memories by' })).toBeVisible();
+});
+
+When('I press Escape', async ({ page }) => {
+  await page.keyboard.press('Escape');
+});
+
+When('I favorite the selection', async ({ page }) => {
+  await selectionToolbar(page).getByRole('button', { name: 'Add to favorites' }).click();
+  // The toolbar stays until the reader dismisses it, so clear it to get the
+  // library back for the following steps.
+  await selectionToolbar(page).getByRole('button', { name: 'Clear selection' }).click();
+});
+
+When('I add the selection to album {string}', async ({ page }, name: string) => {
+  await selectionToolbar(page).getByRole('button', { name: 'Add to album' }).click();
+  await page.getByRole('menuitem', { name: new RegExp(escapeRegExp(name)) }).click();
+  await selectionToolbar(page).getByRole('button', { name: 'Clear selection' }).click();
+});

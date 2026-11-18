@@ -23,6 +23,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0015](docs/adr/0015-build-tagged-thumbnail-backend.md) | Thumbnail backend chosen by build tag: pure Go default, `-tags vips` (3.3x) for the device; chained ladder; atomic writes |
 | [0016](docs/adr/0016-local-password-auth.md) | Local password sign-in (argon2id, `POST /auth/login`), rate limited by address and by account; Dex and OIDC dropped |
 | [0017](docs/adr/0017-date-scrubber.md) | Right-edge date scrubber over the full month histogram from `/api/timeline`; jumps page backwards; photo page size 50 → 500 |
+| [0018](docs/adr/0018-multi-select-and-batch-actions.md) | Hover multi-select + selection toolbar; batch favorite and batch album-add, all-or-nothing |
 
 ## Contexts
 
@@ -77,7 +78,7 @@ Owner ACL today: session user key vs `photo.owner_id` / `album.owner_id`. Sharin
 
 - `/` → frontend
 - `POST /auth/login`, `POST /auth/logout` → backend. Outside `/api` on purpose: the session middleware guards `/api`, and you cannot present a session to get one ([0016](docs/adr/0016-local-password-auth.md))
-- `/api/*` → backend + auth middleware: `GET /me`, `/timeline`, `/photos` (`year`, `month`, `local_from`, `local_to`, `favorite`, `q`), `/photos/{id}`, `/photos/{id}/favorite`, `/albums`, `/albums/{id}`, `/albums/{id}/photos`, `/thumb/{id}`, `/original/{id}`, `/index`, `/index/status`; admin only (`MEMRIES_ADMIN_EMAILS`): `/admin/sources` (GET, POST), `/admin/sources/{id}` (PUT, DELETE), `/admin/sources/{id}/scan`
+- `/api/*` → backend + auth middleware: `GET /me`, `/timeline`, `/photos` (`year`, `month`, `local_from`, `local_to`, `favorite`, `q`), `/photos/{id}`, `/photos/{id}/favorite`, `PUT /photos/favorite` (batch), `/albums`, `/albums/{id}`, `/albums/{id}/photos`, `/thumb/{id}`, `/original/{id}`, `/index`, `/index/status`; admin only (`MEMRIES_ADMIN_EMAILS`): `/admin/sources` (GET, POST), `/admin/sources/{id}` (PUT, DELETE), `/admin/sources/{id}/scan`
 - `/healthz` on the backend only (not via Caddy today)
 
 ## Module map (`apps/backend/internal/`)
@@ -133,6 +134,8 @@ Migrations are embedded `.sql` under [internal/db/migrations](apps/backend/inter
   On Homebrew, libarchive is keg-only, so prefix either vips command with `PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig"`.
 - The date scrubber's track comes from `/api/timeline` (month granularity, whole library), never from the loaded photos: a track built from what is loaded would rescale while scrolling. It maps dates to positions only — `justifyRows` packs by real aspect ratios, so bucket heights are not derivable from counts. All of it lives in `lib/scrubberScale.ts` ([0017](docs/adr/0017-date-scrubber.md)).
 - `fetchPhotosPage` asks for 500 photos, the server cap. That is what keeps a scrubber jump to an unloaded month at ~24 requests instead of ~240. Do not lower it without rereading [0017](docs/adr/0017-date-scrubber.md).
+- A batch action is all or nothing. `SetFavorites` and `AddPhotosToAlbum` check ownership of every id before writing and answer 403 on any foreign id, rather than applying the valid part ([0018](docs/adr/0018-multi-select-and-batch-actions.md)). The `internal/api` fakes mirror that rule on purpose — a more permissive fake would hide the bug the check exists for.
+- Multi-select reaches tiles through `usePhotoSelection`, not props. A grid with no provider is inert, which is why Favorites, Search and Album pages still behave as before. `PhotoCard`'s checkbox is a sibling of the tile button, since buttons cannot nest.
 - Thumb URLs carry `&v=<photo hash>`, always built through `lib/photoSrc.ts`. The handler ignores `v`; it exists because thumbs are served `private, max-age=31536000, immutable` and a resynced Photo keeps its id and overwrites the same disk path, so only a changed URL can bust that cache. Never hand-build `/api/thumb/...`, and keep `Cache-Control` as it is. Album covers are the one exception: the album JSON carries `cover_photo_id` with no hash, so covers go unversioned and may show a stale image until reload.
 - The default catalog window is unbounded below (ADR 0005). Do not reintroduce a 1970 floor: scanned film carries pre-epoch EXIF, and those instants are negative microseconds, which `BIGINT` stores and sorts correctly. The 2100 ceiling stays.
 - Sharing has no tables. Add one when a query needs it, not before.

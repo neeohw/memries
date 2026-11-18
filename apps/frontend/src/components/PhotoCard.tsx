@@ -3,10 +3,12 @@ import { usePhotoPress } from '../hooks/usePhotoPress';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { useRevealOnScroll } from '../hooks/useRevealOnScroll';
 import { useViewportWidth } from '../hooks/useViewportWidth';
-import { photoOpenLabel } from '../lib/photoName';
+import { usePhotoSelection } from '../hooks/usePhotoSelection';
+import { photoOpenLabel, photoSelectLabel } from '../lib/photoName';
 import { compactThumbSize, sizedThumbUrl, timelineSrc, type PhotoDensity } from '../lib/photoSrc';
 import type { Photo } from '../models/photo';
 import { FavoriteBadge } from './FavoriteBadge';
+import { CheckIcon } from './icons';
 
 export type { PhotoDensity };
 
@@ -39,8 +41,17 @@ export function PhotoCard({
     ? sizedThumbUrl(photo.id, Math.max(size.width, size.height), photo.hash)
     : timelineSrc(photo, density, viewportWidth);
 
+  const selection = usePhotoSelection();
+  const selected = selection.selected.has(photo.id);
+
   const press = usePhotoPress({
     onOpen: () => {
+      // Once anything is selected, a plain click extends the selection rather
+      // than opening the viewer — the same modal behaviour as Google Photos.
+      if (selection.active) {
+        selection.toggle(photo.id);
+        return;
+      }
       if (buttonRef.current) onOpen(photo, buttonRef.current);
     },
     onActions: onActions
@@ -59,12 +70,13 @@ export function PhotoCard({
 
   const radius = density === 'thumb' || size ? 'rounded-md' : 'rounded-2xl';
 
-  const ariaLabel = photoOpenLabel(photo);
+  // The label has to say what the click will actually do.
+  const ariaLabel = selection.active ? photoSelectLabel(photo, selected) : photoOpenLabel(photo);
 
   return (
     <figure
       ref={revealRef}
-      className={`${size ? 'shrink-0' : 'h-full'} ${reducedMotion ? '' : visible ? 'reveal-in' : 'reveal'}`}
+      className={`group relative ${size ? 'shrink-0' : 'h-full'} ${reducedMotion ? '' : visible ? 'reveal-in' : 'reveal'}`}
       style={{
         ['--reveal-delay' as string]: `${Math.min(revealIndex, 8) * 40}ms`,
         width: size?.width,
@@ -80,7 +92,7 @@ export function PhotoCard({
         onPointerCancel={press.onPointerCancel}
         onContextMenu={press.onContextMenu}
         onKeyDown={press.onKeyDown}
-        className={`group relative block w-full overflow-hidden ${radius} bg-blush/40 transition duration-300 ease-out active:scale-[0.985]`}
+        className={`relative block w-full overflow-hidden ${radius} bg-blush/40 transition duration-300 ease-out active:scale-[0.985]`}
         style={
           size
             ? { width: size.width, height: size.height }
@@ -124,6 +136,38 @@ export function PhotoCard({
         {photo.favorite && (
           <FavoriteBadge compact={density === 'thumb' || (size ? size.height < 200 : false)} />
         )}
+        {selected && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-[inherit] bg-plum/30 ring-2 ring-inset ring-plum"
+          />
+        )}
+      </button>
+
+      {/* A sibling of the tile, not a child: the tile is itself a button and
+          buttons cannot nest. Hidden until hover or focus unless a selection
+          is already running, which is when it becomes the primary control. */}
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={selected}
+        aria-label={photoSelectLabel(photo, selected)}
+        data-select-photo
+        onClick={(event) => {
+          event.stopPropagation();
+          selection.toggle(photo.id, { shiftKey: event.shiftKey });
+        }}
+        className={`absolute left-1.5 top-1.5 z-10 grid h-6 w-6 place-items-center rounded-full border transition ${
+          selected
+            ? 'border-plum bg-plum text-cream'
+            : 'border-cream/80 bg-black/25 text-transparent hover:text-cream/90'
+        } ${
+          selected || selection.active
+            ? 'opacity-100'
+            : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
+        }`}
+      >
+        <CheckIcon className="h-3.5 w-3.5" />
       </button>
     </figure>
   );

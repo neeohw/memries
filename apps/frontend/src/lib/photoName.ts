@@ -18,3 +18,14 @@ export function photoViewerAlt(photo: {
   const when = photoWhen(photo);
   return photo.favorite ? `${name}, ${when}, favorited` : `${name}, ${when}`;
 }
+
+/**
+ * Label for a tile's selection checkbox.
+ *
+ * Carries the capture time like the open label does. Several hundred
+ * checkboxes reading "Select photo" would be indistinguishable to anything
+ * navigating by label.
+ */
+export function photoSelectLabel(photo: { takenAt: string }, selected: boolean): string {
+  return `${selected ? 'Deselect' : 'Select'} photo, ${photoWhen(photo)}`;
+}

@@ -155,3 +155,11 @@ export function SignOutIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <svg {...icon(props)} strokeWidth={2.4}>
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}

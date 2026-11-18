@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addPhotoToAlbum,
+  addPhotosToAlbum,
   createAlbum,
   fetchAlbum,
   fetchAlbums,
@@ -139,6 +140,41 @@ export function useRemovePhotoFromAlbum() {
       if (context?.previousDetail) {
         queryClient.setQueryData(albumDetailQueryKey(albumId), context.previousDetail);
       }
+    },
+    onSettled: (_data, _error, { albumId }) => {
+      void queryClient.invalidateQueries({ queryKey: albumQueryKey });
+      void queryClient.invalidateQueries({ queryKey: albumDetailQueryKey(albumId) });
+    },
+  });
+}
+
+/** Adds a selection to one album (ADR 0018). */
+export function useAddPhotosToAlbum() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ albumId, photoIds }: { albumId: string; photoIds: string[] }) =>
+      addPhotosToAlbum(albumId, photoIds),
+    onMutate: async ({ albumId, photoIds }) => {
+      await queryClient.cancelQueries({ queryKey: albumQueryKey });
+      const previous = queryClient.getQueryData<Album[]>(albumQueryKey);
+      queryClient.setQueryData<Album[]>(albumQueryKey, (current) =>
+        (current ?? []).map((album) => {
+          if (album.id !== albumId) return album;
+          // Membership is idempotent server-side, so only count the new ones.
+          const added = photoIds.filter((id) => !album.photoIds.includes(id));
+          if (added.length === 0) return album;
+          return {
+            ...album,
+            photoCount: album.photoCount + added.length,
+            photoIds: [...album.photoIds, ...added],
+            coverPhotoId: album.coverPhotoId ?? added[0],
+          };
+        }),
+      );
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(albumQueryKey, context.previous);
     },
     onSettled: (_data, _error, { albumId }) => {
       void queryClient.invalidateQueries({ queryKey: albumQueryKey });

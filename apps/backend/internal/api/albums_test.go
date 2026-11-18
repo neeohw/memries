@@ -121,6 +121,50 @@ func (f *fakeLibrary) AddPhotoToAlbum(_ context.Context, ownerID, albumID, photo
 	return album, nil
 }
 
+// The batch fakes below mirror the real store's all-or-nothing rule on
+// purpose. A fake that applied the valid half of a batch would be more
+// permissive than production and would hide exactly the bug these handlers
+// exist to prevent.
+
+func (f *fakeLibrary) AddPhotosToAlbum(ctx context.Context, ownerID, albumID string, photoIDs []string) (*db.AlbumView, error) {
+	if _, ok := f.albums[albumID]; !ok {
+		return nil, db.ErrNotFound
+	}
+	if f.albumOwner[albumID] != ownerID {
+		return nil, db.ErrForbidden
+	}
+	for _, id := range photoIDs {
+		p, ok := f.photos[id]
+		if !ok {
+			return nil, db.ErrNotFound
+		}
+		if p.OwnerID != ownerID {
+			return nil, db.ErrForbidden
+		}
+	}
+	var view *db.AlbumView
+	var err error
+	for _, id := range photoIDs {
+		if view, err = f.AddPhotoToAlbum(ctx, ownerID, albumID, id); err != nil {
+			return nil, err
+		}
+	}
+	return view, nil
+}
+
+func (f *fakeLibrary) SetFavorites(_ context.Context, ownerID string, photoIDs []string, favorite bool) (int, error) {
+	for _, id := range photoIDs {
+		p, ok := f.photos[id]
+		if !ok || p.OwnerID != ownerID {
+			return 0, db.ErrForbidden
+		}
+	}
+	for _, id := range photoIDs {
+		f.photos[id].Favorite = favorite
+	}
+	return len(photoIDs), nil
+}
+
 func (f *fakeLibrary) RemovePhotoFromAlbum(_ context.Context, ownerID, albumID, photoID string) (*db.AlbumView, error) {
 	album, ok := f.albums[albumID]
 	if !ok {
@@ -353,5 +397,177 @@ func TestPhotosPassesMonthAndLocalTakenAtBounds(t *testing.T) {
 	}
 	if lib.filter.LocalFrom != "2026-08-25" || lib.filter.LocalTo != "2026-08-26" {
 		t.Fatalf("local bounds %q %q", lib.filter.LocalFrom, lib.filter.LocalTo)
+	}
+}
+
+// --- batch endpoints (ADR 0018) ----------------------------------------
+
+func batchLibrary() *fakeLibrary {
+	return &fakeLibrary{
+		photos: map[string]*db.Photo{
+			"p1":     {Key: "p1", OwnerID: "owner"},
+			"p2":     {Key: "p2", OwnerID: "owner"},
+			"theirs": {Key: "theirs", OwnerID: "someone-else"},
+		},
+		albums:     map[string]*db.AlbumView{"album-1": {ID: "album-1", Name: "Trip", PhotoIDs: []string{}}},
+		albumOwner: map[string]string{"album-1": "owner"},
+	}
+}
+
+func batchRouter(lib *fakeLibrary) *chi.Mux {
+	a := &API{DB: lib}
+	r := chi.NewRouter()
+	a.Routes(r)
+	return r
+}
+
+func doJSON(r *chi.Mux, method, path, body, owner string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	req = withUser(req, owner)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestSetFavoritesBatch(t *testing.T) {
+	lib := batchLibrary()
+	r := batchRouter(lib)
+
+	w := doJSON(r, http.MethodPut, "/photos/favorite", `{"ids":["p1","p2"],"favorite":true}`, "owner")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		Updated  int  `json:"updated"`
+		Favorite bool `json:"favorite"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Updated != 2 || !got.Favorite {
+		t.Errorf("got %+v, want 2 updated and favorite true", got)
+	}
+	if !lib.photos["p1"].Favorite || !lib.photos["p2"].Favorite {
+		t.Error("the batch did not reach the store")
+	}
+}
+
+// The batch route must not shadow the single-photo one; both live under
+// /photos and differ only in segment count.
+func TestSetFavoriteSingleStillWorksAlongsideTheBatchRoute(t *testing.T) {
+	lib := batchLibrary()
+	r := batchRouter(lib)
+
+	w := doJSON(r, http.MethodPut, "/photos/p1/favorite", `{"favorite":true}`, "owner")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	if !lib.photos["p1"].Favorite {
+		t.Error("single-photo favorite stopped working")
+	}
+}
+
+func TestSetFavoritesBatchRejectsBadRequests(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want int
+	}{
+		"no ids":      {`{"ids":[],"favorite":true}`, http.StatusBadRequest},
+		"ids missing": {`{"favorite":true}`, http.StatusBadRequest},
+		"not json":    {`nonsense`, http.StatusBadRequest},
+		"foreign id":  {`{"ids":["p1","theirs"],"favorite":true}`, http.StatusForbidden},
+		"unknown id":  {`{"ids":["ghost"],"favorite":true}`, http.StatusForbidden},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			lib := batchLibrary()
+			w := doJSON(batchRouter(lib), http.MethodPut, "/photos/favorite", tc.body, "owner")
+			if w.Code != tc.want {
+				t.Errorf("status %d, want %d: %s", w.Code, tc.want, w.Body.String())
+			}
+			if lib.photos["theirs"].Favorite {
+				t.Error("another owner's photo was modified")
+			}
+		})
+	}
+}
+
+func TestAddAlbumPhotosBatch(t *testing.T) {
+	lib := batchLibrary()
+	r := batchRouter(lib)
+
+	w := doJSON(r, http.MethodPost, "/albums/album-1/photos", `{"photo_ids":["p1","p2"]}`, "owner")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var view db.AlbumView
+	if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.PhotoCount != 2 {
+		t.Errorf("photo_count = %d, want 2", view.PhotoCount)
+	}
+}
+
+// photo_id is what the single-photo menu has always sent; adding photo_ids
+// must not break it.
+func TestAddAlbumPhotoAcceptsEitherShape(t *testing.T) {
+	lib := batchLibrary()
+	r := batchRouter(lib)
+
+	single := doJSON(r, http.MethodPost, "/albums/album-1/photos", `{"photo_id":"p1"}`, "owner")
+	if single.Code != http.StatusOK {
+		t.Fatalf("single: status %d: %s", single.Code, single.Body.String())
+	}
+	batch := doJSON(r, http.MethodPost, "/albums/album-1/photos", `{"photo_ids":["p2"]}`, "owner")
+	if batch.Code != http.StatusOK {
+		t.Fatalf("batch: status %d: %s", batch.Code, batch.Body.String())
+	}
+	var view db.AlbumView
+	if err := json.Unmarshal(batch.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.PhotoCount != 2 {
+		t.Errorf("photo_count = %d, want 2 after one of each shape", view.PhotoCount)
+	}
+}
+
+func TestAddAlbumPhotosBatchRejectsBadRequests(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want int
+	}{
+		"neither field": {`{}`, http.StatusBadRequest},
+		"empty list":    {`{"photo_ids":[]}`, http.StatusBadRequest},
+		"not json":      {`nonsense`, http.StatusBadRequest},
+		"foreign photo": {`{"photo_ids":["p1","theirs"]}`, http.StatusForbidden},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			lib := batchLibrary()
+			w := doJSON(batchRouter(lib), http.MethodPost, "/albums/album-1/photos", tc.body, "owner")
+			if w.Code != tc.want {
+				t.Errorf("status %d, want %d: %s", w.Code, tc.want, w.Body.String())
+			}
+			// All or nothing: a refused batch adds no rows at all.
+			if lib.albums["album-1"].PhotoCount != 0 {
+				t.Errorf("photo_count = %d, want 0", lib.albums["album-1"].PhotoCount)
+			}
+		})
+	}
+}
+
+func TestBatchEndpointsRequireASession(t *testing.T) {
+	r := batchRouter(batchLibrary())
+	for _, tc := range []struct{ method, path, body string }{
+		{http.MethodPut, "/photos/favorite", `{"ids":["p1"],"favorite":true}`},
+		{http.MethodPost, "/albums/album-1/photos", `{"photo_ids":["p1"]}`},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s: status %d, want 401", tc.method, tc.path, w.Code)
+		}
 	}
 }

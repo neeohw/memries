@@ -13,6 +13,7 @@ import { SourcesView } from './components/SourcesView';
 import { Timeline } from './components/Timeline';
 import {
   useAddPhotoToAlbum,
+  useAddPhotosToAlbum,
   useAlbums,
   useCreateAlbum,
   useRemovePhotoFromAlbum,
@@ -29,7 +30,7 @@ import {
   useUpdateSource,
 } from './hooks/useSources';
 import { isUnauthorized, signIn, signOut } from './lib/api';
-import { flattenPhotos, usePhotos, useToggleFavorite } from './hooks/usePhotos';
+import { flattenPhotos, useBatchFavorite, usePhotos, useToggleFavorite } from './hooks/usePhotos';
 import { parseSmartDate } from './lib/parseSmartDate';
 import type { Granularity, NavTab, Photo, SearchState } from './models/photo';
 
@@ -163,6 +164,8 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   const createAlbumMutation = useCreateAlbum();
   const addPhotoMutation = useAddPhotoToAlbum();
   const removePhotoMutation = useRemovePhotoFromAlbum();
+  const batchFavoriteMutation = useBatchFavorite();
+  const addPhotosMutation = useAddPhotosToAlbum();
 
   const activeQuery =
     tab === 'favorites' ? favoritesQuery : tab === 'search' ? searchQuery : timelineQuery;
@@ -275,6 +278,13 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               noFolders={indexStatus?.sources === 0}
               onAddFolder={admin ? () => changeTab('folders') : undefined}
               histogram={histogramQuery.data}
+              albums={albums}
+              onSelectionFavorite={(ids, favorite) =>
+                batchFavoriteMutation.mutate({ ids, favorite })
+              }
+              onSelectionAddToAlbum={(ids, albumId) =>
+                addPhotosMutation.mutate({ albumId, photoIds: ids })
+              }
             />
           )}
           {tab === 'folders' && admin && (

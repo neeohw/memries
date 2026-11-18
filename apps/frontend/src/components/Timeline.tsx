@@ -7,12 +7,15 @@ import {
   fractionForDate,
   groupIndexForMonth,
 } from '../lib/scrubberScale';
+import { PhotoSelectionProvider, useSelectionState } from '../hooks/usePhotoSelection';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
-import type { Granularity, Photo } from '../models/photo';
+import { selectionIsAllFavorited } from '../lib/selection';
+import type { Album, Granularity, Photo } from '../models/photo';
 import { CurrentPeriod } from './CurrentPeriod';
 import { GranularitySelector } from './GranularitySelector';
 import { PhotoSkeleton } from './PhotoSkeleton';
 import { Scrubber } from './Scrubber';
+import { SelectionToolbar } from './SelectionToolbar';
 import { TimelineSection } from './TimelineSection';
 import { FilterIcon, SyncIcon, TodayIcon } from './icons';
 
@@ -32,6 +35,9 @@ export function Timeline({
   onAddFolder,
   onFilter,
   histogram,
+  albums = [],
+  onSelectionFavorite,
+  onSelectionAddToAlbum,
 }: {
   photos: Photo[];
   granularity: Granularity;
@@ -50,6 +56,10 @@ export function Timeline({
   onFilter?: () => void;
   /** Month counts for the whole library, for the date scrubber (ADR 0017). */
   histogram?: HistogramBucket[];
+  /** Albums the selection can be added to (ADR 0018). */
+  albums?: Album[];
+  onSelectionFavorite?: (ids: string[], favorite: boolean) => void;
+  onSelectionAddToAlbum?: (ids: string[], albumId: string) => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const groups = useMemo(() => groupPhotos(photos, granularity), [photos, granularity]);
@@ -69,6 +79,9 @@ export function Timeline({
   const [seekTarget, setSeekTarget] = useState<string | null>(null);
 
   const orderedPhotos = useMemo(() => groups.flatMap((group) => group.photos), [groups]);
+  const orderedIds = useMemo(() => orderedPhotos.map((photo) => photo.id), [orderedPhotos]);
+  const selection = useSelectionState(orderedIds);
+  const selectionAllFavorited = selectionIsAllFavorited(selection.selected, orderedPhotos);
 
   const scale = useMemo(() => buildScrubberScale(histogram ?? []), [histogram]);
   const hasScrubber = scale.segments.length >= 2;
@@ -122,6 +135,18 @@ export function Timeline({
   }, [reducedMotion]);
 
   useEffect(() => () => window.clearTimeout(scrollIdleRef.current), []);
+
+  // Escape is the way out of a selection, matching the viewer and the actions
+  // sheet. Bound on the window because the click that built the selection may
+  // have left focus on any tile.
+  useEffect(() => {
+    if (!selection.active) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') selection.clear();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection]);
 
   const openFrom = (photo: Photo, origin: HTMLElement) => {
     onOpen(photo, origin, orderedPhotos);
@@ -204,197 +229,217 @@ export function Timeline({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <h1 className="sr-only">Your memries</h1>
-      <div className="relative z-20 flex items-center gap-2 px-3 py-2 min-[640px]:px-5">
-        {/* Narrow screens: the period floats over the photos as a pill while scrolling. */}
-        <div
-          className={`min-w-0 flex-1 max-[639px]:pointer-events-none max-[639px]:absolute max-[639px]:inset-x-0 max-[639px]:top-full max-[639px]:flex max-[639px]:justify-center max-[639px]:transition-opacity max-[639px]:duration-300 ${
-            scrolling ? '' : 'max-[639px]:opacity-0'
-          }`}
-        >
-          <div className="min-w-0 max-[639px]:rounded-full max-[639px]:bg-surface/90 max-[639px]:px-4 max-[639px]:shadow-lift max-[639px]:backdrop-blur-md">
-            {activeLabel && (
-              <CurrentPeriod
-                key={granularity}
-                label={activeLabel}
-                scrolling={scrolling}
-                direction={periodDirection}
-                reducedMotion={reducedMotion}
-              />
-            )}
-          </div>
-        </div>
-        <GranularitySelector
-          value={granularity}
-          onChange={handleGranularity}
-          className="max-[639px]:flex-1"
-        />
-        {onFilter && (
-          <button
-            type="button"
-            onClick={onFilter}
-            aria-label="Filter"
-            title="Filter"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
-          >
-            <FilterIcon className="h-5 w-5" />
-          </button>
-        )}
-        {onRescan && (
-          <button
-            type="button"
-            onClick={onRescan}
-            disabled={rescanning}
-            aria-label={rescanning ? 'Syncing…' : 'Sync folder'}
-            title={rescanning ? 'Syncing…' : 'Sync folder'}
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95 disabled:opacity-50"
-          >
-            <SyncIcon className={`h-5 w-5 ${rescanning && !reducedMotion ? 'index-spin' : ''}`} />
-          </button>
-        )}
-      </div>
-
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        {groups.length === 0 ? (
-          <div className="flex flex-col items-center px-6 py-12 text-center" role="status">
-            <p className="text-ink">
-              {noFolders ? 'No photo folders are connected yet.' : 'No memories here yet.'}
-            </p>
-            {noFolders && !onAddFolder && (
-              <p className="mt-2 max-w-xs text-sm text-ink">
-                Ask an admin to add a folder for your account.
-              </p>
-            )}
-            {noFolders && onAddFolder && (
+    <PhotoSelectionProvider value={selection}>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <h1 className="sr-only">Your memries</h1>
+        {selection.active ? (
+          // Takes the header's place while a selection is live, so the count and
+          // the way out are always where the period label was (ADR 0018).
+          <SelectionToolbar
+            count={selection.count}
+            allFavorited={selectionAllFavorited}
+            albums={albums}
+            onClear={selection.clear}
+            onFavorite={(favorite) => onSelectionFavorite?.(selection.ids, favorite)}
+            onAddToAlbum={(albumId) => onSelectionAddToAlbum?.(selection.ids, albumId)}
+          />
+        ) : (
+          <div className="relative z-20 flex items-center gap-2 px-3 py-2 min-[640px]:px-5">
+            {/* Narrow screens: the period floats over the photos as a pill while scrolling. */}
+            <div
+              className={`min-w-0 flex-1 max-[639px]:pointer-events-none max-[639px]:absolute max-[639px]:inset-x-0 max-[639px]:top-full max-[639px]:flex max-[639px]:justify-center max-[639px]:transition-opacity max-[639px]:duration-300 ${
+                scrolling ? '' : 'max-[639px]:opacity-0'
+              }`}
+            >
+              <div className="min-w-0 max-[639px]:rounded-full max-[639px]:bg-surface/90 max-[639px]:px-4 max-[639px]:shadow-lift max-[639px]:backdrop-blur-md">
+                {activeLabel && (
+                  <CurrentPeriod
+                    key={granularity}
+                    label={activeLabel}
+                    scrolling={scrolling}
+                    direction={periodDirection}
+                    reducedMotion={reducedMotion}
+                  />
+                )}
+              </div>
+            </div>
+            <GranularitySelector
+              value={granularity}
+              onChange={handleGranularity}
+              className="max-[639px]:flex-1"
+            />
+            {onFilter && (
               <button
                 type="button"
-                onClick={onAddFolder}
-                className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
+                onClick={onFilter}
+                aria-label="Filter"
+                title="Filter"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
               >
-                Add a folder
+                <FilterIcon className="h-5 w-5" />
               </button>
             )}
-            {onRescan && !noFolders && (
+            {onRescan && (
               <button
                 type="button"
                 onClick={onRescan}
                 disabled={rescanning}
-                className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream disabled:opacity-60"
+                aria-label={rescanning ? 'Syncing…' : 'Sync folder'}
+                title={rescanning ? 'Syncing…' : 'Sync folder'}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95 disabled:opacity-50"
               >
-                {rescanning ? 'Scanning your folder…' : 'Scan your folder'}
+                <SyncIcon
+                  className={`h-5 w-5 ${rescanning && !reducedMotion ? 'index-spin' : ''}`}
+                />
               </button>
             )}
           </div>
-        ) : (
-          <>
-            {hasScrubber && (
-              // Before the list in DOM order so Tab reaches it without walking
-              // every photo first; it is absolutely positioned either way.
-              <Scrubber
-                scale={scale}
-                value={fractionForDate(scale, groups[startIndex]?.photos[0]?.takenAt ?? '')}
-                onSeek={seekToMonth}
-                seeking={seekTarget !== null}
-                // `scrolling` is deliberately never set under reduced motion,
-                // so the track would otherwise only ever appear on hover for
-                // those users. Show it permanently instead of fading it in.
-                revealed={scrolling || seekTarget !== null || reducedMotion}
-                reducedMotion={reducedMotion}
-              />
-            )}
-            <div
-              key={granularity}
-              data-timeline
-              data-group-count={groups.length}
-              data-timeline-motion={reducedMotion ? 'none' : 'fade-rise'}
-              // Keep tiles out from under the scrubber's track; justifyRows
-              // measures the container, so the rows reflow to the new width.
-              className={`h-full ${hasScrubber ? 'pr-7' : ''} ${
-                reducedMotion ? '' : 'animate-fade-rise'
-              }`}
-              ref={(node) => {
-                if (!node) return;
-                // Test seam driven by apps/e2e/steps/fixtures.ts.
-                Object.assign(node, { __scrollToGroup: scrollToGroup });
-              }}
-            >
-              <VList
-                ref={listRef}
-                style={{ height: '100%' }}
-                onScroll={(offset) => {
-                  const handle = listRef.current;
-                  const start = handle?.findStartIndex() ?? 0;
-                  setShowToday(offset > 280 && start > 0);
-                  if (start !== startIndexRef.current) {
-                    setPeriodDirection(start > startIndexRef.current ? 'older' : 'newer');
-                    startIndexRef.current = start;
-                    setStartIndex(start);
-                  }
-                  if (Math.abs(offset - lastOffsetRef.current) > 2) markScrolling();
-                  lastOffsetRef.current = offset;
-                  const label = groups[start]?.label;
-                  if (label) setActiveLabel(label);
-                  if (start >= Math.max(0, groups.length - 2)) requestNextPage();
-                }}
-              >
-                {groups.map((group) => (
-                  <TimelineSection
-                    key={`${granularity}-${group.key}`}
-                    group={group}
-                    granularity={granularity}
-                    onOpen={openFrom}
-                    onActions={onActions}
-                    showHeading
-                  />
-                ))}
-                <div className="px-3 pb-8 min-[640px]:px-5">
-                  <LoadMoreMarker
-                    onVisible={requestNextPage}
-                    enabled={!!hasNextPage && !isFetchingNextPage && !fetchError}
-                  />
-                  {isFetchingNextPage && (
-                    <p className="py-3 text-center text-sm text-ink" role="status">
-                      Loading more memories…
-                    </p>
-                  )}
-                  {fetchError && (
-                    <div className="flex flex-col items-center gap-3 py-4 text-center" role="alert">
-                      <p className="text-sm text-ink">More memories did not load.</p>
-                      <button
-                        type="button"
-                        onClick={() => fetchNextPage?.()}
-                        className="min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
-                      >
-                        Try again
-                      </button>
-                    </div>
-                  )}
-                  {!hasNextPage && !isFetchingNextPage && <div className="h-8" />}
-                </div>
-              </VList>
-            </div>
-          </>
         )}
 
-        {showToday && (
-          <button
-            type="button"
-            onClick={() =>
-              listRef.current?.scrollToIndex(0, { align: 'start', smooth: !reducedMotion })
-            }
-            className={`absolute bottom-4 z-20 flex min-h-11 items-center gap-2 rounded-full bg-plum px-4 py-2 text-sm font-medium text-cream shadow-lift transition duration-200 active:scale-95 min-[800px]:bottom-6 ${
-              hasScrubber ? 'right-14 min-[800px]:right-16' : 'right-4 min-[800px]:right-6'
-            } ${reducedMotion ? '' : 'animate-fab-in'}`}
-            aria-label="Back to today"
-            data-today-fab
-          >
-            <TodayIcon className="h-4 w-4" />
-            Today
-          </button>
-        )}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {groups.length === 0 ? (
+            <div className="flex flex-col items-center px-6 py-12 text-center" role="status">
+              <p className="text-ink">
+                {noFolders ? 'No photo folders are connected yet.' : 'No memories here yet.'}
+              </p>
+              {noFolders && !onAddFolder && (
+                <p className="mt-2 max-w-xs text-sm text-ink">
+                  Ask an admin to add a folder for your account.
+                </p>
+              )}
+              {noFolders && onAddFolder && (
+                <button
+                  type="button"
+                  onClick={onAddFolder}
+                  className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
+                >
+                  Add a folder
+                </button>
+              )}
+              {onRescan && !noFolders && (
+                <button
+                  type="button"
+                  onClick={onRescan}
+                  disabled={rescanning}
+                  className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream disabled:opacity-60"
+                >
+                  {rescanning ? 'Scanning your folder…' : 'Scan your folder'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {hasScrubber && (
+                // Before the list in DOM order so Tab reaches it without walking
+                // every photo first; it is absolutely positioned either way.
+                <Scrubber
+                  scale={scale}
+                  value={fractionForDate(scale, groups[startIndex]?.photos[0]?.takenAt ?? '')}
+                  onSeek={seekToMonth}
+                  seeking={seekTarget !== null}
+                  // `scrolling` is deliberately never set under reduced motion,
+                  // so the track would otherwise only ever appear on hover for
+                  // those users. Show it permanently instead of fading it in.
+                  revealed={scrolling || seekTarget !== null || reducedMotion}
+                  reducedMotion={reducedMotion}
+                />
+              )}
+              <div
+                key={granularity}
+                data-timeline
+                data-group-count={groups.length}
+                data-timeline-motion={reducedMotion ? 'none' : 'fade-rise'}
+                // Keep tiles out from under the scrubber's track; justifyRows
+                // measures the container, so the rows reflow to the new width.
+                className={`h-full ${hasScrubber ? 'pr-7' : ''} ${
+                  reducedMotion ? '' : 'animate-fade-rise'
+                }`}
+                ref={(node) => {
+                  if (!node) return;
+                  // Test seam driven by apps/e2e/steps/fixtures.ts.
+                  Object.assign(node, { __scrollToGroup: scrollToGroup });
+                }}
+              >
+                <VList
+                  ref={listRef}
+                  style={{ height: '100%' }}
+                  onScroll={(offset) => {
+                    const handle = listRef.current;
+                    const start = handle?.findStartIndex() ?? 0;
+                    setShowToday(offset > 280 && start > 0);
+                    if (start !== startIndexRef.current) {
+                      setPeriodDirection(start > startIndexRef.current ? 'older' : 'newer');
+                      startIndexRef.current = start;
+                      setStartIndex(start);
+                    }
+                    if (Math.abs(offset - lastOffsetRef.current) > 2) markScrolling();
+                    lastOffsetRef.current = offset;
+                    const label = groups[start]?.label;
+                    if (label) setActiveLabel(label);
+                    if (start >= Math.max(0, groups.length - 2)) requestNextPage();
+                  }}
+                >
+                  {groups.map((group) => (
+                    <TimelineSection
+                      key={`${granularity}-${group.key}`}
+                      group={group}
+                      granularity={granularity}
+                      onOpen={openFrom}
+                      onActions={onActions}
+                      showHeading
+                    />
+                  ))}
+                  <div className="px-3 pb-8 min-[640px]:px-5">
+                    <LoadMoreMarker
+                      onVisible={requestNextPage}
+                      enabled={!!hasNextPage && !isFetchingNextPage && !fetchError}
+                    />
+                    {isFetchingNextPage && (
+                      <p className="py-3 text-center text-sm text-ink" role="status">
+                        Loading more memories…
+                      </p>
+                    )}
+                    {fetchError && (
+                      <div
+                        className="flex flex-col items-center gap-3 py-4 text-center"
+                        role="alert"
+                      >
+                        <p className="text-sm text-ink">More memories did not load.</p>
+                        <button
+                          type="button"
+                          onClick={() => fetchNextPage?.()}
+                          className="min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+                    {!hasNextPage && !isFetchingNextPage && <div className="h-8" />}
+                  </div>
+                </VList>
+              </div>
+            </>
+          )}
+
+          {showToday && (
+            <button
+              type="button"
+              onClick={() =>
+                listRef.current?.scrollToIndex(0, { align: 'start', smooth: !reducedMotion })
+              }
+              className={`absolute bottom-4 z-20 flex min-h-11 items-center gap-2 rounded-full bg-plum px-4 py-2 text-sm font-medium text-cream shadow-lift transition duration-200 active:scale-95 min-[800px]:bottom-6 ${
+                hasScrubber ? 'right-14 min-[800px]:right-16' : 'right-4 min-[800px]:right-6'
+              } ${reducedMotion ? '' : 'animate-fab-in'}`}
+              aria-label="Back to today"
+              data-today-fab
+            >
+              <TodayIcon className="h-4 w-4" />
+              Today
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+    </PhotoSelectionProvider>
   );
 }
 

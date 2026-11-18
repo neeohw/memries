@@ -238,6 +238,32 @@ export async function fetchAlbums(): Promise<Album[]> {
   return (body.albums ?? []).map(mapAlbum);
 }
 
+/**
+ * Favorites or unfavorites a whole selection (ADR 0018).
+ *
+ * The server scopes the update to the owner and refuses the batch outright if
+ * any id is not theirs, so there is no partial success to reconcile here.
+ */
+export async function setPhotosFavorite(ids: string[], favorite: boolean): Promise<number> {
+  const res = await apiFetch('/api/photos/favorite', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, favorite }),
+  });
+  const body = (await res.json()) as { updated?: number };
+  return body.updated ?? 0;
+}
+
+/** Adds a selection to one album. Same route as the single-photo add. */
+export async function addPhotosToAlbum(albumId: string, photoIds: string[]): Promise<Album> {
+  const res = await apiFetch(`/api/albums/${encodeURIComponent(albumId)}/photos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photo_ids: photoIds }),
+  });
+  return mapAlbum((await res.json()) as ApiAlbumView);
+}
+
 export async function createAlbum(name: string): Promise<Album> {
   const res = await apiFetch('/api/albums', {
     method: 'POST',

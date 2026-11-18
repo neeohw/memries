@@ -82,19 +82,70 @@ func (a *API) addAlbumPhoto(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	// Accepts one photo or many on the same route (ADR 0018): `photo_id` is
+	// what the single-photo menu has always sent, `photo_ids` is what a
+	// selection sends. Keeping one route means the album view comes back the
+	// same shape either way.
 	var body struct {
-		PhotoID string `json:"photo_id"`
+		PhotoID  string   `json:"photo_id"`
+		PhotoIDs []string `json:"photo_ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.PhotoID) == "" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "photo_id required", http.StatusBadRequest)
 		return
 	}
-	view, err := a.DB.AddPhotoToAlbum(r.Context(), u.Key, chi.URLParam(r, "id"), body.PhotoID)
+
+	albumID := chi.URLParam(r, "id")
+	var view *db.AlbumView
+	var err error
+	switch {
+	case len(body.PhotoIDs) > 0:
+		view, err = a.DB.AddPhotosToAlbum(r.Context(), u.Key, albumID, body.PhotoIDs)
+	case strings.TrimSpace(body.PhotoID) != "":
+		view, err = a.DB.AddPhotoToAlbum(r.Context(), u.Key, albumID, body.PhotoID)
+	default:
+		http.Error(w, "photo_id required", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), libraryStatus(err))
 		return
 	}
 	writeJSON(w, view)
+}
+
+// setFavorites favorites or unfavorites a whole selection (ADR 0018).
+//
+// The store scopes the update to the Owner, so a foreign id changes nothing
+// and comes back as 403 rather than a partial success.
+func (a *API) setFavorites(w http.ResponseWriter, r *http.Request) {
+	u, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		IDs      []string `json:"ids"`
+		Favorite bool     `json:"favorite"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) == 0 {
+		http.Error(w, "ids required", http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) > db.MaxBatchPhotos {
+		http.Error(w, "too many photos", http.StatusBadRequest)
+		return
+	}
+	updated, err := a.DB.SetFavorites(r.Context(), u.Key, body.IDs, body.Favorite)
+	if err != nil {
+		http.Error(w, err.Error(), libraryStatus(err))
+		return
+	}
+	writeJSON(w, map[string]any{"updated": updated, "favorite": body.Favorite})
 }
 
 func (a *API) removeAlbumPhoto(w http.ResponseWriter, r *http.Request) {
