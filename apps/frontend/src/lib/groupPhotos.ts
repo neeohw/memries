@@ -1,10 +1,9 @@
-import { formatDayLabel, formatMonthLabel, formatWeekLabel, isoWeekParts } from './formatDate';
+import { formatMonthLabel, formatWeekLabel, isoWeekParts } from './formatDate';
 import type { Granularity, Photo, TimelineGroup } from '../models/photo';
 
 export function groupKey(takenAt: string, granularity: Granularity): string {
   if (granularity === 'year') return takenAt.slice(0, 4);
   if (granularity === 'month') return takenAt.slice(0, 7);
-  if (granularity === 'day') return takenAt.slice(0, 10);
   const { year, week } = isoWeekParts(takenAt);
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
@@ -12,7 +11,6 @@ export function groupKey(takenAt: string, granularity: Granularity): string {
 export function groupLabel(key: string, granularity: Granularity): string {
   if (granularity === 'year') return key;
   if (granularity === 'month') return formatMonthLabel(key);
-  if (granularity === 'day') return formatDayLabel(key);
   return formatWeekLabel(key);
 }
 

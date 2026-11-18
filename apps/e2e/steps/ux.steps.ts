@@ -9,13 +9,6 @@ import {
   photoViewer,
 } from './fixtures';
 
-const GRANULARITY: Record<string, string> = {
-  Year: 'year',
-  Month: 'month',
-  Week: 'week',
-  Day: 'day',
-};
-
 Given('I prefer reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
 });
@@ -201,25 +194,6 @@ Then('the year facet {string} is not selected', async ({ page }, year: string) =
 
 Then('the album name field is focused', async ({ page }) => {
   await expect(page.getByLabel('Album name')).toBeFocused();
-});
-
-Then('the granularity highlight should be on {string}', async ({ page }, label: string) => {
-  const value = GRANULARITY[label];
-  expect(value, `unknown granularity ${label}`).toBeTruthy();
-  await expect(page.getByRole('radio', { name: label, exact: true })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
-  const indicator = page.locator('[data-granularity-indicator]');
-  await expect(indicator).toHaveAttribute('data-granularity', value);
-  await expect
-    .poll(async () => {
-      const radioBox = await page.getByRole('radio', { name: label, exact: true }).boundingBox();
-      const pillBox = await indicator.boundingBox();
-      if (!radioBox || !pillBox) return Number.POSITIVE_INFINITY;
-      return Math.abs(radioBox.x - pillBox.x);
-    })
-    .toBeLessThan(12);
 });
 
 async function dragViewer(page: import('@playwright/test').Page, dx: number, dy: number) {

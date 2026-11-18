@@ -21,10 +21,70 @@ describe('Timeline', () => {
       <Timeline photos={[]} granularity="month" onGranularityChange={() => {}} onOpen={() => {}} />,
     );
     expect(screen.getByRole('heading', { level: 1, name: 'Your memries' })).toBeTruthy();
-    expect(screen.getByRole('radiogroup', { name: 'Group memories by' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Timeline zoom' })).toBeTruthy();
     expect(screen.getByRole('status')).toHaveTextContent('No memories here yet.');
-    expect(screen.getByRole('radio', { name: 'Year' })).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByRole('radio', { name: 'Month' })).toHaveAttribute('aria-checked', 'true');
+    // Both directions are open from month, the middle of the ladder.
+    expect(screen.getByRole('button', { name: /^Zoom out/ })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Zoom in/ })).not.toBeDisabled();
+  });
+
+  it('steps one zoom level per button press, and stops at the ends', () => {
+    const onGranularityChange = vi.fn();
+    const { rerender } = render(
+      <Timeline
+        photos={[testPhoto({ takenAt: '2024-12-12T10:00:00' })]}
+        granularity="month"
+        onGranularityChange={onGranularityChange}
+        onOpen={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Zoom in/ }));
+    expect(onGranularityChange).toHaveBeenCalledWith('week');
+
+    rerender(
+      <Timeline
+        photos={[testPhoto({ takenAt: '2024-12-12T10:00:00' })]}
+        granularity="week"
+        onGranularityChange={onGranularityChange}
+        onOpen={() => {}}
+      />,
+    );
+    // Nothing is closer than a week, so the control says so rather than
+    // silently doing nothing on a press.
+    expect(screen.getByRole('button', { name: /^Zoom in/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Zoom out/ }));
+    expect(onGranularityChange).toHaveBeenLastCalledWith('month');
+  });
+
+  it('zooms on Ctrl + wheel and leaves a plain wheel to scroll', () => {
+    const onGranularityChange = vi.fn();
+    render(
+      <Timeline
+        photos={[testPhoto({ takenAt: '2024-12-12T10:00:00' })]}
+        granularity="month"
+        onGranularityChange={onGranularityChange}
+        onOpen={() => {}}
+      />,
+    );
+    const root = screen.getByRole('heading', { level: 1, name: 'Your memries' })
+      .parentElement as HTMLElement;
+
+    fireEvent.wheel(root, { deltaY: -120, deltaMode: 0 });
+    expect(onGranularityChange).not.toHaveBeenCalled();
+
+    fireEvent.wheel(root, { deltaY: -120, deltaMode: 0, ctrlKey: true });
+    expect(onGranularityChange).toHaveBeenCalledWith('week');
+
+    // A trackpad pinch arrives as a stream of small ctrl+wheel deltas, which
+    // must add up to one level rather than counting one level each.
+    onGranularityChange.mockClear();
+    for (let i = 0; i < 5; i += 1) {
+      fireEvent.wheel(root, { deltaY: -9, deltaMode: 0, ctrlKey: true });
+    }
+    expect(onGranularityChange).not.toHaveBeenCalled();
+    fireEvent.wheel(root, { deltaY: -9, deltaMode: 0, ctrlKey: true });
+    expect(onGranularityChange).toHaveBeenCalledTimes(1);
   });
 });
 

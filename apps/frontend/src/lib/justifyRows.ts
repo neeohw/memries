@@ -22,9 +22,13 @@ export function tileAspect(photo: Pick<Photo, 'width' | 'height'>): number {
 /** Target row height (CSS px) for justified Timeline rows. */
 export function targetRowHeight(granularity: Granularity, viewportWidth: number): number {
   const step = viewportWidth < 640 ? 0 : viewportWidth < 1280 ? 1 : viewportWidth < 1800 ? 2 : 3;
-  if (granularity === 'day') return [280, 420, 520, 620][step];
+  // Each level is about 0.7 of the one closer in, so every zoom notch changes
+  // the tiles visibly. Year used to share month's row, which made zooming out
+  // from month regroup without resizing and read as a control that had not
+  // worked (ADR 0019).
   if (granularity === 'week') return [170, 260, 320, 380][step];
-  return [120, 190, 230, 270][step];
+  if (granularity === 'month') return [120, 190, 230, 270][step];
+  return [85, 135, 165, 190][step];
 }
 
 /**

@@ -1,4 +1,4 @@
-export type Granularity = 'year' | 'month' | 'week' | 'day';
+export type Granularity = 'year' | 'month' | 'week';
 
 export type NavTab = 'memories' | 'albums' | 'favorites' | 'search' | 'folders';
 

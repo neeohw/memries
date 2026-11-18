@@ -31,8 +31,44 @@ function originalsFor(page: Page): string[] {
   return list;
 }
 
+const ZOOM_LADDER = ['year', 'month', 'week'] as const;
+
+/**
+ * Presses the zoom control until the timeline is grouped by `granularity`.
+ *
+ * The step reads the same as it did when a radiogroup named each level
+ * (ADR 0019), but it now drives the control a reader actually has: two
+ * buttons, one level per press.
+ */
 When('I group memories by {string}', async ({ page }, granularity: string) => {
-  await page.getByRole('radio', { name: granularity, exact: true }).click();
+  const target = granularity.toLowerCase();
+  const want = ZOOM_LADDER.indexOf(target as (typeof ZOOM_LADDER)[number]);
+  if (want < 0) throw new Error(`unknown zoom level ${granularity}`);
+  const control = page.locator('[data-zoom-control]');
+  await expect(control).toBeVisible();
+
+  for (let press = 0; press <= ZOOM_LADDER.length; press += 1) {
+    const at = (await control.getAttribute('data-granularity')) ?? '';
+    if (at === target) return;
+    const atIndex = ZOOM_LADDER.indexOf(at as (typeof ZOOM_LADDER)[number]);
+    const button = want > atIndex ? /^Zoom in/ : /^Zoom out/;
+    await control.getByRole('button', { name: button }).click();
+  }
+  await expect(control).toHaveAttribute('data-granularity', target);
+});
+
+When('I zoom in with the wheel', async ({ page }) => {
+  const before = await page.locator('[data-zoom-control]').getAttribute('data-granularity');
+  await page.locator('[data-timeline]').first().hover();
+  // Playwright applies the modifiers currently held, which is what turns a
+  // wheel into the browser's zoom gesture.
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -120);
+  await page.keyboard.up('Control');
+  await expect(page.locator('[data-zoom-control]')).not.toHaveAttribute(
+    'data-granularity',
+    before ?? '',
+  );
 });
 
 When('I go back to today', async ({ page }) => {
@@ -426,12 +462,42 @@ Then('the selection toolbar should be gone', async ({ page }) => {
   await expect(selectionToolbar(page)).toHaveCount(0);
 });
 
-Then('the granularity selector should be hidden', async ({ page }) => {
-  await expect(page.getByRole('radiogroup', { name: 'Group memories by' })).toHaveCount(0);
+Then('the zoom control should be hidden', async ({ page }) => {
+  await expect(page.getByRole('group', { name: 'Timeline zoom' })).toHaveCount(0);
 });
 
-Then('the granularity selector should be visible', async ({ page }) => {
-  await expect(page.getByRole('radiogroup', { name: 'Group memories by' })).toBeVisible();
+Then('the zoom control should be visible', async ({ page }) => {
+  await expect(page.getByRole('group', { name: 'Timeline zoom' })).toBeVisible();
+});
+
+When('I click the period heading {string}', async ({ page }, label: string) => {
+  const heading = page.getByRole('button', { name: label, exact: true });
+  for (let i = 0; i < 16; i += 1) {
+    if (
+      await heading
+        .first()
+        .isVisible()
+        .catch(() => false)
+    )
+      break;
+    await scrollTimeline(page, 320);
+  }
+  await heading.first().click();
+});
+
+Then('I cannot zoom in any further', async ({ page }) => {
+  await expect(page.getByRole('button', { name: /^Zoom in/ })).toBeDisabled();
+});
+
+Then('I cannot zoom out any further', async ({ page }) => {
+  await expect(page.getByRole('button', { name: /^Zoom out/ })).toBeDisabled();
+});
+
+Then('memories should be grouped by {string}', async ({ page }, granularity: string) => {
+  await expect(page.locator('[data-zoom-control]')).toHaveAttribute(
+    'data-granularity',
+    granularity.toLowerCase(),
+  );
 });
 
 When('I press Escape', async ({ page }) => {

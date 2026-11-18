@@ -43,8 +43,14 @@ describe('justifyRows', () => {
   });
 
   it('grows row height with granularity and viewport', () => {
-    expect(targetRowHeight('day', 1440)).toBeGreaterThan(targetRowHeight('week', 1440));
     expect(targetRowHeight('week', 1440)).toBeGreaterThan(targetRowHeight('month', 1440));
     expect(targetRowHeight('month', 1440)).toBeGreaterThan(targetRowHeight('month', 390));
+  });
+
+  it('shrinks at every zoom level, so each notch is visible', () => {
+    for (const width of [390, 800, 1440, 2000]) {
+      expect(targetRowHeight('year', width)).toBeLessThan(targetRowHeight('month', width));
+      expect(targetRowHeight('month', width)).toBeLessThan(targetRowHeight('week', width));
+    }
   });
 });

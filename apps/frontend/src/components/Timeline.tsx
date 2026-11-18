@@ -10,9 +10,10 @@ import {
 import { PhotoSelectionProvider, useSelectionState } from '../hooks/usePhotoSelection';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { selectionIsAllFavorited } from '../lib/selection';
-import type { Album, Granularity, Photo } from '../models/photo';
+import { accumulateZoom, canZoomIn, nextLevelNoun, wheelPixels, zoomBy } from '../lib/zoom';
+import type { Album, Granularity, Photo, TimelineGroup } from '../models/photo';
 import { CurrentPeriod } from './CurrentPeriod';
-import { GranularitySelector } from './GranularitySelector';
+import { ZoomControl } from './ZoomControl';
 import { PhotoSkeleton } from './PhotoSkeleton';
 import { Scrubber } from './Scrubber';
 import { SelectionToolbar } from './SelectionToolbar';
@@ -87,6 +88,7 @@ export function Timeline({
   const reducedMotion = usePrefersReducedMotion();
   const groups = useMemo(() => groupPhotos(photos, granularity), [photos, granularity]);
   const listRef = useRef<VListHandle>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<string | null>(null);
   const [activeLabel, setActiveLabel] = useState(groups[0]?.label ?? '');
   const [periodDirection, setPeriodDirection] = useState<'older' | 'newer'>('older');
@@ -140,15 +142,75 @@ export function Timeline({
     anchorRef.current = null;
   }, [granularity]);
 
-  const handleGranularity = (next: Granularity) => {
+  /**
+   * Changes the zoom level, keeping the reader where they were.
+   *
+   * `anchorTakenAt` overrides the default anchor, which is the group at the
+   * top of the viewport. A heading that drills into itself passes its own
+   * group, so clicking "2026" lands on that year rather than on whatever
+   * happened to be at the top.
+   */
+  const handleGranularity = (next: Granularity, anchorTakenAt?: string) => {
     if (next === granularity) return;
-    const handle = listRef.current;
-    if (handle) {
-      const group = groups[Math.min(handle.findStartIndex(), Math.max(0, groups.length - 1))];
-      anchorRef.current = group?.photos[0]?.takenAt ?? null;
+    if (anchorTakenAt) {
+      anchorRef.current = anchorTakenAt;
+    } else {
+      const handle = listRef.current;
+      if (handle) {
+        const group = groups[Math.min(handle.findStartIndex(), Math.max(0, groups.length - 1))];
+        anchorRef.current = group?.photos[0]?.takenAt ?? null;
+      }
     }
     onGranularityChange(next);
   };
+
+  // Latest values for the non-passive wheel listener below, which is attached
+  // once and must not be torn down and rebuilt on every render.
+  const handleGranularityRef = useRef(handleGranularity);
+  const granularityRef = useRef(granularity);
+  const zoomPendingRef = useRef(0);
+  useLayoutEffect(() => {
+    handleGranularityRef.current = handleGranularity;
+    granularityRef.current = granularity;
+  });
+
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    const onWheel = (event: WheelEvent) => {
+      // A trackpad pinch arrives as exactly this, which is why the gesture
+      // needs no separate implementation.
+      if (!event.ctrlKey && !event.metaKey) return;
+      // Otherwise the browser zooms the whole page. This is why the listener
+      // is attached by hand: React marks its own onWheel passive, and a
+      // passive listener may not preventDefault.
+      event.preventDefault();
+      const { pending, steps } = accumulateZoom(
+        zoomPendingRef.current,
+        wheelPixels(event.deltaY, event.deltaMode),
+      );
+      zoomPendingRef.current = pending;
+      if (steps !== 0) {
+        handleGranularityRef.current(zoomBy(granularityRef.current, steps));
+      }
+    };
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  }, []);
+
+  /**
+   * Clicking a period heading zooms one level in, anchored on that group.
+   *
+   * Reads the same refs as the wheel listener above rather than closing over
+   * the render's values: a handler that reached `listRef.current` through
+   * `handleGranularity` would be a ref read during render as far as the
+   * compiler is concerned, since it is created here and handed down.
+   */
+  const drillIn = useCallback((group: TimelineGroup) => {
+    handleGranularityRef.current(zoomBy(granularityRef.current, 1), group.photos[0]?.takenAt);
+  }, []);
+  const drillNoun = nextLevelNoun(granularity);
+  const canDrill = canZoomIn(granularity);
 
   const markScrolling = useCallback(() => {
     if (reducedMotion) return;
@@ -253,7 +315,7 @@ export function Timeline({
 
   return (
     <PhotoSelectionProvider value={selection}>
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={rootRef} className="flex min-h-0 flex-1 flex-col">
         <h1 className="sr-only">Your memries</h1>
         {selection.active ? (
           // Takes the header's place while a selection is live, so the count and
@@ -286,11 +348,7 @@ export function Timeline({
                 )}
               </div>
             </div>
-            <GranularitySelector
-              value={granularity}
-              onChange={handleGranularity}
-              className="max-[639px]:flex-1"
-            />
+            <ZoomControl value={granularity} onChange={handleGranularity} />
             {onFilter && (
               <button
                 type="button"
@@ -367,6 +425,16 @@ export function Timeline({
                   reducedMotion={reducedMotion}
                 />
               )}
+              {/*
+                One shared description for every period heading, rather than a
+                copy per section: the noun depends only on the current zoom
+                level, and there may be hundreds of headings.
+              */}
+              {drillNoun && (
+                <span id="timeline-drill-hint" className="sr-only">
+                  Zoom in to {drillNoun}
+                </span>
+              )}
               <div
                 key={granularity}
                 data-timeline
@@ -410,6 +478,8 @@ export function Timeline({
                       onOpen={openFrom}
                       onActions={onActions}
                       showHeading
+                      onDrillIn={canDrill ? drillIn : undefined}
+                      drillHintId={canDrill ? 'timeline-drill-hint' : undefined}
                     />
                   ))}
                   <div className="px-3 pb-8 min-[640px]:px-5">

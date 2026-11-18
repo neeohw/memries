@@ -7,7 +7,7 @@ Feature: Multi-select
     Given I am signed in
     When I select the photo from "Monday, 31 August 2026"
     Then the selection toolbar should show 1 selected
-    And the granularity selector should be hidden
+    And the zoom control should be hidden
 
   Scenario: Escape clears the selection
     Given I am signed in
@@ -15,7 +15,7 @@ Feature: Multi-select
     Then the selection toolbar should show 1 selected
     When I press Escape
     Then the selection toolbar should be gone
-    And the granularity selector should be visible
+    And the zoom control should be visible
 
   Scenario: A selection can be favorited in one action
     Given I am signed in

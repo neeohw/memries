@@ -19,6 +19,7 @@ import {
   useRemovePhotoFromAlbum,
 } from './hooks/useAlbums';
 import { useIndex } from './hooks/useIndex';
+import { useStoredZoom } from './hooks/useStoredZoom';
 import { useTimelineHistogram } from './hooks/useTimelineHistogram';
 import {
   meQueryKey,
@@ -32,7 +33,7 @@ import {
 import { isUnauthorized, signIn, signOut } from './lib/api';
 import { flattenPhotos, useBatchFavorite, usePhotos, useToggleFavorite } from './hooks/usePhotos';
 import { parseSmartDate } from './lib/parseSmartDate';
-import type { Granularity, NavTab, Photo, SearchState } from './models/photo';
+import type { NavTab, Photo, SearchState } from './models/photo';
 
 const INITIAL_SEARCH: SearchState = {
   query: '',
@@ -116,7 +117,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
     retrying: indexRetrying,
   } = useIndex();
   const [tab, setTab] = useState<NavTab>('memories');
-  const [granularity, setGranularity] = useState<Granularity>('month');
+  const [granularity, setGranularity] = useStoredZoom();
   const [search, setSearch] = useState<SearchState>(INITIAL_SEARCH);
   const [lastFocus, setLastFocus] = useState<HTMLElement | null>(null);
   const [viewer, setViewer] = useState<{
