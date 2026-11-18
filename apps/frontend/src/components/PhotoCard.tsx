@@ -36,7 +36,7 @@ export function PhotoCard({
   const compact = density === 'thumb' || density === 'medium';
   const box = compact ? compactThumbSize(viewportWidth) : undefined;
   const src = size
-    ? sizedThumbUrl(photo.id, Math.max(size.width, size.height))
+    ? sizedThumbUrl(photo.id, Math.max(size.width, size.height), photo.hash)
     : timelineSrc(photo, density, viewportWidth);
 
   const press = usePhotoPress({

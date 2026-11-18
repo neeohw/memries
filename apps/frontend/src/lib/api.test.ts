@@ -16,20 +16,29 @@ describe('api mapping', () => {
   it('maps catalog photos onto the UI model', () => {
     const photo = mapPhoto({
       _key: 'abc123',
+      hash: 'deadbeef',
       taken_at: '2024-08-25T18:30:01.123456789Z',
       taken_at_local: '2024-08-25T18:30:01',
       dims: { w: 4000, h: 3000 },
     });
     expect(photo).toEqual({
       id: 'abc123',
+      hash: 'deadbeef',
       imageUrl: '/api/original/abc123',
-      thumbnailUrl: '/api/thumb/abc123?size=512',
+      thumbnailUrl: '/api/thumb/abc123?size=512&v=deadbeef',
       takenAt: '2024-08-25T18:30:01',
       width: 4000,
       height: 3000,
       favorite: false,
       alt: 'Photo',
     });
+  });
+
+  // A catalog row without a hash must still map, just without a cache version.
+  it('maps a photo with no hash to an unversioned thumb URL', () => {
+    const photo = mapPhoto({ _key: 'nohash', taken_at_local: '2024-08-25T18:30:01' });
+    expect(photo.hash).toBe('');
+    expect(photo.thumbnailUrl).toBe('/api/thumb/nohash?size=512');
   });
 
   it('maps favorite true from the API', () => {

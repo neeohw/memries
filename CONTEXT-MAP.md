@@ -130,4 +130,6 @@ Migrations are embedded `.sql` under [internal/db/migrations](apps/backend/inter
   ```
 
   On Homebrew, libarchive is keg-only, so prefix either vips command with `PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig"`.
+- Thumb URLs carry `&v=<photo hash>`, always built through `lib/photoSrc.ts`. The handler ignores `v`; it exists because thumbs are served `private, max-age=31536000, immutable` and a resynced Photo keeps its id and overwrites the same disk path, so only a changed URL can bust that cache. Never hand-build `/api/thumb/...`, and keep `Cache-Control` as it is. Album covers are the one exception: the album JSON carries `cover_photo_id` with no hash, so covers go unversioned and may show a stale image until reload.
+- The default catalog window is unbounded below (ADR 0005). Do not reintroduce a 1970 floor: scanned film carries pre-epoch EXIF, and those instants are negative microseconds, which `BIGINT` stores and sorts correctly. The 2100 ceiling stays.
 - Sharing has no tables. Add one when a query needs it, not before.

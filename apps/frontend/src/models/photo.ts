@@ -13,6 +13,12 @@ export interface Album {
 
 export interface Photo {
   id: string;
+  /**
+   * Content fingerprint, not identity. `id` survives a resync; `hash` changes
+   * when the bytes do, which is what versions the thumb URL so an immutable
+   * cache entry is replaced rather than reused.
+   */
+  hash: string;
   imageUrl: string;
   thumbnailUrl: string;
   takenAt: string;

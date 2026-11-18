@@ -803,3 +803,63 @@ func TestClearOwnerAlbumsAndFavorites(t *testing.T) {
 		t.Error("owner-b favorite was cleared")
 	}
 }
+
+// Capture times before the Unix epoch are negative microseconds. BIGINT holds
+// them and orders them correctly, but that is the kind of thing worth proving
+// against a real database rather than reasoning about: a scanned negative from
+// 1962 has to survive the round trip, sort before later photos, and be
+// returned by the API's default unbounded-below window (ADR 0005).
+func TestPhotosReturnsPreEpochCaptureTimes(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	film := photo("film", "owner-a", "1962-04-02T11:30:00")
+	modern := photo("modern", "owner-a", "2026-08-31T10:00:00")
+	mustUpsert(t, s, film, modern)
+
+	// The window the API now uses when the SPA sends no from/to.
+	from := time.Time{}
+	to := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	got, _, err := s.Photos(ctx, "owner-a", from, to, 50, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		keys := make([]string, 0, len(got))
+		for _, p := range got {
+			keys = append(keys, p.Key)
+		}
+		t.Fatalf("got %d photos %v, want both film and modern", len(got), keys)
+	}
+	// Newest first, so the pre-epoch one sorts last.
+	if got[0].Key != "modern" || got[1].Key != "film" {
+		t.Errorf("order = %s, %s; want modern, film", got[0].Key, got[1].Key)
+	}
+	if !got[1].TakenAt.Equal(film.TakenAt) {
+		t.Errorf("round-tripped TakenAt = %s, want %s", got[1].TakenAt, film.TakenAt)
+	}
+	if got[1].TakenAt.Unix() >= 0 {
+		t.Errorf("TakenAt %s is not actually pre-epoch, so this test proves nothing", got[1].TakenAt)
+	}
+}
+
+// The same frame must reach the scrubber's histogram, which buckets on
+// taken_at_local rather than the UTC instant.
+func TestTimelineBucketsPreEpochCaptureTimes(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustUpsert(t, s, photo("film", "owner-a", "1962-04-02T11:30:00"))
+
+	buckets, err := s.Timeline(ctx, "owner-a", "year", time.Time{},
+		time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(buckets) != 1 || buckets[0].Bucket != "1962" {
+		t.Fatalf("buckets = %+v, want one 1962 bucket", buckets)
+	}
+	if buckets[0].Count != 1 {
+		t.Errorf("count = %d, want 1", buckets[0].Count)
+	}
+}

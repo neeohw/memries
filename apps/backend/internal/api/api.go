@@ -240,9 +240,11 @@ func parseRange(fromStr, toStr string) (time.Time, time.Time, error) {
 			return time.Time{}, time.Time{}, errors.New("bad from")
 		}
 		from = t
-	} else {
-		from = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
+	// An omitted `from` stays the zero time, not 1970: Unix time is an
+	// encoding, not a product floor, and scanned film carries an EXIF
+	// DateTimeOriginal from decades before the epoch. The ceiling stays finite
+	// so a camera clock set to 2200 cannot stretch the timeline (ADR 0005).
 	if toStr != "" {
 		t, err := parseFlexTime(toStr)
 		if err != nil {

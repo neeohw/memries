@@ -25,7 +25,9 @@ type Library struct {
 }
 
 func (l Library) RecentOriginalsMissing(ctx context.Context, ownerID string) (bool, error) {
-	from := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Same window as the API's default (ADR 0005): unbounded below, so a
+	// library of pre-epoch film scans is sampled rather than looking empty.
+	from := time.Time{}
 	to := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
 	photos, _, err := l.Photos.Photos(ctx, ownerID, from, to, recentOriginalSample, "")
 	if err != nil {

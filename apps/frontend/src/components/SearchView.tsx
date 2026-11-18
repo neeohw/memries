@@ -315,7 +315,7 @@ function SearchResultButton({
     >
       {showImage && (
         <img
-          src={compactThumbUrl(photo.id, viewportWidth)}
+          src={compactThumbUrl(photo.id, viewportWidth, photo.hash)}
           alt=""
           width={box}
           height={box}

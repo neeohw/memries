@@ -1,3 +1,4 @@
+import { thumbUrl } from './photoSrc';
 import { wallClockFromExifValue } from './takenAt';
 import type { Album, Photo } from '../models/photo';
 import type { Me, Source, SourceInput, SourceType } from '../models/source';
@@ -5,6 +6,7 @@ import type { IndexStatus } from './indexStatus';
 
 export type ApiPhoto = {
   _key: string;
+  hash?: string;
   taken_at?: string;
   taken_at_local?: string;
   dims?: { w?: number; h?: number };
@@ -99,10 +101,12 @@ export function wallClockFromApi(value: string | undefined): string {
 
 export function mapPhoto(raw: ApiPhoto): Photo {
   const id = raw._key;
+  const hash = raw.hash ?? '';
   return {
     id,
+    hash,
     imageUrl: `/api/original/${encodeURIComponent(id)}`,
-    thumbnailUrl: `/api/thumb/${encodeURIComponent(id)}?size=512`,
+    thumbnailUrl: thumbUrl(id, 512, hash),
     takenAt: raw.taken_at_local || wallClockFromApi(raw.taken_at),
     width: raw.dims?.w || 1,
     height: raw.dims?.h || 1,

@@ -13,6 +13,7 @@ const FIXTURE_DATES = {
 function photo(id: string, takenAt: string): Photo {
   return {
     id,
+    hash: `${id}hash`,
     imageUrl: `/api/media/${id}`,
     thumbnailUrl: `/api/thumb/${id}`,
     takenAt,

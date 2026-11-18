@@ -47,7 +47,9 @@ Favorites and Albums persist in Arango for the signed-in Owner (`PUT /api/photos
 
 ### Query window
 
-Default `/api/photos` and `/api/timeline` range is 1970-01-01 through 2100-01-01 UTC so a capture clock a few days (or years) ahead of “now” is not dropped. Cameras and EXIF are often wrong; a one-day future cutoff hid valid Photos.
+Default `/api/photos` and `/api/timeline` range is **unbounded below** through 2100-01-01 UTC so a capture clock a few days (or years) ahead of “now” is not dropped. Cameras and EXIF are often wrong; a one-day future cutoff hid valid Photos.
+
+There is deliberately no lower bound. Unix time is an encoding, not a product floor: a scanned family negative carries an EXIF `DateTimeOriginal` from the 1950s or 1960s, and an omitted `from` therefore stays the zero time rather than 1970-01-01. The originals probe in `index/library.go` uses the same window, so a library consisting only of pre-epoch scans is sampled instead of looking empty and leaving the Owner at `not_started` (ADR 0004). Under ADR 0014 these instants are negative microseconds in a `BIGINT`, which stores and orders correctly; `store_test.go` proves the round trip and the ordering against a real database.
 
 ### Proof
 
@@ -75,7 +77,7 @@ Decisions were made by implementing the public seams (`internal/index`, `interna
 
 - Birth time is best-effort (`created_windows.go` / `created_darwin.go`; other OS → zero → mtime).
 - Relocate-by-hash does not merge two live paths that later become the same bytes.
-- Default range still has a far-future ceiling (2100), not “unbounded.”
+- Default range has a far-future ceiling (2100), not “unbounded.” The lower bound was removed (see Query window); the ceiling stays so a camera clock set to 2200 cannot stretch the timeline.
 - Sharing graph remains schema-only; Albums are owner-private.
 
 ## Actionable takeaways
