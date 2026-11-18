@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { testPhoto } from '../test/fixtures';
-import { Timeline } from './Timeline';
+import { Timeline, currentGroupIndex } from './Timeline';
 
 describe('Timeline', () => {
   it('pins the first Timeline Group as the current period', () => {
@@ -140,5 +140,61 @@ describe('Timeline date scrubber', () => {
     });
     expect(screen.getByRole('slider').getAttribute('aria-busy')).toBeNull();
     expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('currentGroupIndex', () => {
+  const handle = (over: {
+    scrollSize: number;
+    viewportSize: number;
+    scrollOffset: number;
+    endIndex: number;
+  }) => ({
+    scrollSize: over.scrollSize,
+    viewportSize: over.viewportSize,
+    scrollOffset: over.scrollOffset,
+    findEndIndex: () => over.endIndex,
+  });
+
+  it('names the group at the top of the viewport while there is room to scroll', () => {
+    expect(
+      currentGroupIndex(
+        handle({ scrollSize: 4000, viewportSize: 800, scrollOffset: 1200, endIndex: 7 }),
+        3,
+      ),
+    ).toBe(3);
+  });
+
+  it('names the last group on screen once the list is scrolled to its end', () => {
+    // The final group has nothing below it, so the scroll clamps with an older
+    // group still under the top edge and findStartIndex keeps naming it.
+    expect(
+      currentGroupIndex(
+        handle({ scrollSize: 4000, viewportSize: 800, scrollOffset: 3200, endIndex: 9 }),
+        7,
+      ),
+    ).toBe(9);
+  });
+
+  it('tolerates a fractional pixel short of the exact end', () => {
+    expect(
+      currentGroupIndex(
+        handle({ scrollSize: 4000, viewportSize: 800, scrollOffset: 3198.4, endIndex: 9 }),
+        7,
+      ),
+    ).toBe(9);
+  });
+
+  it('keeps the start group when the end index is not past it', () => {
+    expect(
+      currentGroupIndex(
+        handle({ scrollSize: 800, viewportSize: 800, scrollOffset: 0, endIndex: 0 }),
+        2,
+      ),
+    ).toBe(2);
+  });
+
+  it('falls back to the start group with no list handle', () => {
+    expect(currentGroupIndex(null, 4)).toBe(4);
   });
 });

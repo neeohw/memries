@@ -19,6 +19,29 @@ import { SelectionToolbar } from './SelectionToolbar';
 import { TimelineSection } from './TimelineSection';
 import { FilterIcon, SyncIcon, TodayIcon } from './icons';
 
+/**
+ * The group whose period the header should name.
+ *
+ * Normally that is the group at the top of the viewport. At the very bottom of
+ * the list it cannot be: the last group has nothing below it to scroll
+ * against, so the scroll clamps while an older group is still under the top
+ * edge, and `findStartIndex` keeps naming a period the reader has already
+ * scrolled past. Reaching the end of a library and being told you are looking
+ * at a later month is simply wrong, so name the last group on screen instead.
+ */
+export function currentGroupIndex(
+  handle: Pick<VListHandle, 'scrollSize' | 'viewportSize' | 'scrollOffset' | 'findEndIndex'> | null,
+  startIndex: number,
+): number {
+  if (!handle) return startIndex;
+  // A fractional device pixel ratio leaves the arithmetic a hair short of the
+  // exact end, so the comparison needs a tolerance rather than equality.
+  const atEnd = handle.scrollSize - handle.viewportSize - handle.scrollOffset <= 2;
+  if (!atEnd) return startIndex;
+  const end = handle.findEndIndex();
+  return end > startIndex ? end : startIndex;
+}
+
 export function Timeline({
   photos,
   granularity,
@@ -374,7 +397,7 @@ export function Timeline({
                     }
                     if (Math.abs(offset - lastOffsetRef.current) > 2) markScrolling();
                     lastOffsetRef.current = offset;
-                    const label = groups[start]?.label;
+                    const label = groups[currentGroupIndex(handle, start)]?.label;
                     if (label) setActiveLabel(label);
                     if (start >= Math.max(0, groups.length - 2)) requestNextPage();
                   }}

@@ -142,6 +142,58 @@ export async function scrollTimeline(page: Page, dy: number) {
   }, dy);
 }
 
+/**
+ * Whether the photo is on screen and the timeline is showing its period.
+ *
+ * `isVisible()` alone is not enough, and used to be what `revealPhoto` stopped
+ * on: `virtua` renders an overscan band outside the viewport and Playwright
+ * calls an element visible as soon as it has a non-empty box, so the loop
+ * could stop while a different group was still at the top of the list and
+ * anything reading the pinned period label got a stale one.
+ *
+ * Two stopping points are correct, and they are the two the component itself
+ * uses to pick that label: the photo's own section is the first one past the
+ * scroller's top edge, or the list is scrolled to its end — where the final
+ * group can never reach the top, because there is nothing below it to scroll
+ * against.
+ */
+async function isCurrentGroup(photo: Locator): Promise<boolean> {
+  if (!(await photo.count())) return false;
+  return photo
+    .evaluate((el) => {
+      const root = el.closest('[data-timeline]');
+      const own = el.closest('section[aria-labelledby^="period-"]');
+      if (!root || !own) return false;
+
+      const rootBox = root.getBoundingClientRect();
+      const photoBox = el.getBoundingClientRect();
+      const onScreen = photoBox.bottom > rootBox.top && photoBox.top < rootBox.bottom;
+      if (!onScreen) return false;
+
+      const sections = [...root.querySelectorAll('section[aria-labelledby^="period-"]')];
+      const first = sections
+        .filter((section) => section.getBoundingClientRect().bottom > rootBox.top + 1)
+        .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+      if (first === own) return true;
+
+      const scroller = [root, ...root.querySelectorAll('*')].find(
+        (node) => node.scrollHeight - node.clientHeight > 8,
+      );
+      if (!scroller) return false;
+      const atEnd = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 2;
+      return atEnd && own === sections[sections.length - 1];
+    })
+    .catch(() => false);
+}
+
+/**
+ * Scrolls the timeline until the photo taken on `day` is the current group.
+ *
+ * Group by group, because the list is virtualized: the target may not be in
+ * the DOM at all until the groups before it have been scrolled through. The
+ * group count is re-read each pass, since reaching the end of the loaded
+ * groups is what asks for the next page.
+ */
 export async function revealPhoto(page: Page, day: string): Promise<Locator> {
   const photo = photoByDay(page, day).first();
   const timeline = page.locator('[data-timeline]').first();
@@ -151,13 +203,16 @@ export async function revealPhoto(page: Page, day: string): Promise<Locator> {
     await photo.evaluate((el) => el.scrollIntoView({ block: 'start', inline: 'nearest' }));
     return photo;
   }
-  const count = Number((await timeline.getAttribute('data-group-count').catch(() => '0')) || 0);
-  const steps = Math.max(count, 24);
-  for (let i = 0; i < steps; i += 1) {
-    if (await photo.isVisible().catch(() => false)) {
-      await photo.evaluate((el) => el.scrollIntoView({ block: 'start', inline: 'nearest' }));
-      return photo;
-    }
+
+  const groupCount = async () =>
+    Number((await timeline.getAttribute('data-group-count').catch(() => '0')) || 0);
+
+  // A hard ceiling so a library that keeps loading cannot spin here forever.
+  const maxSteps = 200;
+  for (let i = 0; i < maxSteps; i += 1) {
+    if (await isCurrentGroup(photo)) return photo;
+    const count = await groupCount();
+    if (i >= Math.max(count, 24)) break;
     if (count > 0) {
       await timeline.evaluate((root, index) => {
         const el = root as TimelineEl;
@@ -168,9 +223,12 @@ export async function revealPhoto(page: Page, day: string): Promise<Locator> {
       await scrollTimeline(page, 400);
     }
   }
-  await expect(photo).toBeVisible();
-  await photo.evaluate((el) => el.scrollIntoView({ block: 'start', inline: 'nearest' }));
-  return photo;
+
+  if (await isCurrentGroup(photo)) return photo;
+  // Never found at all and found but never current are different failures;
+  // they used to be reported as one.
+  await expect(photo, `no photo from ${day} in the timeline`).toBeVisible();
+  throw new Error(`scrolled the timeline but ${day} never became the current group`);
 }
 
 export function escapeRegExp(value: string): string {
