@@ -40,8 +40,14 @@ export function IndexingScreen({
 
   return (
     <div
+      // `pointer-events-none` once it starts fading: for the 420ms between the
+      // fade and the unmount this is a full-screen z-40 overlay, and without
+      // it a click in that window lands on something invisible and is lost.
+      // The unmount is not guaranteed to be prompt either — `leaving` is
+      // derived from the index status, and a flip back inside the window
+      // clears the timer and leaves the splash mounted at opacity-0.
       className={`fixed inset-0 z-40 grid place-items-center bg-cream px-6 text-plum transition-opacity duration-300 ease-out ${
-        leaving && !reducedMotion ? 'opacity-0' : 'opacity-100'
+        leaving && !reducedMotion ? 'pointer-events-none opacity-0' : 'opacity-100'
       }`}
       data-indexing-splash
       role="status"
