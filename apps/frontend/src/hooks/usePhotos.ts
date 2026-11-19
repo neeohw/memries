@@ -21,6 +21,27 @@ export function photosQueryKey(filter?: PhotoFilter) {
   return [...photoQueryKey, filter] as const;
 }
 
+/**
+ * Marks every list whose membership depends on favorites as stale.
+ *
+ * Patching the cache flips the flag on rows a query already holds, but it
+ * cannot add a photo to a list it was never in: favoriting from the Timeline
+ * leaves the Favorites page exactly as it was fetched. So those lists are
+ * invalidated and refetched.
+ *
+ * The unfiltered Timeline query is deliberately left alone. It was patched
+ * correctly in place, and refetching every loaded page of a 500-per-page
+ * infinite query would be an expensive way to learn nothing.
+ */
+function invalidateFavoriteLists(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({
+    predicate: (query) => {
+      const [root, filter] = query.queryKey as [string, PhotoFilter | undefined];
+      return root === photoQueryKey[0] && filter?.favorite !== undefined;
+    },
+  });
+}
+
 export function usePhotos(enabled: boolean, filter?: PhotoFilter) {
   const key = photosQueryKey(filter);
   return useInfiniteQuery({
@@ -70,6 +91,7 @@ export function useToggleFavorite() {
         queryClient.setQueryData(key, data);
       }
     },
+    onSettled: () => invalidateFavoriteLists(queryClient),
   });
 }
 
@@ -113,5 +135,6 @@ export function useBatchFavorite() {
         queryClient.setQueryData(key, data);
       }
     },
+    onSettled: () => invalidateFavoriteLists(queryClient),
   });
 }
