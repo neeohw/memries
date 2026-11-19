@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { selectionLabel } from '../lib/selection';
 import type { Album } from '../models/photo';
-import { AlbumIcon, CloseIcon, HeartIcon } from './icons';
+import { AlbumIcon, CloseIcon, HeartIcon, PlusIcon } from './icons';
 
 /**
  * Actions for the current multi-selection (ADR 0018).
@@ -17,6 +17,7 @@ export function SelectionToolbar({
   onClear,
   onFavorite,
   onAddToAlbum,
+  onCreateAlbum,
   busy = false,
 }: {
   count: number;
@@ -26,9 +27,13 @@ export function SelectionToolbar({
   onClear: () => void;
   onFavorite: (favorite: boolean) => void;
   onAddToAlbum: (albumId: string) => void;
+  /** Makes a new album holding exactly this selection. */
+  onCreateAlbum: (name: string) => void;
   busy?: boolean;
 }) {
   const [picking, setPicking] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [draft, setDraft] = useState('');
   const favoriteLabel = allFavorited ? 'Remove from favorites' : 'Add to favorites';
 
   return (
@@ -68,10 +73,13 @@ export function SelectionToolbar({
       <div className="relative shrink-0">
         <button
           type="button"
-          onClick={() => setPicking((open) => !open)}
-          disabled={busy || albums.length === 0}
+          onClick={() => {
+            setPicking((open) => !open);
+            setNaming(false);
+          }}
+          disabled={busy}
           aria-label="Add to album"
-          title={albums.length === 0 ? 'No albums yet' : 'Add to album'}
+          title="Add to album"
           aria-haspopup="menu"
           aria-expanded={picking}
           className="grid h-10 w-10 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95 disabled:opacity-50"
@@ -79,14 +87,80 @@ export function SelectionToolbar({
           <AlbumIcon className="h-5 w-5" />
         </button>
 
-        {picking && albums.length > 0 && (
+        {picking && (
           <>
-            <div className="fixed inset-0 z-30" aria-hidden onClick={() => setPicking(false)} />
+            <div
+              className="fixed inset-0 z-30"
+              aria-hidden
+              onClick={() => {
+                setPicking(false);
+                setNaming(false);
+              }}
+            />
             <div
               role="menu"
               aria-label="Albums"
-              className="absolute right-0 top-11 z-40 max-h-72 w-60 overflow-y-auto rounded-2xl bg-surface p-1 shadow-lift"
+              className="absolute right-0 top-11 z-40 max-h-72 w-64 overflow-y-auto rounded-2xl bg-surface p-1 shadow-lift"
             >
+              {naming ? (
+                // The name is asked for here rather than in a dialog: the
+                // selection is the subject, and a modal over it would hide
+                // what is about to go in.
+                <form
+                  className="flex items-center gap-1 p-1"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const name = draft.trim();
+                    if (!name) return;
+                    setPicking(false);
+                    setNaming(false);
+                    setDraft('');
+                    onCreateAlbum(name);
+                  }}
+                >
+                  <label className="min-w-0 flex-1">
+                    <span className="sr-only">New album name</span>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        // Escape backs out of naming without closing the menu
+                        // and losing the selection behind it.
+                        if (event.key === 'Escape') {
+                          event.stopPropagation();
+                          setNaming(false);
+                          setDraft('');
+                        }
+                      }}
+                      placeholder={`Album of ${count} ${count === 1 ? 'photo' : 'photos'}`}
+                      maxLength={80}
+                      className="h-10 w-full rounded-xl bg-cream px-3 text-sm text-plum outline-none ring-1 ring-plum/10 placeholder:text-ink/60 focus-visible:ring-2 focus-visible:ring-peach"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={!draft.trim()}
+                    className="h-10 shrink-0 rounded-xl px-3 text-sm font-medium text-plum transition hover:bg-blush/40 disabled:opacity-40"
+                  >
+                    Create
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => setNaming(true)}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm font-medium text-plum transition hover:bg-blush/40"
+                >
+                  <PlusIcon className="h-4 w-4 shrink-0" />
+                  New album
+                </button>
+              )}
+
+              {albums.length > 0 && <div className="my-1 border-t border-plum/10" aria-hidden />}
+
               {albums.map((album) => (
                 <button
                   key={album.id}
@@ -94,6 +168,7 @@ export function SelectionToolbar({
                   role="menuitem"
                   onClick={() => {
                     setPicking(false);
+                    setNaming(false);
                     onAddToAlbum(album.id);
                   }}
                   className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 text-left text-sm text-plum transition hover:bg-blush/40"

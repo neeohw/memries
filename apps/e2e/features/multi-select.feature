@@ -27,6 +27,13 @@ Feature: Multi-select
     And the photo from "Monday, 31 August 2026" should be a favorite
     And the photo from "Wednesday, 26 August 2026" should be a favorite
 
+  Scenario: A selection becomes a new album
+    Given I am signed in
+    When I select the photo from "Monday, 31 August 2026"
+    And I select the photo from "Wednesday, 26 August 2026"
+    And I make a new album named "Weekend" from the selection
+    Then the album "Weekend" should have 2 photos
+
   Scenario: A selection can be added to an album in one action
     Given I am signed in
     When I create an album named "Holiday"

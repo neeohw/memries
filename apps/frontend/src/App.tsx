@@ -283,6 +283,9 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               onSelectionFavorite={(ids, favorite) =>
                 batchFavoriteMutation.mutate({ ids, favorite })
               }
+              onSelectionCreateAlbum={(ids, name) =>
+                createAlbumMutation.mutate({ name, photoIds: ids })
+              }
               onSelectionAddToAlbum={(ids, albumId) =>
                 addPhotosMutation.mutate({ albumId, photoIds: ids })
               }
@@ -310,7 +313,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
           {tab === 'albums' && !selectedAlbumId && (
             <AlbumsView
               albums={albums}
-              onCreate={(name) => createAlbumMutation.mutate(name)}
+              onCreate={(name) => createAlbumMutation.mutate({ name })}
               onOpen={(album) => setSelectedAlbumId(album.id)}
               creating={createAlbumMutation.isPending}
             />

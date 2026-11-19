@@ -66,6 +66,25 @@ Album pages are untouched by this change.
 component that owns the state also has to read it: the toolbar and the tiles
 sit on opposite sides of the same subtree.
 
+### A selection can become a new album
+
+`POST /api/albums` takes an optional `photo_ids`, and the store creates the
+Album and fills it in one transaction.
+
+Not a create followed by an add: if the fill failed halfway, the reader would
+be left with an album they never asked for, holding part of a selection. The
+same all-or-nothing rule applies to the ids — one that is not a live Photo and
+no album is created at all.
+
+The name is asked for inside the album menu rather than in a dialog. The
+selection is the subject of the action, and a modal over the grid would hide
+what is about to go into the album. Escape there backs out of naming without
+closing the menu, because Escape at the window level clears the whole
+selection (below) and losing it to a mistyped name would be rude.
+
+The album button is no longer disabled when there are no albums yet: making
+the first one from a selection is exactly what this adds.
+
 ### Interaction
 
 - A checkbox appears on each tile on hover or focus, and stays visible once

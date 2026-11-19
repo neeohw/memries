@@ -13,6 +13,7 @@ function renderToolbar(overrides: Partial<Parameters<typeof SelectionToolbar>[0]
     onClear: vi.fn(),
     onFavorite: vi.fn(),
     onAddToAlbum: vi.fn(),
+    onCreateAlbum: vi.fn(),
     ...overrides,
   };
   render(<SelectionToolbar {...props} />);
@@ -59,12 +60,58 @@ describe('SelectionToolbar', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('offers no album menu when there are no albums', () => {
+  it('still offers the menu with no albums, because the first one is made here', () => {
     renderToolbar({ albums: [] });
     const button = screen.getByRole('button', { name: 'Add to album' });
-    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(button.hasAttribute('disabled')).toBe(false);
     fireEvent.click(button);
+    expect(screen.getByRole('menuitem', { name: /New album/ })).toBeTruthy();
+  });
+
+  it('creates an album from the selection', () => {
+    const props = renderToolbar({ count: 3 });
+    fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /New album/ }));
+
+    const field = screen.getByLabelText('New album name');
+    // The placeholder says what is about to happen to the selection.
+    expect(field).toHaveAttribute('placeholder', 'Album of 3 photos');
+    fireEvent.change(field, { target: { value: '  Holiday  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(props.onCreateAlbum).toHaveBeenCalledWith('Holiday');
+    // The menu closes on success, like picking an existing album does.
     expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('will not create an album with a blank name', () => {
+    const props = renderToolbar();
+    fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /New album/ }));
+    fireEvent.change(screen.getByLabelText('New album name'), { target: { value: '   ' } });
+
+    expect(screen.getByRole('button', { name: 'Create' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.submit(screen.getByLabelText('New album name').closest('form') as HTMLFormElement);
+    expect(props.onCreateAlbum).not.toHaveBeenCalled();
+  });
+
+  it('backs out of naming on Escape without losing the menu', () => {
+    const props = renderToolbar();
+    fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /New album/ }));
+    fireEvent.keyDown(screen.getByLabelText('New album name'), { key: 'Escape' });
+
+    // Back to the menu, not back to no selection: Escape at the window level
+    // clears the whole selection, and that must not happen from here.
+    expect(screen.getByRole('menuitem', { name: /New album/ })).toBeTruthy();
+    expect(props.onCreateAlbum).not.toHaveBeenCalled();
+  });
+
+  it('keeps existing albums listed below the new-album entry', () => {
+    const props = renderToolbar();
+    fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Summer/ }));
+    expect(props.onAddToAlbum).toHaveBeenCalledWith('a1');
   });
 
   it('disables the actions while a batch is in flight', () => {

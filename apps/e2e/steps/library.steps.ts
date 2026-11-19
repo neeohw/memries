@@ -516,3 +516,11 @@ When('I add the selection to album {string}', async ({ page }, name: string) => 
   await page.getByRole('menuitem', { name: new RegExp(escapeRegExp(name)) }).click();
   await selectionToolbar(page).getByRole('button', { name: 'Clear selection' }).click();
 });
+
+When('I make a new album named {string} from the selection', async ({ page }, name: string) => {
+  await selectionToolbar(page).getByRole('button', { name: 'Add to album' }).click();
+  await page.getByRole('menuitem', { name: /New album/ }).click();
+  await page.getByLabel('New album name').fill(name);
+  await page.getByRole('button', { name: 'Create' }).click();
+  await selectionToolbar(page).getByRole('button', { name: 'Clear selection' }).click();
+});

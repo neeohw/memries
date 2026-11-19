@@ -267,11 +267,17 @@ export async function addPhotosToAlbum(albumId: string, photoIds: string[]): Pro
   return mapAlbum((await res.json()) as ApiAlbumView);
 }
 
-export async function createAlbum(name: string): Promise<Album> {
+/**
+ * Creates an album, optionally filled with a selection.
+ *
+ * One request rather than a create followed by an add: the server does both
+ * in a transaction, so a bad id leaves no half-made album behind (ADR 0018).
+ */
+export async function createAlbum(name: string, photoIds?: string[]): Promise<Album> {
   const res = await apiFetch('/api/albums', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name.trim() }),
+    body: JSON.stringify({ name: name.trim(), photo_ids: photoIds ?? [] }),
   });
   return mapAlbum((await res.json()) as ApiAlbumView);
 }

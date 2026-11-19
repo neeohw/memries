@@ -62,6 +62,7 @@ export function Timeline({
   albums = [],
   onSelectionFavorite,
   onSelectionAddToAlbum,
+  onSelectionCreateAlbum,
 }: {
   photos: Photo[];
   granularity: Granularity;
@@ -84,6 +85,7 @@ export function Timeline({
   albums?: Album[];
   onSelectionFavorite?: (ids: string[], favorite: boolean) => void;
   onSelectionAddToAlbum?: (ids: string[], albumId: string) => void;
+  onSelectionCreateAlbum?: (ids: string[], name: string) => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const groups = useMemo(() => groupPhotos(photos, granularity), [photos, granularity]);
@@ -327,6 +329,7 @@ export function Timeline({
             onClear={selection.clear}
             onFavorite={(favorite) => onSelectionFavorite?.(selection.ids, favorite)}
             onAddToAlbum={(albumId) => onSelectionAddToAlbum?.(selection.ids, albumId)}
+            onCreateAlbum={(name) => onSelectionCreateAlbum?.(selection.ids, name)}
           />
         ) : (
           <div className="relative z-20 flex items-center gap-2 px-3 py-2 min-[640px]:px-5">

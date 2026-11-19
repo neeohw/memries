@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -31,10 +32,33 @@ func newDocumentKey() string {
 }
 
 func (s *Store) CreateAlbum(ctx context.Context, ownerID, name string) (*AlbumView, error) {
+	return s.CreateAlbumWithPhotos(ctx, ownerID, name, nil)
+}
+
+// CreateAlbumWithPhotos creates an Album and fills it in one transaction.
+//
+// One operation rather than a create followed by an add: if the fill failed
+// halfway, the reader would be left with an album they did not ask for,
+// holding some of what they selected. Either the album exists with the whole
+// selection in it, or nothing happened.
+//
+// Every id is checked to be a live Photo before anything is written, the same
+// all-or-nothing rule the other batch writes follow (ADR 0018).
+func (s *Store) CreateAlbumWithPhotos(ctx context.Context, ownerID, name string, photoIDs []string) (*AlbumView, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, errors.New("album name is required")
 	}
+	ids := dedupe(photoIDs)
+	if len(ids) > MaxBatchPhotos {
+		return nil, fmt.Errorf("at most %d photos per request, got %d", MaxBatchPhotos, len(ids))
+	}
+	if len(ids) > 0 {
+		if err := s.requireLivePhotos(ctx, ids); err != nil {
+			return nil, err
+		}
+	}
+
 	a := Album{
 		Key:        newDocumentKey(),
 		Name:       name,
@@ -42,14 +66,32 @@ func (s *Store) CreateAlbum(ctx context.Context, ownerID, name string) (*AlbumVi
 		Visibility: "private",
 		CreatedAt:  time.Now().UTC(),
 	}
-	_, err := s.exec(ctx,
-		`INSERT INTO albums (key, name, owner_id, visibility, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		a.Key, a.Name, a.OwnerID, a.Visibility, micros(a.CreatedAt))
+	added := micros(a.CreatedAt)
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, s.rebind(
+			`INSERT INTO albums (key, name, owner_id, visibility, created_at)
+			 VALUES (?, ?, ?, ?, ?)`),
+			a.Key, a.Name, a.OwnerID, a.Visibility, added); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if _, err := tx.ExecContext(ctx, s.rebind(
+				`INSERT INTO album_photos (album_key, photo_key, added_at)
+				 VALUES (?, ?, ?)
+				 ON CONFLICT (album_key, photo_key) DO NOTHING`),
+				a.Key, id, added); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &AlbumView{ID: a.Key, Name: a.Name, CreatedAt: a.CreatedAt, PhotoIDs: []string{}}, nil
+	if len(ids) == 0 {
+		return &AlbumView{ID: a.Key, Name: a.Name, CreatedAt: a.CreatedAt, PhotoIDs: []string{}}, nil
+	}
+	return s.albumViewForOwner(ctx, ownerID, a.Key)
 }
 
 // ListAlbums returns the Owner's Albums, newest first, each with its ordered

@@ -78,6 +78,26 @@ func (f *fakeLibrary) CreateAlbum(_ context.Context, ownerID, name string) (*db.
 	return view, nil
 }
 
+// Mirrors the store's all-or-nothing rule: one unusable id and no album is
+// created at all, rather than an empty one the reader did not ask for.
+func (f *fakeLibrary) CreateAlbumWithPhotos(ctx context.Context, ownerID, name string, photoIDs []string) (*db.AlbumView, error) {
+	for _, id := range photoIDs {
+		if _, ok := f.photos[id]; !ok {
+			return nil, db.ErrForbidden
+		}
+	}
+	view, err := f.CreateAlbum(ctx, ownerID, name)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range photoIDs {
+		if _, err := f.AddPhotoToAlbum(ctx, ownerID, view.ID, id); err != nil {
+			return nil, err
+		}
+	}
+	return view, nil
+}
+
 func (f *fakeLibrary) GetAlbumView(_ context.Context, ownerID, albumID string) (*db.AlbumDetail, error) {
 	album, ok := f.albums[albumID]
 	if !ok {

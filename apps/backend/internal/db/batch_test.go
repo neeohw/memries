@@ -221,3 +221,87 @@ func TestAddPhotosToAlbumRejectsEmptyAndOversizedBatches(t *testing.T) {
 		t.Error("want an error for a batch over the cap")
 	}
 }
+
+func TestCreateAlbumWithPhotosFillsItInOneGo(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustUpsert(t, s,
+		photo("a", "2026-03-01T10:00:00"),
+		photo("b", "2026-03-02T10:00:00"),
+		photo("c", "2026-03-03T10:00:00"),
+	)
+
+	view, err := s.CreateAlbumWithPhotos(ctx, "owner", "Trip", []string{"a", "c"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if view.Name != "Trip" || view.PhotoCount != 2 {
+		t.Fatalf("view = %+v", view)
+	}
+	// Newest first, like every other album view.
+	if len(view.PhotoIDs) != 2 || view.PhotoIDs[0] != "c" || view.PhotoIDs[1] != "a" {
+		t.Fatalf("photo_ids = %v", view.PhotoIDs)
+	}
+	if view.CoverPhotoID != "c" {
+		t.Errorf("cover = %q, want c", view.CoverPhotoID)
+	}
+}
+
+func TestCreateAlbumWithNoPhotosIsStillAnAlbum(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	view, err := s.CreateAlbumWithPhotos(ctx, "owner", "Empty", nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if view.PhotoCount != 0 || len(view.PhotoIDs) != 0 {
+		t.Fatalf("view = %+v", view)
+	}
+}
+
+func TestCreateAlbumWithPhotosLeavesNothingBehindOnABadID(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustUpsert(t, s, photo("real", "2026-03-01T10:00:00"))
+
+	_, err := s.CreateAlbumWithPhotos(ctx, "owner", "Trip", []string{"real", "ghost"})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
+	// The album must not exist either. A half-done create would leave the
+	// reader with an album they never asked for, holding part of a selection.
+	albums, err := s.ListAlbums(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(albums) != 0 {
+		t.Fatalf("albums = %+v, want none", albums)
+	}
+}
+
+func TestCreateAlbumWithPhotosDeduplicates(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustUpsert(t, s, photo("a", "2026-03-01T10:00:00"))
+
+	view, err := s.CreateAlbumWithPhotos(ctx, "owner", "Trip", []string{"a", "a", "a"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if view.PhotoCount != 1 {
+		t.Fatalf("photo_count = %d, want 1", view.PhotoCount)
+	}
+}
+
+func TestCreateAlbumStillNeedsAName(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustUpsert(t, s, photo("a", "2026-03-01T10:00:00"))
+	if _, err := s.CreateAlbumWithPhotos(ctx, "owner", "   ", []string{"a"}); err == nil {
+		t.Fatal("a blank name was accepted")
+	}
+	albums, _ := s.ListAlbums(ctx, "owner")
+	if len(albums) != 0 {
+		t.Fatalf("albums = %+v, want none", albums)
+	}
+}

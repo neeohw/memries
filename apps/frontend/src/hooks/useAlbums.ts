@@ -35,16 +35,21 @@ export function useAlbum(id: string | null) {
 export function useCreateAlbum() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: createAlbum,
-    onMutate: async (name) => {
+    mutationFn: ({ name, photoIds }: { name: string; photoIds?: string[] }) =>
+      createAlbum(name, photoIds),
+    onMutate: async ({ name, photoIds }) => {
       await queryClient.cancelQueries({ queryKey: albumQueryKey });
       const previous = queryClient.getQueryData<Album[]>(albumQueryKey);
+      const ids = photoIds ?? [];
       const optimistic: Album = {
         id: `temp-${Date.now()}`,
         name: name.trim(),
         createdAt: new Date().toISOString(),
-        photoCount: 0,
-        photoIds: [],
+        photoCount: ids.length,
+        photoIds: ids,
+        // The cover is the newest of the selection, which is the first id:
+        // the toolbar sends them in library order (ADR 0018).
+        coverPhotoId: ids[0],
       };
       queryClient.setQueryData<Album[]>(albumQueryKey, (current) => [
         optimistic,
@@ -52,7 +57,7 @@ export function useCreateAlbum() {
       ]);
       return { previous };
     },
-    onError: (_error, _name, context) => {
+    onError: (_error, _vars, context) => {
       if (context?.previous) queryClient.setQueryData(albumQueryKey, context.previous);
     },
     onSettled: () => {

@@ -44,6 +44,10 @@ func (a *API) createAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Name string `json:"name"`
+		// PhotoIDs fills the new Album in the same request, so an album made
+		// from a selection is one operation rather than a create that can be
+		// followed by a failed fill (ADR 0018).
+		PhotoIDs []string `json:"photo_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -53,9 +57,9 @@ func (a *API) createAlbum(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "album name is required", http.StatusBadRequest)
 		return
 	}
-	view, err := a.DB.CreateAlbum(r.Context(), u.Key, body.Name)
+	view, err := a.DB.CreateAlbumWithPhotos(r.Context(), u.Key, body.Name, body.PhotoIDs)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), libraryStatus(err))
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
