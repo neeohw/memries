@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const userColumns = `key, email, name, role, password_hash, sources_migrated, created_at`
+const userColumns = `key, email, name, role, password_hash, created_at`
 
 func UserKeyFromEmail(email string) string {
 	sum := sha1.Sum([]byte(strings.ToLower(email)))
@@ -20,14 +20,12 @@ func UserKeyFromEmail(email string) string {
 func scanUser(sc rowScanner) (*User, error) {
 	var (
 		u         User
-		migrated  boolVal
 		createdAt int64
 	)
-	err := sc.Scan(&u.Key, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &migrated, &createdAt)
+	err := sc.Scan(&u.Key, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &createdAt)
 	if err != nil {
 		return nil, err
 	}
-	u.SourcesMigrated = bool(migrated)
 	u.CreatedAt = fromMicros(createdAt)
 	return &u, nil
 }

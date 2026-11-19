@@ -27,15 +27,14 @@ func dedupe(ids []string) []string {
 	return out
 }
 
-// SetFavorites flips the favorite flag on several of the Owner's Photos at
-// once (ADR 0018) and reports how many rows changed.
+// SetFavorites adds or removes this reader's favorites in one go (ADR 0018),
+// and reports how many ids it acted on.
 //
-// The update is owner-scoped in SQL, so another Owner's Photo cannot be
-// touched even if its id is submitted. A count that does not match the request
-// means at least one id was not the Owner's, which is ErrForbidden rather than
-// a silent partial success: the ids come from the reader's own grid, so a
-// mismatch is a bug worth surfacing, not a condition to paper over.
-func (s *Store) SetFavorites(ctx context.Context, ownerID string, photoIDs []string, favorite bool) (int, error) {
+// Every id is checked to be a live Photo first, so a batch holding one id
+// that is not adds nothing at all rather than half the selection: the ids
+// come from the reader's own grid, so a mismatch is a bug worth surfacing,
+// not a condition to paper over.
+func (s *Store) SetFavorites(ctx context.Context, viewer string, photoIDs []string, favorite bool) (int, error) {
 	ids := dedupe(photoIDs)
 	if len(ids) == 0 {
 		return 0, nil
@@ -43,31 +42,56 @@ func (s *Store) SetFavorites(ctx context.Context, ownerID string, photoIDs []str
 	if len(ids) > MaxBatchPhotos {
 		return 0, fmt.Errorf("at most %d photos per request, got %d", MaxBatchPhotos, len(ids))
 	}
+	if err := s.requireLivePhotos(ctx, ids); err != nil {
+		return 0, err
+	}
 
-	args := []any{favorite, ownerID}
-	q := `UPDATE photos SET favorite = ? WHERE owner_id = ? AND ` +
-		inClause("key", ids, &args)
-	res, err := s.exec(ctx, q, args...)
+	now := micros(time.Now().UTC())
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		for _, id := range ids {
+			var err error
+			if favorite {
+				_, err = tx.ExecContext(ctx, s.rebind(
+					`INSERT INTO favorites (user_key, photo_key, created_at) VALUES (?, ?, ?)
+					 ON CONFLICT (user_key, photo_key) DO NOTHING`), viewer, id, now)
+			} else {
+				_, err = tx.ExecContext(ctx, s.rebind(
+					`DELETE FROM favorites WHERE user_key = ? AND photo_key = ?`), viewer, id)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		// A driver that will not count rows cannot prove ownership either.
-		return 0, nil
+	return len(ids), nil
+}
+
+// requireLivePhotos reports ErrForbidden unless every id is a live Photo.
+func (s *Store) requireLivePhotos(ctx context.Context, ids []string) error {
+	var args []any
+	q := `SELECT COUNT(*) FROM photos WHERE deleted_at IS NULL AND ` +
+		inClause("key", ids, &args)
+	var usable int
+	if err := s.queryRow(ctx, q, args...).Scan(&usable); err != nil {
+		return err
 	}
-	if int(affected) != len(ids) {
-		return int(affected), ErrForbidden
+	if usable != len(ids) {
+		return ErrForbidden
 	}
-	return int(affected), nil
+	return nil
 }
 
 // AddPhotosToAlbum adds several Photos to one Album in a single transaction
 // (ADR 0018).
 //
-// Ownership of the Album and of every Photo is checked before anything is
-// written, so a batch containing one foreign id adds nothing at all rather
-// than half the selection.
+// The Album's ownership and every Photo's existence are checked before
+// anything is written, so a batch containing one bad id adds nothing at all
+// rather than half the selection. The library is shared, so a Photo has no
+// owner to check — only the Album does (ADR 0020).
 func (s *Store) AddPhotosToAlbum(ctx context.Context, ownerID, albumID string, photoIDs []string) (*AlbumView, error) {
 	ids := dedupe(photoIDs)
 	if len(ids) == 0 {
@@ -85,17 +109,8 @@ func (s *Store) AddPhotosToAlbum(ctx context.Context, ownerID, albumID string, p
 		return nil, ErrForbidden
 	}
 
-	// One round trip to establish that every id is a live Photo of this Owner.
-	args := []any{ownerID}
-	countQ := `SELECT COUNT(*) FROM photos
-	           WHERE owner_id = ? AND deleted_at IS NULL AND ` +
-		inClause("key", ids, &args)
-	var usable int
-	if err := s.queryRow(ctx, countQ, args...).Scan(&usable); err != nil {
+	if err := s.requireLivePhotos(ctx, ids); err != nil {
 		return nil, err
-	}
-	if usable != len(ids) {
-		return nil, ErrForbidden
 	}
 
 	now := micros(time.Now().UTC())

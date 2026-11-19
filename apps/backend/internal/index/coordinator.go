@@ -35,13 +35,13 @@ type JobRunner interface {
 }
 
 type RunStore interface {
-	GetIndexRun(ctx context.Context, ownerID string) (*db.IndexRun, error)
+	GetIndexRun(ctx context.Context) (*db.IndexRun, error)
 	UpsertIndexRun(ctx context.Context, run *db.IndexRun) error
 	ListIndexRunsByStatus(ctx context.Context, status string) ([]db.IndexRun, error)
 }
 
 type OwnerPhotoCounter interface {
-	CountOwnerPhotos(ctx context.Context, ownerID string) (int64, error)
+	CountPhotos(ctx context.Context) (int64, error)
 }
 
 type PrefixMediaCounter interface {
@@ -49,7 +49,7 @@ type PrefixMediaCounter interface {
 }
 
 type OriginalsProber interface {
-	RecentOriginalsMissing(ctx context.Context, ownerID string) (bool, error)
+	RecentOriginalsMissing(ctx context.Context) (bool, error)
 }
 
 // Scope is one storage prefix an Index run walks — one per Source.
@@ -60,20 +60,9 @@ type Scope struct {
 	Remote bool
 }
 
-// ScopeResolver lists the storage prefixes that make up an Owner's library.
+// ScopeResolver lists the storage prefixes that make up the library.
 type ScopeResolver interface {
-	Scopes(ctx context.Context, ownerID, email string) ([]Scope, error)
-}
-
-// EmailScopes is the pre-Source layout: one folder named after the email.
-type EmailScopes struct{}
-
-func (EmailScopes) Scopes(_ context.Context, _, email string) ([]Scope, error) {
-	prefix, err := PrefixFromEmail(email)
-	if err != nil {
-		return nil, err
-	}
-	return []Scope{{Prefix: prefix}}, nil
+	Scopes(ctx context.Context) ([]Scope, error)
 }
 
 type Status struct {
@@ -104,8 +93,6 @@ type Coordinator struct {
 }
 
 type job struct {
-	ownerID string
-	email   string
 	prefix  string
 	sources int
 	status  string
@@ -125,14 +112,25 @@ func NewCoordinator(ctx context.Context, runner JobRunner, store RunStore, count
 		counter: counter,
 		media:   media,
 		library: library,
-		scopes:  EmailScopes{},
 		log:     log,
 		jobs:    make(map[string]*job),
 		slot:    make(chan struct{}, 1),
 	}
 }
 
-// WithScopes replaces the email-folder layout with another resolver (Sources).
+// resolveScopes asks where the library's media lives.
+//
+// There is no default resolver: the Sources registry is the only answer, and
+// a Coordinator built without one should say so rather than panic on the
+// first run.
+func (c *Coordinator) resolveScopes(ctx context.Context) ([]Scope, error) {
+	if c.scopes == nil {
+		return nil, errors.New("no source resolver configured; call WithScopes")
+	}
+	return c.scopes.Scopes(ctx)
+}
+
+// WithScopes sets where the library's media lives (the Sources registry).
 func (c *Coordinator) WithScopes(r ScopeResolver) *Coordinator {
 	c.scopes = r
 	return c
@@ -167,23 +165,23 @@ func (c *Coordinator) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-func (c *Coordinator) Status(ctx context.Context, ownerID, email string) (Status, error) {
+func (c *Coordinator) Status(ctx context.Context) (Status, error) {
 	c.mu.Lock()
-	if j, ok := c.jobs[ownerID]; ok {
+	if j, ok := c.jobs[db.IndexRunKey]; ok {
 		s := j.snapshot()
 		c.mu.Unlock()
 		return s, nil
 	}
 	c.mu.Unlock()
 
-	scopes, err := c.scopes.Scopes(ctx, ownerID, email)
+	scopes, err := c.resolveScopes(ctx)
 	if err != nil {
 		return Status{}, err
 	}
 	prefix := joinPrefixes(scopes)
 	idle := Status{Status: StatusNotStarted, Prefix: prefix, Sources: len(scopes)}
 
-	run, err := c.store.GetIndexRun(ctx, ownerID)
+	run, err := c.store.GetIndexRun(ctx)
 	if err != nil {
 		return Status{}, err
 	}
@@ -198,7 +196,7 @@ func (c *Coordinator) Status(ctx context.Context, ownerID, email string) (Status
 				return Status{}, err
 			}
 		}
-		if run.Prefix != prefix || c.shouldRescan(ctx, ownerID, scopes) {
+		if run.Prefix != prefix || c.shouldRescan(ctx, scopes) {
 			return idle, nil
 		}
 		s := statusFromRun(run, prefix)
@@ -206,23 +204,23 @@ func (c *Coordinator) Status(ctx context.Context, ownerID, email string) (Status
 		return s, nil
 	}
 
-	n, err := c.counter.CountOwnerPhotos(ctx, ownerID)
+	n, err := c.counter.CountPhotos(ctx)
 	if err != nil {
 		return Status{}, err
 	}
-	if n > 0 && !c.shouldRescan(ctx, ownerID, scopes) {
+	if n > 0 && !c.shouldRescan(ctx, scopes) {
 		return Status{Status: StatusComplete, Prefix: prefix, Sources: len(scopes)}, nil
 	}
 	return idle, nil
 }
 
-func (c *Coordinator) shouldRescan(ctx context.Context, ownerID string, scopes []Scope) bool {
-	n, err := c.counter.CountOwnerPhotos(ctx, ownerID)
+func (c *Coordinator) shouldRescan(ctx context.Context, scopes []Scope) bool {
+	n, err := c.counter.CountPhotos(ctx)
 	if err != nil {
 		return false
 	}
 	if c.library != nil && n > 0 {
-		missing, err := c.library.RecentOriginalsMissing(ctx, ownerID)
+		missing, err := c.library.RecentOriginalsMissing(ctx)
 		if err == nil && missing {
 			return true
 		}
@@ -246,23 +244,20 @@ func (c *Coordinator) shouldRescan(ctx context.Context, ownerID string, scopes [
 	return false
 }
 
-func (c *Coordinator) Start(ctx context.Context, ownerID, email string) (Status, error) {
-	return c.start(ctx, ownerID, email, false)
+func (c *Coordinator) Start(ctx context.Context) (Status, error) {
+	return c.start(ctx, false)
 }
 
-// Rescan is Start for callers that just changed the Owner's Sources: a run
-// already in flight walked the old set, so another run is queued behind it.
-func (c *Coordinator) Rescan(ctx context.Context, ownerID, email string) (Status, error) {
-	return c.start(ctx, ownerID, email, true)
+// Rescan is Start for callers that just changed the Sources: a run already in
+// flight walked the old set, so another run is queued behind it.
+func (c *Coordinator) Rescan(ctx context.Context) (Status, error) {
+	return c.start(ctx, true)
 }
 
-func (c *Coordinator) start(ctx context.Context, ownerID, email string, rerun bool) (Status, error) {
-	if _, err := PrefixFromEmail(email); err != nil {
-		return Status{}, err
-	}
-	if ownerID == "" {
-		return Status{}, errors.New("owner required")
-	}
+func (c *Coordinator) start(ctx context.Context, rerun bool) (Status, error) {
+	// One library, one run: the key is a constant rather than an owner
+	// (ADR 0020).
+	ownerID := db.IndexRunKey
 
 	c.mu.Lock()
 	if j, ok := c.jobs[ownerID]; ok && (j.status == StatusQueued || j.status == StatusRunning) {
@@ -273,14 +268,13 @@ func (c *Coordinator) start(ctx context.Context, ownerID, email string, rerun bo
 		c.mu.Unlock()
 		return s, nil
 	}
-	j := &job{ownerID: ownerID, email: email, status: StatusQueued}
+	j := &job{status: StatusQueued}
 	c.jobs[ownerID] = j
 	c.mu.Unlock()
 
 	now := time.Now().UTC()
 	if err := c.store.UpsertIndexRun(ctx, &db.IndexRun{
 		Key:       ownerID,
-		OwnerID:   ownerID,
 		Status:    StatusQueued,
 		UpdatedAt: now,
 	}); err != nil {
@@ -290,11 +284,12 @@ func (c *Coordinator) start(ctx context.Context, ownerID, email string, rerun bo
 		return Status{}, err
 	}
 
-	go c.execute(ownerID, email)
+	go c.execute()
 	return j.snapshot(), nil
 }
 
-func (c *Coordinator) execute(ownerID, email string) {
+func (c *Coordinator) execute() {
+	ownerID := db.IndexRunKey
 	select {
 	case c.slot <- struct{}{}:
 	case <-c.ctx.Done():
@@ -304,19 +299,20 @@ func (c *Coordinator) execute(ownerID, email string) {
 	defer func() { <-c.slot }()
 
 	for {
-		if !c.runOnce(ownerID, email) {
+		if !c.runOnce() {
 			return
 		}
 	}
 }
 
 // runOnce performs one Index run and reports whether a rerun was requested.
-func (c *Coordinator) runOnce(ownerID, email string) bool {
+func (c *Coordinator) runOnce() bool {
+	ownerID := db.IndexRunKey
 	if c.ctx.Err() != nil {
 		c.finish(ownerID, "", StatusFailed, Result{}, interruptMessage)
 		return false
 	}
-	scopes, err := c.scopes.Scopes(c.ctx, ownerID, email)
+	scopes, err := c.resolveScopes(c.ctx)
 	if err != nil {
 		c.finish(ownerID, "", StatusFailed, Result{}, err.Error())
 		return c.takeRerun(ownerID)
@@ -331,7 +327,6 @@ func (c *Coordinator) runOnce(ownerID, email string) bool {
 	started := time.Now().UTC()
 	_ = c.store.UpsertIndexRun(c.ctx, &db.IndexRun{
 		Key:       ownerID,
-		OwnerID:   ownerID,
 		Prefix:    prefix,
 		Status:    StatusRunning,
 		StartedAt: &started,
@@ -339,7 +334,6 @@ func (c *Coordinator) runOnce(ownerID, email string) bool {
 	})
 
 	res, err := c.runner.Run(c.ctx, Options{
-		OwnerID:     ownerID,
 		Prefixes:    prefixes,
 		Concurrency: 4,
 		OnProgress: func(p Result) {
@@ -409,7 +403,6 @@ func (c *Coordinator) finish(ownerID, prefix, status string, res Result, errMsg 
 	now := time.Now().UTC()
 	run := &db.IndexRun{
 		Key:        ownerID,
-		OwnerID:    ownerID,
 		Prefix:     prefix,
 		Status:     status,
 		Discovered: res.Discovered,
@@ -422,7 +415,7 @@ func (c *Coordinator) finish(ownerID, prefix, status string, res Result, errMsg 
 		UpdatedAt:  now,
 	}
 	if err := c.store.UpsertIndexRun(c.ctx, run); err != nil {
-		c.log.Error("persist index run", "owner", ownerID, "err", err)
+		c.log.Error("persist index run", "err", err)
 	}
 }
 

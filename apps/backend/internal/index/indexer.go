@@ -25,12 +25,12 @@ import (
 )
 
 type PhotoRepository interface {
-	GetPhoto(ctx context.Context, key string) (*db.Photo, error)
-	GetPhotoByHash(ctx context.Context, ownerID, hash string) (*db.Photo, error)
-	GetPhotoByOwnerPath(ctx context.Context, ownerID, path string) (*db.Photo, error)
+	GetPhoto(ctx context.Context, viewer, key string) (*db.Photo, error)
+	GetPhotoByHash(ctx context.Context, hash string) (*db.Photo, error)
+	GetPhotoByPath(ctx context.Context, path string) (*db.Photo, error)
 	UpsertPhoto(ctx context.Context, p *db.Photo) error
 	UpdateIndexedPhoto(ctx context.Context, p *db.Photo) error
-	ListOwnerPhotoStorage(ctx context.Context, ownerID string) ([]db.PhotoStorageRef, error)
+	ListPhotoStorage(ctx context.Context) ([]db.PhotoStorageRef, error)
 	SoftDeletePhoto(ctx context.Context, key string) error
 }
 
@@ -42,7 +42,6 @@ type Indexer struct {
 }
 
 type Options struct {
-	OwnerID string
 	// Prefixes are the storage roots to walk (one per Source). Empty walks
 	// nothing but still prunes the Owner's Photos whose files are gone.
 	Prefixes    []string
@@ -66,9 +65,6 @@ func (i *Indexer) Run(ctx context.Context, opts Options) (Result, error) {
 
 	if opts.Concurrency <= 0 {
 		opts.Concurrency = 4
-	}
-	if opts.OwnerID == "" {
-		return res, fmt.Errorf("OwnerID required")
 	}
 
 	var objects []storage.ObjectInfo
@@ -123,7 +119,7 @@ func (i *Indexer) Run(ctx context.Context, opts Options) (Result, error) {
 	for w := 0; w < opts.Concurrency; w++ {
 		g.Go(func() error {
 			for o := range jobs {
-				skipped, err := i.indexOne(gctx, o, opts.OwnerID, opts.Force)
+				skipped, err := i.indexOne(gctx, o, opts.Force)
 				mu.Lock()
 				res.Processed++
 				if err != nil {
@@ -147,15 +143,15 @@ func (i *Indexer) Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	// After relocating paths for rediscovered content, soft-delete rows whose
 	// original file is still missing so /api/original stops 500ing on ghosts.
-	if err := i.pruneMissingOriginals(ctx, opts.OwnerID, seen, unreadable); err != nil {
-		i.Log.Error("prune missing", "owner", opts.OwnerID, "err", err)
+	if err := i.pruneMissingOriginals(ctx, seen, unreadable); err != nil {
+		i.Log.Error("prune missing", "err", err)
 	}
 	return res, nil
 }
 
-func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, ownerID string, force bool) (bool, error) {
+func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, force bool) (bool, error) {
 	key := info.Key
-	byPath, err := lookupPhoto(i.DB.GetPhotoByOwnerPath(ctx, ownerID, key))
+	byPath, err := lookupPhoto(i.DB.GetPhotoByPath(ctx, key))
 	if err != nil {
 		return false, err
 	}
@@ -179,17 +175,13 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, ownerID
 	}
 	cap := ResolveCaptureTime(exifRes, info)
 
-	byHash, err := lookupPhoto(i.DB.GetPhotoByHash(ctx, ownerID, hash))
+	byHash, err := lookupPhoto(i.DB.GetPhotoByHash(ctx, hash))
 	if err != nil {
 		return false, err
 	}
+	// One library, so the content hash is the key outright: there is no other
+	// owner's Photo it could collide with (ADR 0020).
 	keepKey, action := ResolveIdentity(key, hash, byPath, byHash)
-	if action == IdentityCreate {
-		keepKey, err = i.freeKeyFor(ctx, ownerID, keepKey)
-		if err != nil {
-			return false, err
-		}
-	}
 
 	mimeType := mime.TypeByExtension(strings.ToLower(filepath.Ext(key)))
 	if mimeType == "" {
@@ -232,7 +224,6 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, ownerID
 	p := &db.Photo{
 		Key:         keepKey,
 		Kind:        "photo",
-		OwnerID:     ownerID,
 		Storage:     ptr,
 		Hash:        hash,
 		SizeBytes:   size,
@@ -261,22 +252,6 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, ownerID
 	}
 	i.Log.Info("indexed", "key", key, "id", keepKey, "hash", hash[:12], "taken_at_local", cap.TakenAtLocal, "source", cap.Source)
 	return false, nil
-}
-
-// freeKeyFor keeps ADR 0005's content-hash key unless another Owner already
-// holds it. Photo keys are table-unique, so identical bytes in two libraries
-// need two keys. The fallback is derived from the Owner and the content, so a
-// re-index lands on the same key instead of creating another Photo.
-func (i *Indexer) freeKeyFor(ctx context.Context, ownerID, key string) (string, error) {
-	existing, err := lookupPhoto(i.DB.GetPhoto(ctx, key))
-	if err != nil {
-		return "", err
-	}
-	if existing == nil || existing.OwnerID == ownerID {
-		return key, nil
-	}
-	sum := sha256.Sum256([]byte(ownerID + ":" + key))
-	return hex.EncodeToString(sum[:]), nil
 }
 
 // read pulls the whole Original once; hash, EXIF, and thumbs share the bytes
@@ -325,7 +300,14 @@ func (i *Indexer) CountMediaPrefix(ctx context.Context, prefix string) (int, err
 	return n, err
 }
 
-func isMedia(key string) bool {
+func isMedia(key string) bool { return IsMedia(key) }
+
+// IsMedia reports whether a key is a file this indexer would take.
+//
+// Exported so the folder picker can say how many photos a directory holds
+// using the one list of extensions the indexer actually honours, rather than
+// a second copy that drifts (ADR 0020).
+func IsMedia(key string) bool {
 	switch strings.ToLower(path.Ext(key)) {
 	case ".jpg", ".jpeg", ".png", ".webp", ".gif":
 		return true

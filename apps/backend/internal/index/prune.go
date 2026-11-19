@@ -8,12 +8,11 @@ import (
 	"github.com/memries/memries/internal/storage"
 )
 
-// pruneMissingOriginals soft-deletes the Owner's Photos whose Original is
-// gone. Paths seen in this run's walk are known present; paths under a
+// pruneMissingOriginals soft-deletes Photos whose Original is gone. Paths seen in this run's walk are known present; paths under a
 // prefix whose walk failed are left alone because the Source may only be
 // unreachable, not empty.
-func (i *Indexer) pruneMissingOriginals(ctx context.Context, ownerID string, seen map[string]bool, unreadable []string) error {
-	refs, err := i.DB.ListOwnerPhotoStorage(ctx, ownerID)
+func (i *Indexer) pruneMissingOriginals(ctx context.Context, seen map[string]bool, unreadable []string) error {
+	refs, err := i.DB.ListPhotoStorage(ctx)
 	if err != nil {
 		return err
 	}

@@ -1,18 +1,18 @@
 # Memries
 
-Owner-scoped photo library: date-scroll browsing, named Albums, and thumbs from a disk cache rather than blobs in the catalog.
+A server-wide photo library: date-scroll browsing, named Albums, and thumbs from a disk cache rather than blobs in the catalog.
 
 ## Language
 
 **Photo**:
-An indexed still image owned by one Owner. `_key` is stable identity (kept on folder Sync when the owner path still matches). `hash` is the content fingerprint and may change when the file is rewritten.
+An indexed still image. The library is server-wide, so a Photo has no owner: everyone signed in sees the same ones. `_key` is stable identity, kept across a scan when the storage path still matches; `hash` is the content fingerprint and may change when the file is rewritten.
 _Avoid_: memory (UI copy only), file, original (that is the source bytes)
 
 **Owner**:
-The signed-in user whose key must match `photo.owner_id` / `album.owner_id`.
+The signed-in user an Album belongs to (`album.owner_id`). Photos have no owner. An **admin** (`MEMRIES_ADMIN_EMAILS`) is the Owner who may also manage Sources.
 
 **Album**:
-A named, owner-scoped set of Photos joined by `in_album` edges.
+A named, owner-scoped set of Photos (`album_photos`). Any Photo in the library may go in any Album; the Album itself is owned.
 _Avoid_: group, folder, collection
 
 **Album page**:
@@ -41,19 +41,19 @@ A typed or suggested calendar phrase on Search (`yesterday`, `last winter`, `a d
 `year` / `month` / `week` / `day` for Timeline Groups.
 
 **Source**:
-An admin-managed folder — a path on the server, an SMB share, or a WebDAV collection — whose media is indexed into one Owner's library. Originals stay there; Thumbs are made on local disk.
-_Avoid_: library (that is all of an Owner's Photos), album, mount
+An admin-managed folder — a path on the server or a WebDAV collection — whose media is indexed into the library. Server-wide, not per Owner. Mount a network share on the server and add it as a path. Originals stay there; Thumbs are made on local disk.
+_Avoid_: library (that is every Photo on the server), album, mount
 
 **Index run**:
-A persisted, owner-scoped scan of every Source of the Owner that upserts Photos.
+A persisted scan of every Source that upserts Photos. There is one, because there is one library.
 _Avoid_: vite catalog, import script (as the only start path), sync (that is folder Sync in [0005](docs/adr/0005-capture-time-stable-identity.md))
 
 ## Relationships
 
-- An **Owner** owns many **Photos** and many **Albums**
-- An **Owner** has zero or more **Sources**, added by an admin; a legacy `data/photos/<email>` folder becomes a Source on the first run
-- An **Owner** has at most one **Index run** (`_key` = owner id); the run walks all of the Owner's Sources
-- An **Album** contains zero or more **Photos** via `in_album`; removing a Photo from an Album does not delete the Photo
+- The **library** holds every **Photo**; every Owner sees all of them
+- An **Owner** owns many **Albums** and their own **favorites**; neither is visible to anyone else
+- **Sources** are server-wide and added by an admin; the one **Index run** walks all of them
+- An **Album** contains zero or more **Photos**; removing a Photo from an Album does not delete the Photo
 - A **Timeline Group** is not an **Album**; it is a date bucket on the Memories tab
 - A **Thumb** is derived from a **Photo**; an **Original** is the Photo’s source file
 

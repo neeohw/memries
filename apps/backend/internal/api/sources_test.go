@@ -28,7 +28,7 @@ func (f *fakeSources) Create(_ context.Context, in sources.Input) (sources.View,
 	if in.Location == "" {
 		return sources.View{}, sources.ErrInvalid
 	}
-	return sources.View{ID: "8", Type: in.Type, OwnerID: "bob", OwnerEmail: in.OwnerEmail}, nil
+	return sources.View{ID: "8", Type: in.Type}, nil
 }
 
 func (f *fakeSources) Update(context.Context, string, sources.Input) (sources.View, error) {
@@ -39,10 +39,11 @@ func (f *fakeSources) Remove(context.Context, string) (sources.View, error) {
 	return sources.View{}, nil
 }
 
-type fakeRescan struct{ owners []string }
+// There is one library, so a rescan takes no owner: the fake just counts.
+type fakeRescan struct{ runs int }
 
-func (f *fakeRescan) Rescan(_ context.Context, ownerID, _ string) (index.Status, error) {
-	f.owners = append(f.owners, ownerID)
+func (f *fakeRescan) Rescan(context.Context) (index.Status, error) {
+	f.runs++
 	return index.Status{}, nil
 }
 
@@ -88,11 +89,11 @@ func TestCreateSourceDefaultsOwnerAndRescans(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create %d %s", w.Code, w.Body.String())
 	}
-	if src.created[0].OwnerEmail != "admin@example.com" || src.created[0].Password == nil {
+	if src.created[0].Password == nil {
 		t.Fatalf("input %+v", src.created[0])
 	}
-	if len(rescan.owners) != 1 || rescan.owners[0] != "bob" {
-		t.Fatalf("rescans %v", rescan.owners)
+	if rescan.runs != 1 {
+		t.Fatalf("rescans = %d, want 1", rescan.runs)
 	}
 	var v sources.View
 	_ = json.Unmarshal(w.Body.Bytes(), &v)

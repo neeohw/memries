@@ -86,7 +86,7 @@ func TestCreateWebDAVProbesCredentialsAndSealsPassword(t *testing.T) {
 	reg := newRegistry(t, repo)
 	ctx := context.Background()
 
-	_, err := reg.Create(ctx, Input{Type: TypeWebDAV, Location: srv.URL, Username: "me", Password: ptr("wrong"), OwnerEmail: "bob@example.com"})
+	_, err := reg.Create(ctx, Input{Type: TypeWebDAV, Location: srv.URL, Username: "me", Password: ptr("wrong")})
 	if !errors.Is(err, ErrInvalid) {
 		t.Fatalf("wrong password err = %v", err)
 	}
@@ -94,11 +94,11 @@ func TestCreateWebDAVProbesCredentialsAndSealsPassword(t *testing.T) {
 		t.Fatal("failed probe must not save")
 	}
 
-	v, err := reg.Create(ctx, Input{Name: "Nextcloud", Type: TypeWebDAV, Location: srv.URL + "/", Username: "me", Password: ptr("right"), OwnerEmail: "Bob@Example.com"})
+	v, err := reg.Create(ctx, Input{Name: "Nextcloud", Type: TypeWebDAV, Location: srv.URL + "/", Username: "me", Password: ptr("right")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !v.HasPassword || v.OwnerEmail != "bob@example.com" || v.OwnerID != db.UserKeyFromEmail("bob@example.com") {
+	if !v.HasPassword {
 		t.Fatalf("view = %+v", v)
 	}
 	stored := repo.sources[v.ID]
@@ -106,12 +106,12 @@ func TestCreateWebDAVProbesCredentialsAndSealsPassword(t *testing.T) {
 		t.Fatalf("secret not sealed: %q", stored.Secret)
 	}
 
-	// Editing without a password keeps it; changing owner is refused.
+	// Editing without a password keeps the stored one.
 	if _, err := reg.Update(ctx, v.ID, Input{Name: "Cloud", Type: TypeWebDAV, Location: srv.URL, Username: "me"}); err != nil {
 		t.Fatalf("update keeping password: %v", err)
 	}
-	if _, err := reg.Update(ctx, v.ID, Input{Type: TypeWebDAV, Location: srv.URL, Username: "me", OwnerEmail: "eve@example.com"}); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("owner change err = %v", err)
+	if stored := repo.sources[v.ID]; stored.Secret == "" {
+		t.Fatal("password was dropped by an update that did not set one")
 	}
 }
 
@@ -124,7 +124,7 @@ func TestIndexWebDAVSourceWritesLocalThumbs(t *testing.T) {
 	repo := newMemRepo()
 	reg := newRegistry(t, repo)
 	ctx := context.Background()
-	v, err := reg.Create(ctx, Input{Type: TypeWebDAV, Location: srv.URL, Username: "me", Password: ptr("pw"), OwnerEmail: "bob@example.com"})
+	v, err := reg.Create(ctx, Input{Type: TypeWebDAV, Location: srv.URL, Username: "me", Password: ptr("pw")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,11 +136,11 @@ func TestIndexWebDAVSourceWritesLocalThumbs(t *testing.T) {
 	}
 	photos := &memPhotos{byKey: map[string]*db.Photo{}}
 	idx := &index.Indexer{Store: reg, DB: photos, Thumb: tg, Log: reg.Log}
-	scopes, err := reg.Scopes(ctx, v.OwnerID, v.OwnerEmail)
+	scopes, err := reg.Scopes(ctx)
 	if err != nil || len(scopes) != 1 || !scopes[0].Remote {
 		t.Fatalf("scopes = %+v err %v", scopes, err)
 	}
-	res, err := idx.Run(ctx, index.Options{OwnerID: v.OwnerID, Prefixes: []string{scopes[0].Prefix}})
+	res, err := idx.Run(ctx, index.Options{Prefixes: []string{scopes[0].Prefix}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestIndexWebDAVSourceWritesLocalThumbs(t *testing.T) {
 	}
 
 	// Second run: unchanged size + mtime skips without re-downloading.
-	res, err = idx.Run(ctx, index.Options{OwnerID: v.OwnerID, Prefixes: []string{scopes[0].Prefix}})
+	res, err = idx.Run(ctx, index.Options{Prefixes: []string{scopes[0].Prefix}})
 	if err != nil || res.Skipped != 2 {
 		t.Fatalf("rerun = %+v err %v", res, err)
 	}
@@ -174,7 +174,7 @@ func TestIndexWebDAVSourceWritesLocalThumbs(t *testing.T) {
 	if err := fs.RemoveAll(ctx, "/blue.jpg"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := idx.Run(ctx, index.Options{OwnerID: v.OwnerID, Prefixes: []string{scopes[0].Prefix}}); err != nil {
+	if _, err := idx.Run(ctx, index.Options{Prefixes: []string{scopes[0].Prefix}}); err != nil {
 		t.Fatal(err)
 	}
 	if n := photos.live(); n != 1 {
@@ -183,7 +183,7 @@ func TestIndexWebDAVSourceWritesLocalThumbs(t *testing.T) {
 	if _, err := reg.Remove(ctx, v.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := idx.Run(ctx, index.Options{OwnerID: v.OwnerID}); err != nil {
+	if _, err := idx.Run(ctx, index.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if n := photos.live(); n != 0 {
@@ -196,62 +196,23 @@ func TestUnreachableSourceKeepsPhotos(t *testing.T) {
 	repo := newMemRepo()
 	reg := newRegistry(t, repo)
 	ctx := context.Background()
-	v, err := reg.Create(ctx, Input{Type: TypeWebDAV, Location: srv.URL, Username: "me", Password: ptr("pw"), OwnerEmail: "bob@example.com"})
+	v, err := reg.Create(ctx, Input{Type: TypeWebDAV, Location: srv.URL, Username: "me", Password: ptr("pw")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	tg, _ := thumb.NewGenerator(t.TempDir())
 	photos := &memPhotos{byKey: map[string]*db.Photo{}}
 	idx := &index.Indexer{Store: reg, DB: photos, Thumb: tg, Log: reg.Log}
-	if _, err := idx.Run(ctx, index.Options{OwnerID: v.OwnerID, Prefixes: []string{v.ID}}); err != nil {
+	if _, err := idx.Run(ctx, index.Options{Prefixes: []string{v.ID}}); err != nil {
 		t.Fatal(err)
 	}
 	srv.Close() // NAS goes to sleep
-	res, err := idx.Run(ctx, index.Options{OwnerID: v.OwnerID, Prefixes: []string{v.ID}})
+	res, err := idx.Run(ctx, index.Options{Prefixes: []string{v.ID}})
 	if err == nil {
 		t.Fatalf("expected walk error when the only source is down, got %+v", res)
 	}
 	if n := photos.live(); n != 1 {
 		t.Fatalf("photos pruned while source unreachable: live = %d", n)
-	}
-}
-
-func TestLegacyEmailFolderBecomesSourceOnce(t *testing.T) {
-	legacy := t.TempDir()
-	dir := filepath.Join(legacy, "bob@example.com")
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	repo := newMemRepo()
-	reg := newRegistry(t, repo)
-	reg.LegacyRoot = legacy
-	reg.Roots = []string{legacy}
-	ctx := context.Background()
-
-	scopes, err := reg.Scopes(ctx, "owner-bob", "Bob@Example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(scopes) != 1 || scopes[0].Remote {
-		t.Fatalf("scopes = %+v", scopes)
-	}
-	src := repo.sources[scopes[0].Prefix]
-	if src.Type != TypeLocal || src.Location != dir || src.OwnerID != "owner-bob" {
-		t.Fatalf("source = %+v", src)
-	}
-	if len(repo.relocated) != 1 || repo.relocated[0] != (relocation{"owner-bob", "bob@example.com", src.Key}) {
-		t.Fatalf("relocated = %+v", repo.relocated)
-	}
-
-	// Truncated users (db-clear) re-run migration without duplicating the Source.
-	repo.migrated = map[string]bool{}
-	if scopes, err = reg.Scopes(ctx, "owner-bob", "bob@example.com"); err != nil || len(scopes) != 1 {
-		t.Fatalf("scopes = %+v err %v", scopes, err)
-	}
-
-	// No folder: nothing to migrate.
-	if scopes, err = reg.Scopes(ctx, "owner-eve", "eve@example.com"); err != nil || len(scopes) != 0 {
-		t.Fatalf("eve scopes = %+v err %v", scopes, err)
 	}
 }
 
@@ -264,7 +225,7 @@ func TestRemovedSourceReadsAsNotFound(t *testing.T) {
 	reg := newRegistry(t, repo)
 	reg.Roots = []string{root}
 	ctx := context.Background()
-	v, err := reg.Create(ctx, Input{Type: TypeLocal, Location: root, OwnerEmail: "bob@example.com"})
+	v, err := reg.Create(ctx, Input{Type: TypeLocal, Location: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,16 +258,16 @@ func (m *memPhotos) find(match func(*db.Photo) bool) (*db.Photo, error) {
 	return nil, db.ErrNotFound
 }
 
-func (m *memPhotos) GetPhoto(_ context.Context, key string) (*db.Photo, error) {
+func (m *memPhotos) GetPhoto(_ context.Context, _, key string) (*db.Photo, error) {
 	return m.find(func(p *db.Photo) bool { return p.Key == key })
 }
 
-func (m *memPhotos) GetPhotoByHash(_ context.Context, ownerID, hash string) (*db.Photo, error) {
-	return m.find(func(p *db.Photo) bool { return p.OwnerID == ownerID && p.Hash == hash })
+func (m *memPhotos) GetPhotoByHash(_ context.Context, hash string) (*db.Photo, error) {
+	return m.find(func(p *db.Photo) bool { return p.Hash == hash })
 }
 
-func (m *memPhotos) GetPhotoByOwnerPath(_ context.Context, owner, path string) (*db.Photo, error) {
-	return m.find(func(p *db.Photo) bool { return p.OwnerID == owner && p.Storage.Path == path })
+func (m *memPhotos) GetPhotoByPath(_ context.Context, path string) (*db.Photo, error) {
+	return m.find(func(p *db.Photo) bool { return p.Storage.Path == path })
 }
 
 func (m *memPhotos) UpsertPhoto(_ context.Context, p *db.Photo) error {
@@ -321,12 +282,12 @@ func (m *memPhotos) UpdateIndexedPhoto(ctx context.Context, p *db.Photo) error {
 	return m.UpsertPhoto(ctx, p)
 }
 
-func (m *memPhotos) ListOwnerPhotoStorage(_ context.Context, owner string) ([]db.PhotoStorageRef, error) {
+func (m *memPhotos) ListPhotoStorage(_ context.Context) ([]db.PhotoStorageRef, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []db.PhotoStorageRef
 	for _, p := range m.byKey {
-		if p.OwnerID == owner && p.DeletedAt == nil {
+		if p.DeletedAt == nil {
 			out = append(out, db.PhotoStorageRef{Key: p.Key, Path: p.Storage.Path})
 		}
 	}

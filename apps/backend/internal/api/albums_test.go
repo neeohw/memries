@@ -24,7 +24,7 @@ type fakeLibrary struct {
 	resetFor   string
 }
 
-func (f *fakeLibrary) GetPhoto(_ context.Context, key string) (*db.Photo, error) {
+func (f *fakeLibrary) GetPhoto(_ context.Context, _, key string) (*db.Photo, error) {
 	p, ok := f.photos[key]
 	if !ok {
 		return nil, db.ErrNotFound
@@ -42,17 +42,14 @@ func (f *fakeLibrary) PhotosFiltered(_ context.Context, _ string, _, _ time.Time
 	return out, "", nil
 }
 
-func (f *fakeLibrary) Timeline(context.Context, string, string, time.Time, time.Time) ([]db.Bucket, error) {
+func (f *fakeLibrary) Timeline(context.Context, string, time.Time, time.Time) ([]db.Bucket, error) {
 	return nil, nil
 }
 
-func (f *fakeLibrary) SetFavorite(_ context.Context, ownerID, photoID string, favorite bool) (*db.Photo, error) {
+func (f *fakeLibrary) SetFavorite(_ context.Context, _, photoID string, favorite bool) (*db.Photo, error) {
 	p, ok := f.photos[photoID]
 	if !ok {
 		return nil, db.ErrNotFound
-	}
-	if p.OwnerID != ownerID {
-		return nil, db.ErrForbidden
 	}
 	p.Favorite = favorite
 	cp := *p
@@ -98,17 +95,13 @@ func (f *fakeLibrary) GetAlbumView(_ context.Context, ownerID, albumID string) (
 	return &db.AlbumDetail{AlbumView: *album, Photos: photos}, nil
 }
 
-func (f *fakeLibrary) AddPhotoToAlbum(_ context.Context, ownerID, albumID, photoID string) (*db.AlbumView, error) {
+func (f *fakeLibrary) AddPhotoToAlbum(_ context.Context, _, albumID, photoID string) (*db.AlbumView, error) {
 	album, ok := f.albums[albumID]
 	if !ok {
 		return nil, db.ErrNotFound
 	}
-	p, ok := f.photos[photoID]
-	if !ok {
+	if _, ok := f.photos[photoID]; !ok {
 		return nil, db.ErrNotFound
-	}
-	if p.OwnerID != ownerID {
-		return nil, db.ErrForbidden
 	}
 	for _, id := range album.PhotoIDs {
 		if id == photoID {
@@ -133,12 +126,10 @@ func (f *fakeLibrary) AddPhotosToAlbum(ctx context.Context, ownerID, albumID str
 	if f.albumOwner[albumID] != ownerID {
 		return nil, db.ErrForbidden
 	}
+	// All or nothing, like the store: one id that is not a live photo adds
+	// none of them.
 	for _, id := range photoIDs {
-		p, ok := f.photos[id]
-		if !ok {
-			return nil, db.ErrNotFound
-		}
-		if p.OwnerID != ownerID {
+		if _, ok := f.photos[id]; !ok {
 			return nil, db.ErrForbidden
 		}
 	}
@@ -152,10 +143,9 @@ func (f *fakeLibrary) AddPhotosToAlbum(ctx context.Context, ownerID, albumID str
 	return view, nil
 }
 
-func (f *fakeLibrary) SetFavorites(_ context.Context, ownerID string, photoIDs []string, favorite bool) (int, error) {
+func (f *fakeLibrary) SetFavorites(_ context.Context, _ string, photoIDs []string, favorite bool) (int, error) {
 	for _, id := range photoIDs {
-		p, ok := f.photos[id]
-		if !ok || p.OwnerID != ownerID {
+		if _, ok := f.photos[id]; !ok {
 			return 0, db.ErrForbidden
 		}
 	}
@@ -200,7 +190,7 @@ func withUser(r *http.Request, key string) *http.Request {
 
 func TestCreateAlbumAndAddPhoto(t *testing.T) {
 	lib := &fakeLibrary{
-		photos: map[string]*db.Photo{"p1": {Key: "p1", OwnerID: "owner"}},
+		photos: map[string]*db.Photo{"p1": {Key: "p1"}},
 		albums: map[string]*db.AlbumView{},
 	}
 	a := &API{DB: lib}
@@ -251,7 +241,7 @@ func TestCreateAlbumAndAddPhoto(t *testing.T) {
 
 func TestGetAlbumReturnsPhotos(t *testing.T) {
 	lib := &fakeLibrary{
-		photos:     map[string]*db.Photo{"p1": {Key: "p1", OwnerID: "owner"}},
+		photos:     map[string]*db.Photo{"p1": {Key: "p1"}},
 		albums:     map[string]*db.AlbumView{"album-1": {ID: "album-1", Name: "Trip", PhotoCount: 1, CoverPhotoID: "p1", PhotoIDs: []string{"p1"}}},
 		albumOwner: map[string]string{"album-1": "owner"},
 	}
@@ -295,7 +285,7 @@ func TestGetAlbumRequiresOwner(t *testing.T) {
 
 func TestRemoveAlbumPhotoUnmembers(t *testing.T) {
 	lib := &fakeLibrary{
-		photos:     map[string]*db.Photo{"p1": {Key: "p1", OwnerID: "owner"}},
+		photos:     map[string]*db.Photo{"p1": {Key: "p1"}},
 		albums:     map[string]*db.AlbumView{"album-1": {ID: "album-1", Name: "Trip", PhotoCount: 1, CoverPhotoID: "p1", PhotoIDs: []string{"p1"}}},
 		albumOwner: map[string]string{"album-1": "owner"},
 	}
@@ -327,23 +317,25 @@ func TestRemoveAlbumPhotoUnmembers(t *testing.T) {
 	}
 }
 
-func TestSetFavoriteRequiresOwner(t *testing.T) {
-	lib := &fakeLibrary{photos: map[string]*db.Photo{"p1": {Key: "p1", OwnerID: "owner"}}}
+// The library is shared, so favoriting is refused only for a photo that is
+// not there (ADR 0020).
+func TestSetFavoriteOnAMissingPhotoIsNotFound(t *testing.T) {
+	lib := &fakeLibrary{photos: map[string]*db.Photo{"p1": {Key: "p1"}}}
 	a := &API{DB: lib}
 	r := chi.NewRouter()
 	a.Routes(r)
 
-	req := httptest.NewRequest(http.MethodPut, "/photos/p1/favorite", bytes.NewBufferString(`{"favorite":true}`))
+	req := httptest.NewRequest(http.MethodPut, "/photos/ghost/favorite", bytes.NewBufferString(`{"favorite":true}`))
 	req = withUser(req, "other")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
+	if w.Code != http.StatusNotFound {
 		t.Fatalf("got %d", w.Code)
 	}
 }
 
 func TestSetFavoritePersistsFlag(t *testing.T) {
-	lib := &fakeLibrary{photos: map[string]*db.Photo{"p1": {Key: "p1", OwnerID: "owner"}}}
+	lib := &fakeLibrary{photos: map[string]*db.Photo{"p1": {Key: "p1"}}}
 	a := &API{DB: lib}
 	r := chi.NewRouter()
 	a.Routes(r)
@@ -405,9 +397,9 @@ func TestPhotosPassesMonthAndLocalTakenAtBounds(t *testing.T) {
 func batchLibrary() *fakeLibrary {
 	return &fakeLibrary{
 		photos: map[string]*db.Photo{
-			"p1":     {Key: "p1", OwnerID: "owner"},
-			"p2":     {Key: "p2", OwnerID: "owner"},
-			"theirs": {Key: "theirs", OwnerID: "someone-else"},
+			"p1":     {Key: "p1"},
+			"p2":     {Key: "p2"},
+			"theirs": {Key: "theirs"},
 		},
 		albums:     map[string]*db.AlbumView{"album-1": {ID: "album-1", Name: "Trip", PhotoIDs: []string{}}},
 		albumOwner: map[string]string{"album-1": "owner"},
@@ -475,7 +467,6 @@ func TestSetFavoritesBatchRejectsBadRequests(t *testing.T) {
 		"no ids":      {`{"ids":[],"favorite":true}`, http.StatusBadRequest},
 		"ids missing": {`{"favorite":true}`, http.StatusBadRequest},
 		"not json":    {`nonsense`, http.StatusBadRequest},
-		"foreign id":  {`{"ids":["p1","theirs"],"favorite":true}`, http.StatusForbidden},
 		"unknown id":  {`{"ids":["ghost"],"favorite":true}`, http.StatusForbidden},
 	}
 	for name, tc := range cases {
@@ -485,8 +476,9 @@ func TestSetFavoritesBatchRejectsBadRequests(t *testing.T) {
 			if w.Code != tc.want {
 				t.Errorf("status %d, want %d: %s", w.Code, tc.want, w.Body.String())
 			}
-			if lib.photos["theirs"].Favorite {
-				t.Error("another owner's photo was modified")
+			// All or nothing: a rejected batch must leave everything alone.
+			if lib.photos["p1"].Favorite && tc.want != http.StatusOK {
+				t.Error("a rejected batch was partly applied")
 			}
 		})
 	}
@@ -540,7 +532,7 @@ func TestAddAlbumPhotosBatchRejectsBadRequests(t *testing.T) {
 		"neither field": {`{}`, http.StatusBadRequest},
 		"empty list":    {`{"photo_ids":[]}`, http.StatusBadRequest},
 		"not json":      {`nonsense`, http.StatusBadRequest},
-		"foreign photo": {`{"photo_ids":["p1","theirs"]}`, http.StatusForbidden},
+		"unknown photo": {`{"photo_ids":["p1","ghost"]}`, http.StatusForbidden},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

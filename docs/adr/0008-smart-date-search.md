@@ -10,7 +10,7 @@ Search interprets calendar phrases against TakenAt (`taken_at_local`). The SPA p
 
 ## Context
 
-Year facets and a substring `q` on `taken_at_local` could not answer “yesterday”, “last winter”, or “a day in June”. Putting a second in-memory catalog in the SPA would break cursor pagination ([0004](0004-owner-scoped-index-job-and-cursor-photos.md)).
+Year facets and a substring `q` on `taken_at_local` could not answer “yesterday”, “last winter”, or “a day in June”. Putting a second in-memory catalog in the SPA would break cursor pagination ([0004](0004-cursor-paginated-photos.md)).
 
 ## Decision
 

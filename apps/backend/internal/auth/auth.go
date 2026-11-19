@@ -1,9 +1,9 @@
 // Package auth owns the cookie session and local password sign-in (ADR 0016).
 //
 // There is no identity provider. Memries is a single-household photo manager
-// on a 2GB board, where running Dex cost more memory than the application it
-// authenticated for and still required an OIDC round trip through a container
-// that only ever held one static password.
+// on a 2GB board, and a separate OIDC container would cost more memory than
+// the application it authenticates for while only ever holding one static
+// password.
 package auth
 
 import (

@@ -34,11 +34,10 @@ func at(s string) time.Time {
 }
 
 // photo builds a minimally valid Photo for the given owner and capture time.
-func photo(key, owner, local string, opts ...func(*Photo)) *Photo {
+func photo(key, local string, opts ...func(*Photo)) *Photo {
 	p := &Photo{
 		Key:          key,
 		Kind:         "photo",
-		OwnerID:      owner,
 		TakenAt:      at(local + "Z"),
 		TakenAtLocal: local,
 		Hash:         "hash-" + key,
@@ -82,7 +81,7 @@ func TestPhotoRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	mtime := at("2026-03-02T12:00:00Z")
-	p := photo("p1", "owner-a", "2026-03-01T15:04:05", func(p *Photo) {
+	p := photo("p1", "2026-03-01T15:04:05", func(p *Photo) {
 		p.Favorite = true
 		p.TZOffset = 3600
 		p.SizeBytes = 123456
@@ -98,14 +97,14 @@ func TestPhotoRoundTrip(t *testing.T) {
 	})
 	mustUpsert(t, s, p)
 
-	got, err := s.GetPhoto(ctx, "p1")
+	got, err := s.GetPhoto(ctx, "", "p1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
 	if !got.TakenAt.Equal(p.TakenAt) {
 		t.Errorf("taken_at = %v, want %v", got.TakenAt, p.TakenAt)
 	}
-	if got.Favorite != true || got.TZOffset != 3600 || got.SizeBytes != 123456 {
+	if got.TZOffset != 3600 || got.SizeBytes != 123456 {
 		t.Errorf("scalars round-tripped wrong: %+v", got)
 	}
 	if got.Dims != (Dims{W: 4000, H: 3000}) {
@@ -130,8 +129,8 @@ func TestPhotoRoundTrip(t *testing.T) {
 
 func TestPhotoWithoutGPSOrMtime(t *testing.T) {
 	s := newTestStore(t)
-	mustUpsert(t, s, photo("p1", "owner-a", "2026-03-01T15:04:05"))
-	got, err := s.GetPhoto(context.Background(), "p1")
+	mustUpsert(t, s, photo("p1", "2026-03-01T15:04:05"))
+	got, err := s.GetPhoto(context.Background(), "", "p1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -146,13 +145,13 @@ func TestPhotoWithoutGPSOrMtime(t *testing.T) {
 func TestUpsertPhotoReplacesExisting(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	mustUpsert(t, s, photo("p1", "owner-a", "2026-03-01T15:04:05"))
-	updated := photo("p1", "owner-a", "2026-03-01T15:04:05", func(p *Photo) {
+	mustUpsert(t, s, photo("p1", "2026-03-01T15:04:05"))
+	updated := photo("p1", "2026-03-01T15:04:05", func(p *Photo) {
 		p.MIME = "image/png"
 		p.Hash = "rehashed"
 	})
 	mustUpsert(t, s, updated)
-	got, err := s.GetPhoto(ctx, "p1")
+	got, err := s.GetPhoto(ctx, "", "p1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -163,71 +162,52 @@ func TestUpsertPhotoReplacesExisting(t *testing.T) {
 
 func TestGetPhotoNotFound(t *testing.T) {
 	s := newTestStore(t)
-	if _, err := s.GetPhoto(context.Background(), "nope"); !errors.Is(err, ErrNotFound) {
+	if _, err := s.GetPhoto(context.Background(), "", "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
 
-// Dedup is owner-scoped (ADR 0014): the same bytes in two libraries stay two
-// Photos, and a hash lookup never crosses an owner boundary.
-func TestHashLookupIsOwnerScoped(t *testing.T) {
+// One library, so one copy of a file: the same bytes cannot be two Photos
+// (ADR 0020).
+func TestHashIsUniqueAcrossTheLibrary(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	a := photo("p1", "owner-a", "2026-03-01T15:04:05", func(p *Photo) { p.Hash = "shared" })
-	b := photo("p2", "owner-b", "2026-03-01T15:04:05", func(p *Photo) { p.Hash = "shared" })
-	mustUpsert(t, s, a, b)
+	mustUpsert(t, s, photo("p1", "2026-03-01T15:04:05", func(p *Photo) { p.Hash = "shared" }))
 
-	got, err := s.GetPhotoByHash(ctx, "owner-b", "shared")
+	err := s.UpsertPhoto(ctx, photo("p2", "2026-03-01T15:04:05", func(p *Photo) { p.Hash = "shared" }))
+	if err == nil {
+		t.Fatal("a second Photo with the same hash was accepted")
+	}
+
+	got, err := s.GetPhotoByHash(ctx, "shared")
 	if err != nil {
 		t.Fatalf("by hash: %v", err)
 	}
-	if got.Key != "p2" {
-		t.Errorf("key = %s, want p2", got.Key)
-	}
-	if _, err := s.GetPhotoByHash(ctx, "owner-c", "shared"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("err = %v, want ErrNotFound for a third owner", err)
-	}
-}
-
-func TestHashLookupPrefersLiveRow(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	deleted := at("2026-04-01T00:00:00Z")
-	mustUpsert(t, s,
-		photo("gone", "owner-a", "2026-03-01T15:04:05", func(p *Photo) {
-			p.Hash = "dup"
-			p.DeletedAt = &deleted
-		}),
-	)
-	// A second live row with the same hash is only possible for another owner,
-	// so assert the single soft-deleted row is still found.
-	got, err := s.GetPhotoByHash(ctx, "owner-a", "dup")
-	if err != nil {
-		t.Fatalf("by hash: %v", err)
-	}
-	if got.Key != "gone" || got.DeletedAt == nil {
-		t.Errorf("got %+v, want the soft-deleted row", got)
+	if got.Key != "p1" {
+		t.Errorf("key = %s, want p1", got.Key)
 	}
 }
 
 func TestSoftDeleteThenUpdateIndexedRestores(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	mustUpsert(t, s, photo("p1", "owner-a", "2026-03-01T15:04:05", func(p *Photo) {
-		p.Favorite = true
-	}))
+	mustUpsert(t, s, photo("p1", "2026-03-01T15:04:05"))
+	if _, err := s.SetFavorite(ctx, "reader", "p1", true); err != nil {
+		t.Fatalf("favorite: %v", err)
+	}
 	if err := s.SoftDeletePhoto(ctx, "p1"); err != nil {
 		t.Fatalf("soft delete: %v", err)
 	}
-	got, _ := s.GetPhoto(ctx, "p1")
+	got, _ := s.GetPhoto(ctx, "reader", "p1")
 	if got.DeletedAt == nil {
 		t.Fatal("deleted_at not set")
 	}
-	// Rediscovered content clears deleted_at and keeps the favorite flag.
-	if err := s.UpdateIndexedPhoto(ctx, photo("p1", "owner-a", "2026-03-01T15:04:05")); err != nil {
+	// Rediscovered content clears deleted_at, and the reader's favorite is
+	// untouched because it was never on the photo's row.
+	if err := s.UpdateIndexedPhoto(ctx, photo("p1", "2026-03-01T15:04:05")); err != nil {
 		t.Fatalf("update indexed: %v", err)
 	}
-	got, _ = s.GetPhoto(ctx, "p1")
+	got, _ = s.GetPhoto(ctx, "reader", "p1")
 	if got.DeletedAt != nil {
 		t.Errorf("deleted_at = %v, want nil after reindex", got.DeletedAt)
 	}
@@ -243,14 +223,14 @@ func TestPhotosPaginatesWithCursor(t *testing.T) {
 		"2026-03-01T10:00:00", "2026-03-02T10:00:00", "2026-03-03T10:00:00",
 		"2026-03-04T10:00:00", "2026-03-05T10:00:00",
 	} {
-		mustUpsert(t, s, photo(string(rune('a'+i)), "owner-a", local))
+		mustUpsert(t, s, photo(string(rune('a'+i)), local))
 	}
 	from, to := at("2026-01-01T00:00:00Z"), at("2027-01-01T00:00:00Z")
 
 	var seen []string
 	cursor := ""
 	for page := 0; page < 10; page++ {
-		photos, next, err := s.Photos(ctx, "owner-a", from, to, 2, cursor)
+		photos, next, err := s.Photos(ctx, "reader", from, to, 2, cursor)
 		if err != nil {
 			t.Fatalf("page %d: %v", page, err)
 		}
@@ -276,16 +256,15 @@ func TestPhotosPaginatesWithCursor(t *testing.T) {
 	}
 }
 
-func TestPhotosExcludesDeletedAndOtherOwners(t *testing.T) {
+func TestPhotosExcludesDeleted(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	deleted := at("2026-04-01T00:00:00Z")
 	mustUpsert(t, s,
-		photo("keep", "owner-a", "2026-03-01T10:00:00"),
-		photo("gone", "owner-a", "2026-03-02T10:00:00", func(p *Photo) { p.DeletedAt = &deleted }),
-		photo("other", "owner-b", "2026-03-03T10:00:00"),
+		photo("keep", "2026-03-01T10:00:00"),
+		photo("gone", "2026-03-02T10:00:00", func(p *Photo) { p.DeletedAt = &deleted }),
 	)
-	got, _, err := s.Photos(ctx, "owner-a", at("2026-01-01T00:00:00Z"), at("2027-01-01T00:00:00Z"), 50, "")
+	got, _, err := s.Photos(ctx, "reader", at("2026-01-01T00:00:00Z"), at("2027-01-01T00:00:00Z"), 50, "")
 	if err != nil {
 		t.Fatalf("photos: %v", err)
 	}
@@ -299,10 +278,13 @@ func TestPhotoFilters(t *testing.T) {
 	ctx := context.Background()
 	yes := true
 	mustUpsert(t, s,
-		photo("j1", "owner-a", "2025-01-15T10:00:00"),
-		photo("j2", "owner-a", "2026-01-20T10:00:00", func(p *Photo) { p.Favorite = true }),
-		photo("m1", "owner-a", "2026-03-10T10:00:00"),
+		photo("j1", "2025-01-15T10:00:00"),
+		photo("j2", "2026-01-20T10:00:00"),
+		photo("m1", "2026-03-10T10:00:00"),
 	)
+	if _, err := s.SetFavorite(ctx, "reader", "j2", true); err != nil {
+		t.Fatalf("favorite: %v", err)
+	}
 	from, to := at("2020-01-01T00:00:00Z"), at("2030-01-01T00:00:00Z")
 
 	cases := []struct {
@@ -319,7 +301,7 @@ func TestPhotoFilters(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, _, err := s.PhotosFiltered(ctx, "owner-a", from, to, 50, "", tc.filter)
+			got, _, err := s.PhotosFiltered(ctx, "reader", from, to, 50, "", tc.filter)
 			if err != nil {
 				t.Fatalf("filtered: %v", err)
 			}
@@ -344,8 +326,8 @@ func TestPhotoFilters(t *testing.T) {
 func TestQueryFilterEscapesWildcards(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	mustUpsert(t, s, photo("p1", "owner-a", "2026-03-01T10:00:00"))
-	got, _, err := s.PhotosFiltered(ctx, "owner-a",
+	mustUpsert(t, s, photo("p1", "2026-03-01T10:00:00"))
+	got, _, err := s.PhotosFiltered(ctx, "reader",
 		at("2020-01-01T00:00:00Z"), at("2030-01-01T00:00:00Z"), 50, "",
 		PhotoFilter{Query: "%"})
 	if err != nil {
@@ -356,28 +338,30 @@ func TestQueryFilterEscapesWildcards(t *testing.T) {
 	}
 }
 
-func TestCountOwnerPhotos(t *testing.T) {
+func TestCountPhotos(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	deleted := at("2026-04-01T00:00:00Z")
 	mustUpsert(t, s,
-		photo("a", "owner-a", "2026-03-01T10:00:00"),
-		photo("b", "owner-a", "2026-03-02T10:00:00", func(p *Photo) { p.DeletedAt = &deleted }),
-		photo("c", "owner-b", "2026-03-03T10:00:00"),
+		photo("a", "2026-03-01T10:00:00"),
+		photo("b", "2026-03-02T10:00:00", func(p *Photo) { p.DeletedAt = &deleted }),
+		photo("c", "2026-03-03T10:00:00"),
 	)
-	n, err := s.CountOwnerPhotos(ctx, "owner-a")
+	n, err := s.CountPhotos(ctx)
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	if n != 1 {
-		t.Errorf("count = %d, want 1", n)
+	// Two live photos: the library is shared, so the only thing that takes a
+	// row out of the count is the soft delete.
+	if n != 2 {
+		t.Errorf("count = %d, want 2", n)
 	}
 }
 
-func TestListOwnerPhotoStorage(t *testing.T) {
+func TestListPhotoStorage(t *testing.T) {
 	s := newTestStore(t)
-	mustUpsert(t, s, photo("a", "owner-a", "2026-03-01T10:00:00"))
-	refs, err := s.ListOwnerPhotoStorage(context.Background(), "owner-a")
+	mustUpsert(t, s, photo("a", "2026-03-01T10:00:00"))
+	refs, err := s.ListPhotoStorage(context.Background())
 	if err != nil {
 		t.Fatalf("list storage: %v", err)
 	}
@@ -390,9 +374,9 @@ func TestTimelineBuckets(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	mustUpsert(t, s,
-		photo("a", "owner-a", "2026-03-01T10:00:00"),
-		photo("b", "owner-a", "2026-03-02T10:00:00"),
-		photo("c", "owner-a", "2025-12-31T10:00:00"),
+		photo("a", "2026-03-01T10:00:00"),
+		photo("b", "2026-03-02T10:00:00"),
+		photo("c", "2025-12-31T10:00:00"),
 	)
 	from, to := at("2020-01-01T00:00:00Z"), at("2030-01-01T00:00:00Z")
 
@@ -405,7 +389,7 @@ func TestTimelineBuckets(t *testing.T) {
 		{"day", map[string]int{"2026-03-01": 1, "2026-03-02": 1, "2025-12-31": 1}},
 	} {
 		t.Run(tc.granularity, func(t *testing.T) {
-			buckets, err := s.Timeline(ctx, "owner-a", tc.granularity, from, to)
+			buckets, err := s.Timeline(ctx, tc.granularity, from, to)
 			if err != nil {
 				t.Fatalf("timeline: %v", err)
 			}
@@ -438,12 +422,12 @@ func TestTimelineWeekBuckets(t *testing.T) {
 	ctx := context.Background()
 	mustUpsert(t, s,
 		// Mon 2026-11-16 and Tue 2026-11-17 share an ISO week.
-		photo("mon", "owner-a", "2026-11-16T10:00:00"),
-		photo("tue", "owner-a", "2026-11-17T10:00:00"),
+		photo("mon", "2026-11-16T10:00:00"),
+		photo("tue", "2026-11-17T10:00:00"),
 		// The following Monday starts the next one.
-		photo("next", "owner-a", "2026-11-23T10:00:00"),
+		photo("next", "2026-11-23T10:00:00"),
 	)
-	buckets, err := s.Timeline(ctx, "owner-a", "week",
+	buckets, err := s.Timeline(ctx, "week",
 		at("2020-01-01T00:00:00Z"), at("2030-01-01T00:00:00Z"))
 	if err != nil {
 		t.Fatalf("timeline week: %v", err)
@@ -470,19 +454,36 @@ func TestTimelineWeekBuckets(t *testing.T) {
 	}
 }
 
-func TestSetFavoriteRejectsOtherOwner(t *testing.T) {
+// Favorites belong to the reader who pressed them, so two readers on the
+// same shared photo never see each other's (ADR 0020).
+func TestFavoritesArePerReader(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	mustUpsert(t, s, photo("p1", "owner-a", "2026-03-01T10:00:00"))
-	if _, err := s.SetFavorite(ctx, "owner-b", "p1", true); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("err = %v, want ErrForbidden", err)
-	}
-	got, err := s.SetFavorite(ctx, "owner-a", "p1", true)
+	mustUpsert(t, s, photo("p1", "2026-03-01T10:00:00"))
+
+	got, err := s.SetFavorite(ctx, "reader-a", "p1", true)
 	if err != nil {
 		t.Fatalf("set favorite: %v", err)
 	}
 	if !got.Favorite {
-		t.Error("favorite not set")
+		t.Error("favorite not set for the reader who set it")
+	}
+
+	other, err := s.GetPhoto(ctx, "reader-b", "p1")
+	if err != nil {
+		t.Fatalf("get as other reader: %v", err)
+	}
+	if other.Favorite {
+		t.Error("one reader's favorite showed up for another")
+	}
+
+	// Un-hearting is also personal: it must not touch anyone else's.
+	if _, err := s.SetFavorite(ctx, "reader-b", "p1", false); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	mine, _ := s.GetPhoto(ctx, "reader-a", "p1")
+	if !mine.Favorite {
+		t.Error("another reader's un-favorite removed mine")
 	}
 }
 
@@ -519,36 +520,13 @@ func TestUsers(t *testing.T) {
 	}
 }
 
-func TestSourcesMigratedFlag(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	// A missing user reports false rather than erroring.
-	ok, err := s.OwnerSourcesMigrated(ctx, "nobody")
-	if err != nil || ok {
-		t.Fatalf("missing user: ok=%v err=%v, want false/nil", ok, err)
-	}
-	// Marking a missing user is a no-op.
-	if err := s.MarkOwnerSourcesMigrated(ctx, "nobody"); err != nil {
-		t.Fatalf("mark missing: %v", err)
-	}
-	u, _ := s.UpsertUserByEmail(ctx, "a@example.com", "A")
-	if err := s.MarkOwnerSourcesMigrated(ctx, u.Key); err != nil {
-		t.Fatalf("mark: %v", err)
-	}
-	ok, err = s.OwnerSourcesMigrated(ctx, u.Key)
-	if err != nil || !ok {
-		t.Fatalf("ok=%v err=%v, want true/nil", ok, err)
-	}
-}
-
 func TestSourceCRUD(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	now := at("2026-01-01T00:00:00Z")
 	src := &Source{
-		Name: "NAS", Type: "smb", Location: "smb://nas/photos",
-		Username: "mv", Secret: "sealed", OwnerID: "owner-a",
-		OwnerEmail: "a@example.com", CreatedAt: now, UpdatedAt: now,
+		Name: "NAS", Type: "webdav", Location: "https://dav/photos",
+		Username: "mv", Secret: "sealed", CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.CreateSource(ctx, src); err != nil {
 		t.Fatalf("create: %v", err)
@@ -571,10 +549,6 @@ func TestSourceCRUD(t *testing.T) {
 	if got.Name != "NAS2" {
 		t.Errorf("name = %q, want NAS2", got.Name)
 	}
-	list, err := s.ListOwnerSources(ctx, "owner-a")
-	if err != nil || len(list) != 1 {
-		t.Fatalf("list = %+v err = %v", list, err)
-	}
 	if all, err := s.ListSources(ctx); err != nil || len(all) != 1 {
 		t.Fatalf("list all = %+v err = %v", all, err)
 	}
@@ -596,24 +570,24 @@ func TestRelocatePhotoPrefix(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	mustUpsert(t, s,
-		photo("a", "owner-a", "2026-03-01T10:00:00", func(p *Photo) {
+		photo("a", "2026-03-01T10:00:00", func(p *Photo) {
 			p.Storage = StoragePtr{Backend: "local", Path: "old/sub/a.jpg"}
 		}),
-		photo("b", "owner-a", "2026-03-02T10:00:00", func(p *Photo) {
+		photo("b", "2026-03-02T10:00:00", func(p *Photo) {
 			p.Storage = StoragePtr{Backend: "local", Path: "keep/b.jpg"}
 		}),
 	)
-	if err := s.RelocatePhotoPrefix(ctx, "owner-a", "old", "src-new"); err != nil {
+	if err := s.RelocatePhotoPrefix(ctx, "old", "src-new"); err != nil {
 		t.Fatalf("relocate: %v", err)
 	}
-	a, _ := s.GetPhoto(ctx, "a")
+	a, _ := s.GetPhoto(ctx, "", "a")
 	if a.Storage.Path != "src-new/sub/a.jpg" {
 		t.Errorf("path = %q, want src-new/sub/a.jpg", a.Storage.Path)
 	}
 	if a.Storage.Backend != "source" {
 		t.Errorf("backend = %q, want source", a.Storage.Backend)
 	}
-	b, _ := s.GetPhoto(ctx, "b")
+	b, _ := s.GetPhoto(ctx, "", "b")
 	if b.Storage.Path != "keep/b.jpg" {
 		t.Errorf("untouched path = %q", b.Storage.Path)
 	}
@@ -623,18 +597,18 @@ func TestIndexRuns(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	// A missing run is (nil, nil), not an error.
-	run, err := s.GetIndexRun(ctx, "owner-a")
+	run, err := s.GetIndexRun(ctx)
 	if err != nil || run != nil {
 		t.Fatalf("run = %+v err = %v, want nil/nil", run, err)
 	}
 	started := at("2026-01-01T00:00:00Z")
 	if err := s.UpsertIndexRun(ctx, &IndexRun{
-		Key: "owner-a", OwnerID: "owner-a", Status: "running",
+		Key: IndexRunKey, Status: "running",
 		Discovered: 10, StartedAt: &started, UpdatedAt: started,
 	}); err != nil {
 		t.Fatalf("upsert run: %v", err)
 	}
-	run, err = s.GetIndexRun(ctx, "owner-a")
+	run, err = s.GetIndexRun(ctx)
 	if err != nil {
 		t.Fatalf("get run: %v", err)
 	}
@@ -650,7 +624,7 @@ func TestIndexRuns(t *testing.T) {
 	// Upsert again updates in place.
 	finished := at("2026-01-01T01:00:00Z")
 	if err := s.UpsertIndexRun(ctx, &IndexRun{
-		Key: "owner-a", OwnerID: "owner-a", Status: "complete",
+		Key: IndexRunKey, Status: "complete",
 		Discovered: 10, Indexed: 10, StartedAt: &started,
 		FinishedAt: &finished, UpdatedAt: finished,
 	}); err != nil {
@@ -672,9 +646,9 @@ func TestAlbums(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	mustUpsert(t, s,
-		photo("p1", "owner-a", "2026-03-01T10:00:00"),
-		photo("p2", "owner-a", "2026-03-05T10:00:00"),
-		photo("other", "owner-b", "2026-03-05T10:00:00"),
+		photo("p1", "2026-03-01T10:00:00"),
+		photo("p2", "2026-03-05T10:00:00"),
+		photo("other", "2026-03-05T10:00:00"),
 	)
 	if _, err := s.CreateAlbum(ctx, "owner-a", "  "); err == nil {
 		t.Error("blank album name should error")
@@ -710,12 +684,17 @@ func TestAlbums(t *testing.T) {
 	if view.PhotoCount != 2 {
 		t.Errorf("count after re-add = %d, want 2", view.PhotoCount)
 	}
-	// Cross-owner access is refused.
+	// The Album is owned; the library is not. Another reader cannot touch
+	// this Album, but any photo in the library may go into it (ADR 0020).
 	if _, err := s.AddPhotoToAlbum(ctx, "owner-b", album.ID, "other"); !errors.Is(err, ErrForbidden) {
 		t.Errorf("foreign owner err = %v, want ErrForbidden", err)
 	}
-	if _, err := s.AddPhotoToAlbum(ctx, "owner-a", album.ID, "other"); !errors.Is(err, ErrForbidden) {
-		t.Errorf("foreign photo err = %v, want ErrForbidden", err)
+	if _, err := s.AddPhotoToAlbum(ctx, "owner-a", album.ID, "other"); err != nil {
+		t.Errorf("any library photo should be addable, got %v", err)
+	}
+	// Put it back as it was, so the ordering checks below are unaffected.
+	if _, err := s.RemovePhotoFromAlbum(ctx, "owner-a", album.ID, "other"); err != nil {
+		t.Fatalf("undo add: %v", err)
 	}
 	if _, err := s.GetAlbumView(ctx, "owner-b", album.ID); !errors.Is(err, ErrForbidden) {
 		t.Errorf("foreign view err = %v, want ErrForbidden", err)
@@ -780,9 +759,15 @@ func TestClearOwnerAlbumsAndFavorites(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	mustUpsert(t, s,
-		photo("p1", "owner-a", "2026-03-01T10:00:00", func(p *Photo) { p.Favorite = true }),
-		photo("p2", "owner-b", "2026-03-01T10:00:00", func(p *Photo) { p.Favorite = true }),
+		photo("p1", "2026-03-01T10:00:00"),
+		photo("p2", "2026-03-01T10:00:00"),
 	)
+	if _, err := s.SetFavorite(ctx, "owner-a", "p1", true); err != nil {
+		t.Fatalf("favorite p1: %v", err)
+	}
+	if _, err := s.SetFavorite(ctx, "owner-b", "p2", true); err != nil {
+		t.Fatalf("favorite p2: %v", err)
+	}
 	album, _ := s.CreateAlbum(ctx, "owner-a", "Trip")
 	if _, err := s.AddPhotoToAlbum(ctx, "owner-a", album.ID, "p1"); err != nil {
 		t.Fatalf("add: %v", err)
@@ -793,12 +778,12 @@ func TestClearOwnerAlbumsAndFavorites(t *testing.T) {
 	if views, _ := s.ListAlbums(ctx, "owner-a"); len(views) != 0 {
 		t.Errorf("albums = %+v, want none", views)
 	}
-	p1, _ := s.GetPhoto(ctx, "p1")
+	p1, _ := s.GetPhoto(ctx, "owner-a", "p1")
 	if p1.Favorite {
 		t.Error("owner-a favorite not cleared")
 	}
-	// The other owner is untouched.
-	p2, _ := s.GetPhoto(ctx, "p2")
+	// The other reader's favorites are rows of their own and must survive.
+	p2, _ := s.GetPhoto(ctx, "owner-b", "p2")
 	if !p2.Favorite {
 		t.Error("owner-b favorite was cleared")
 	}
@@ -813,15 +798,15 @@ func TestPhotosReturnsPreEpochCaptureTimes(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
-	film := photo("film", "owner-a", "1962-04-02T11:30:00")
-	modern := photo("modern", "owner-a", "2026-08-31T10:00:00")
+	film := photo("film", "1962-04-02T11:30:00")
+	modern := photo("modern", "2026-08-31T10:00:00")
 	mustUpsert(t, s, film, modern)
 
 	// The window the API now uses when the SPA sends no from/to.
 	from := time.Time{}
 	to := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	got, _, err := s.Photos(ctx, "owner-a", from, to, 50, "")
+	got, _, err := s.Photos(ctx, "reader", from, to, 50, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -849,9 +834,9 @@ func TestPhotosReturnsPreEpochCaptureTimes(t *testing.T) {
 func TestTimelineBucketsPreEpochCaptureTimes(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	mustUpsert(t, s, photo("film", "owner-a", "1962-04-02T11:30:00"))
+	mustUpsert(t, s, photo("film", "1962-04-02T11:30:00"))
 
-	buckets, err := s.Timeline(ctx, "owner-a", "year", time.Time{},
+	buckets, err := s.Timeline(ctx, "year", time.Time{},
 		time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)

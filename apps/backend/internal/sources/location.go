@@ -3,18 +3,16 @@ package sources
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
-
-	"github.com/memries/memries/internal/storage"
 )
 
 const (
-	TypeLocal  = "local"
+	TypeLocal = "local"
+	// TypeSMB is kept only to recognise Sources written before ADR 0020
+	// removed it, so they can be reported clearly instead of as garbage.
 	TypeSMB    = "smb"
 	TypeWebDAV = "webdav"
 )
@@ -37,15 +35,13 @@ func normalizeLocation(typ, loc string, roots []string) (string, error) {
 	case TypeLocal:
 		return normalizeLocal(loc, roots)
 	case TypeSMB:
-		cfg, err := parseSMB(loc)
-		if err != nil {
-			return "", err
-		}
-		return smbLocation(cfg), nil
+		// Removed in ADR 0020. Rows written before that still exist, so the
+		// message says what to do rather than "unknown type".
+		return "", invalidf("SMB shares are no longer configured here: mount the share on the server and add it as a folder")
 	case TypeWebDAV:
 		return normalizeWebDAV(loc)
 	default:
-		return "", invalidf("type must be local, smb, or webdav")
+		return "", invalidf("type must be local or webdav")
 	}
 }
 
@@ -94,57 +90,6 @@ func isWithin(p, root string) bool {
 		return false
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
-}
-
-// parseSMB accepts smb://host[:port]/share[/dir] or a UNC path \\host\share\dir.
-func parseSMB(loc string) (storage.SMBConfig, error) {
-	if strings.HasPrefix(loc, `\\`) || strings.HasPrefix(loc, "//") {
-		loc = "smb://" + strings.TrimLeft(strings.ReplaceAll(loc, `\`, "/"), "/")
-	}
-	u, err := url.Parse(loc)
-	if err != nil || !strings.EqualFold(u.Scheme, "smb") || u.Hostname() == "" {
-		return storage.SMBConfig{}, invalidf(`SMB location must look like smb://nas/share/folder or \\nas\share\folder`)
-	}
-	if u.User != nil {
-		return storage.SMBConfig{}, invalidf("put SMB credentials in the username and password fields, not the location")
-	}
-	parts := strings.SplitN(strings.Trim(u.Path, "/"), "/", 2)
-	if parts[0] == "" {
-		return storage.SMBConfig{}, invalidf("SMB location needs a share name: smb://%s/<share>", u.Host)
-	}
-	dir := ""
-	if len(parts) == 2 {
-		dir = path.Clean("/" + parts[1])
-		dir = strings.TrimPrefix(dir, "/")
-	}
-	for _, seg := range strings.Split(dir, "/") {
-		if seg == ".." {
-			return storage.SMBConfig{}, invalidf("SMB folder cannot contain ..")
-		}
-	}
-	port := u.Port()
-	if port == "" {
-		port = "445"
-	}
-	return storage.SMBConfig{
-		Addr:  net.JoinHostPort(u.Hostname(), port),
-		Share: parts[0],
-		Dir:   dir,
-	}, nil
-}
-
-func smbLocation(cfg storage.SMBConfig) string {
-	host, port, _ := net.SplitHostPort(cfg.Addr)
-	if port != "445" {
-		host = net.JoinHostPort(host, port)
-	} else if strings.Contains(host, ":") {
-		host = "[" + host + "]"
-	}
-	loc := "smb://" + host + "/" + cfg.Share
-	if cfg.Dir != "" {
-		loc += "/" + cfg.Dir
-	}
-	return loc
 }
 
 func normalizeWebDAV(loc string) (string, error) {

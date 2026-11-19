@@ -1,4 +1,4 @@
-export type SourceType = 'local' | 'smb' | 'webdav';
+export type SourceType = 'local' | 'webdav';
 
 /** An admin-managed folder whose photos are indexed into one Owner's library. */
 export interface Source {
@@ -8,7 +8,8 @@ export interface Source {
   location: string;
   username?: string;
   hasPassword: boolean;
-  ownerEmail: string;
+  /** Regexes matched against each folder's path below the source root. */
+  excludes: string[];
   updatedAt: string;
 }
 
@@ -19,7 +20,7 @@ export interface SourceInput {
   username?: string;
   /** Omitted on edit to keep the stored password. */
   password?: string;
-  ownerEmail?: string;
+  excludes?: string[];
 }
 
 export interface Me {

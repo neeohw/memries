@@ -24,7 +24,7 @@ The repo was four isolated trees: npm `frontend/` and `e2e/`, a Go module in `ba
 
 - Compose build context is the repo root. `.dockerignore` must exclude `data/`, `.worktrees`, and `node_modules`.
 - `deploy/` and `data/` stay at the repo root.
-- ADR 0003 still describes process shape (one Go module, two binaries, Caddy, Dex). This ADR only changes how those binaries and the SPA are built.
+- ADR 0003 describes the process shape (one Go module, two binaries, Caddy). This ADR only changes how those binaries and the SPA are built.
 
 ## Limitations
 

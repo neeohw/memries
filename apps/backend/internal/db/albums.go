@@ -56,7 +56,7 @@ func (s *Store) CreateAlbum(ctx context.Context, ownerID, name string) (*AlbumVi
 // member keys.
 //
 // Membership here is deliberately NOT filtered on deleted_at, matching the
-// Arango original: photo_count still includes soft-deleted members, while
+// photo_count still includes soft-deleted members, while
 // GetAlbumView excludes them. See docs/todos/p2-album-deleted-counts.md.
 func (s *Store) ListAlbums(ctx context.Context, ownerID string) ([]AlbumView, error) {
 	rows, err := s.query(ctx, `
@@ -127,13 +127,15 @@ func (s *Store) GetAlbum(ctx context.Context, albumID string) (*Album, error) {
 	return &a, nil
 }
 
-func (s *Store) albumPhotos(ctx context.Context, albumID string) ([]Photo, []string, error) {
+func (s *Store) albumPhotos(ctx context.Context, viewer, albumID string) ([]Photo, []string, error) {
 	rows, err := s.query(ctx, `
-		SELECT `+prefixColumns(photoColumns, "p")+`
+		SELECT `+prefixColumns(photoColumns, "p")+`,
+		       EXISTS (SELECT 1 FROM favorites f
+		               WHERE f.photo_key = p.key AND f.user_key = ?)
 		FROM album_photos ap
 		JOIN photos p ON p.key = ap.photo_key
 		WHERE ap.album_key = ? AND p.deleted_at IS NULL
-		ORDER BY p.taken_at DESC, p.key DESC`, albumID)
+		ORDER BY p.taken_at DESC, p.key DESC`, viewer, albumID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -159,7 +161,8 @@ func (s *Store) GetAlbumView(ctx context.Context, ownerID, albumID string) (*Alb
 	if album.OwnerID != ownerID {
 		return nil, ErrForbidden
 	}
-	photos, ids, err := s.albumPhotos(ctx, albumID)
+	// The Album is the owner's; the favorite flags on its photos are theirs too.
+	photos, ids, err := s.albumPhotos(ctx, ownerID, albumID)
 	if err != nil {
 		return nil, err
 	}
@@ -201,12 +204,11 @@ func (s *Store) AddPhotoToAlbum(ctx context.Context, ownerID, albumID, photoID s
 	if album.OwnerID != ownerID {
 		return nil, ErrForbidden
 	}
-	photo, err := s.GetPhoto(ctx, photoID)
+	// The library is shared, so any photo may go in any Album; only the
+	// Album itself is owned (ADR 0020).
+	photo, err := s.GetPhoto(ctx, ownerID, photoID)
 	if err != nil {
 		return nil, err
-	}
-	if photo.OwnerID != ownerID {
-		return nil, ErrForbidden
 	}
 	if photo.DeletedAt != nil {
 		return nil, ErrNotFound
@@ -238,8 +240,10 @@ func (s *Store) RemovePhotoFromAlbum(ctx context.Context, ownerID, albumID, phot
 	return s.albumViewForOwner(ctx, ownerID, albumID)
 }
 
-// ClearOwnerAlbumsAndFavorites drops the Owner's Albums and unsets every
-// favorite. One transaction, so a reset is all-or-nothing.
+// ClearOwnerAlbumsAndFavorites drops this reader's Albums and their
+// favorites. One transaction, so a reset is all-or-nothing.
+//
+// It leaves the photos alone: they are the library's, not the reader's.
 func (s *Store) ClearOwnerAlbumsAndFavorites(ctx context.Context, ownerID string) error {
 	return s.tx(ctx, func(t *sql.Tx) error {
 		if _, err := t.ExecContext(ctx, s.rebind(`
@@ -253,7 +257,7 @@ func (s *Store) ClearOwnerAlbumsAndFavorites(ctx context.Context, ownerID string
 			return err
 		}
 		_, err := t.ExecContext(ctx, s.rebind(
-			`UPDATE photos SET favorite = ? WHERE owner_id = ?`), false, ownerID)
+			`DELETE FROM favorites WHERE user_key = ?`), ownerID)
 		return err
 	})
 }

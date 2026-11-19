@@ -12,31 +12,28 @@ import (
 var ErrNotFound = errors.New("not found")
 var ErrForbidden = errors.New("forbidden")
 
-// ErrKeyOwnedByAnother reports that the Photo key is already held by a
-// different Owner. Photo keys are table-unique, so an upsert must never
-// quietly overwrite someone else's row (ADR 0014).
-var ErrKeyOwnedByAnother = errors.New("photo key belongs to another owner")
+// favoriteExpr reads the viewer's own favorite flag as the last projected
+// column. It takes one argument, the viewer's user key, and because it sits
+// in the SELECT list that argument comes before every WHERE argument.
+//
+// An empty viewer — the indexer, which has no reader — simply matches
+// nothing, so the flag reads false rather than needing a second query shape.
+const favoriteExpr = `, EXISTS (SELECT 1 FROM favorites f
+	WHERE f.photo_key = photos.key AND f.user_key = ?)`
 
 func (s *Store) UpsertPhoto(ctx context.Context, p *Photo) error {
 	cols := compactColumns(photoColumns)
-	// The guard makes a cross-owner key collision affect zero rows instead of
-	// replacing the other Owner's Photo.
 	q := `INSERT INTO photos (` + cols + `) VALUES (` + placeholders(photoColumnCount) + `)
-		ON CONFLICT (key) DO UPDATE SET ` + excludedAssignments(cols, "key") + `
-		WHERE photos.owner_id = excluded.owner_id`
-	res, err := s.exec(ctx, q, photoValues(p)...)
-	if err != nil {
-		return err
-	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		return ErrKeyOwnedByAnother
-	}
-	return nil
+		ON CONFLICT (key) DO UPDATE SET ` + excludedAssignments(cols, "key")
+	_, err := s.exec(ctx, q, photoValues(p)...)
+	return err
 }
 
-func (s *Store) GetPhoto(ctx context.Context, key string) (*Photo, error) {
+// GetPhoto reads one Photo as `viewer` sees it, which decides only whether it
+// comes back favorited: the library itself is the same for everyone.
+func (s *Store) GetPhoto(ctx context.Context, viewer, key string) (*Photo, error) {
 	row := s.queryRow(ctx,
-		`SELECT `+photoColumns+` FROM photos WHERE key = ?`, key)
+		`SELECT `+photoColumns+favoriteExpr+` FROM photos WHERE key = ?`, viewer, key)
 	p, err := scanPhoto(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -52,11 +49,11 @@ type Bucket struct {
 	Last         time.Time `json:"last"`
 }
 
-// Timeline groups the Owner's Photos into calendar buckets. Buckets come from
+// Timeline groups the library's Photos into calendar buckets. Buckets come from
 // taken_at_local, not taken_at: the UI reasons in the capture clock (ADR 0005),
 // and a substring of the local text is identical in both dialects where an
 // epoch conversion would not be. Rows with no local capture clock are skipped.
-func (s *Store) Timeline(ctx context.Context, ownerID, granularity string, from, to time.Time) ([]Bucket, error) {
+func (s *Store) Timeline(ctx context.Context, granularity string, from, to time.Time) ([]Bucket, error) {
 	bucket := s.bucketExpr(granularity)
 	q := `
 		WITH ranked AS (
@@ -66,8 +63,7 @@ func (s *Store) Timeline(ctx context.Context, ownerID, granularity string, from,
 		           ORDER BY taken_at DESC, key DESC
 		         ) AS rn
 		  FROM photos
-		  WHERE owner_id = ?
-		    AND deleted_at IS NULL
+		  WHERE deleted_at IS NULL
 		    AND taken_at >= ? AND taken_at < ?
 		    AND taken_at_local <> ''
 		)
@@ -77,7 +73,7 @@ func (s *Store) Timeline(ctx context.Context, ownerID, granularity string, from,
 		FROM ranked
 		GROUP BY bucket
 		ORDER BY bucket DESC`
-	rows, err := s.query(ctx, q, ownerID, micros(from), micros(to))
+	rows, err := s.query(ctx, q, micros(from), micros(to))
 	if err != nil {
 		return nil, err
 	}
@@ -109,16 +105,18 @@ type PhotoFilter struct {
 	LocalTo   string
 }
 
-func (s *Store) Photos(ctx context.Context, ownerID string, from, to time.Time, limit int, cursor string) ([]Photo, string, error) {
-	return s.PhotosFiltered(ctx, ownerID, from, to, limit, cursor, PhotoFilter{})
+func (s *Store) Photos(ctx context.Context, viewer string, from, to time.Time, limit int, cursor string) ([]Photo, string, error) {
+	return s.PhotosFiltered(ctx, viewer, from, to, limit, cursor, PhotoFilter{})
 }
 
-func (s *Store) PhotosFiltered(ctx context.Context, ownerID string, from, to time.Time, limit int, cursor string, filter PhotoFilter) ([]Photo, string, error) {
+func (s *Store) PhotosFiltered(ctx context.Context, viewer string, from, to time.Time, limit int, cursor string, filter PhotoFilter) ([]Photo, string, error) {
 	limit = ClampPhotoLimit(limit)
-	where := []string{"owner_id = ?", "deleted_at IS NULL", "taken_at >= ?", "taken_at < ?"}
-	args := []any{ownerID, micros(from), micros(to)}
+	where := []string{"deleted_at IS NULL", "taken_at >= ?", "taken_at < ?"}
+	// The viewer argument belongs to favoriteExpr in the SELECT list, so it
+	// comes first.
+	args := []any{viewer, micros(from), micros(to)}
 
-	appendPhotoFilter(filter, &where, &args)
+	appendPhotoFilter(viewer, filter, &where, &args)
 
 	if cursor != "" {
 		taken, key, err := DecodeCursor(cursor)
@@ -130,7 +128,7 @@ func (s *Store) PhotosFiltered(ctx context.Context, ownerID string, from, to tim
 	}
 	args = append(args, limit+1)
 
-	q := `SELECT ` + photoColumns + ` FROM photos
+	q := `SELECT ` + photoColumns + favoriteExpr + ` FROM photos
 		WHERE ` + strings.Join(where, " AND ") + `
 		ORDER BY taken_at DESC, key DESC
 		LIMIT ?`
@@ -154,11 +152,10 @@ func (s *Store) PhotosFiltered(ctx context.Context, ownerID string, from, to tim
 	return page, next, nil
 }
 
-func (s *Store) CountOwnerPhotos(ctx context.Context, ownerID string) (int64, error) {
+func (s *Store) CountPhotos(ctx context.Context) (int64, error) {
 	var n int64
 	err := s.queryRow(ctx,
-		`SELECT COUNT(*) FROM photos WHERE owner_id = ? AND deleted_at IS NULL`,
-		ownerID).Scan(&n)
+		`SELECT COUNT(*) FROM photos WHERE deleted_at IS NULL`).Scan(&n)
 	return n, err
 }
 
@@ -167,10 +164,9 @@ type PhotoStorageRef struct {
 	Path string `json:"path"`
 }
 
-func (s *Store) ListOwnerPhotoStorage(ctx context.Context, ownerID string) ([]PhotoStorageRef, error) {
+func (s *Store) ListPhotoStorage(ctx context.Context) ([]PhotoStorageRef, error) {
 	rows, err := s.query(ctx,
-		`SELECT key, storage_path FROM photos
-		 WHERE owner_id = ? AND deleted_at IS NULL`, ownerID)
+		`SELECT key, storage_path FROM photos WHERE deleted_at IS NULL`)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +204,7 @@ func (s *Store) bucketExpr(granularity string) string {
 	}
 }
 
-func appendPhotoFilter(filter PhotoFilter, where *[]string, args *[]any) {
+func appendPhotoFilter(viewer string, filter PhotoFilter, where *[]string, args *[]any) {
 	if len(filter.Years) > 0 {
 		*where = append(*where, inClause("substr(taken_at_local, 1, 4)", filter.Years, args))
 	}
@@ -224,12 +220,19 @@ func appendPhotoFilter(filter PhotoFilter, where *[]string, args *[]any) {
 		*args = append(*args, filter.LocalTo)
 	}
 	if filter.Favorite != nil {
-		*where = append(*where, "favorite = ?")
-		*args = append(*args, *filter.Favorite)
+		// Favorites are the viewer's own, so this filters on their rows
+		// rather than on a column of the shared photo.
+		clause := `EXISTS (SELECT 1 FROM favorites f
+			WHERE f.photo_key = photos.key AND f.user_key = ?)`
+		if !*filter.Favorite {
+			clause = "NOT " + clause
+		}
+		*where = append(*where, clause)
+		*args = append(*args, viewer)
 	}
 	if q := strings.ToLower(strings.TrimSpace(filter.Query)); q != "" {
-		// The Arango original matched a literal substring, so LIKE wildcards
-		// in the user's query must not act as wildcards.
+		// The query is a literal substring, so LIKE wildcards typed by the
+		// reader must not act as wildcards.
 		*where = append(*where, `LOWER(taken_at_local) LIKE ? ESCAPE '\'`)
 		*args = append(*args, "%"+escapeLike(q)+"%")
 	}
@@ -247,23 +250,25 @@ func escapeLike(s string) string {
 	return b.String()
 }
 
-// GetPhotoByHash finds a Photo of this Owner by content hash. Owner-scoped, so
-// identical bytes in two libraries stay two Photos (ADR 0014). Live rows win
-// over soft-deleted ones.
-func (s *Store) GetPhotoByHash(ctx context.Context, ownerID, hash string) (*Photo, error) {
+// GetPhotoByHash finds a Photo by content hash. One library, so one copy of
+// a file however many folders hold it. Live rows win over soft-deleted ones.
+//
+// Called by the indexer, which has no reader, so the favorite flag it reads
+// back is meaningless and unused.
+func (s *Store) GetPhotoByHash(ctx context.Context, hash string) (*Photo, error) {
 	return s.readPhoto(ctx,
-		`SELECT `+photoColumns+` FROM photos
-		 WHERE owner_id = ? AND hash = ?
+		`SELECT `+photoColumns+favoriteExpr+` FROM photos
+		 WHERE hash = ?
 		 ORDER BY (deleted_at IS NULL) DESC
-		 LIMIT 1`, ownerID, hash)
+		 LIMIT 1`, "", hash)
 }
 
-func (s *Store) GetPhotoByOwnerPath(ctx context.Context, ownerID, path string) (*Photo, error) {
+func (s *Store) GetPhotoByPath(ctx context.Context, path string) (*Photo, error) {
 	return s.readPhoto(ctx,
-		`SELECT `+photoColumns+` FROM photos
-		 WHERE owner_id = ? AND storage_path = ?
+		`SELECT `+photoColumns+favoriteExpr+` FROM photos
+		 WHERE storage_path = ?
 		 ORDER BY (deleted_at IS NULL) DESC
-		 LIMIT 1`, ownerID, path)
+		 LIMIT 1`, "", path)
 }
 
 func (s *Store) readPhoto(ctx context.Context, q string, args ...any) (*Photo, error) {
@@ -302,20 +307,35 @@ func (s *Store) UpdateIndexedPhoto(ctx context.Context, p *Photo) error {
 	return err
 }
 
-func (s *Store) SetFavorite(ctx context.Context, ownerID, photoID string, favorite bool) (*Photo, error) {
-	p, err := s.GetPhoto(ctx, photoID)
+// SetFavorite adds or removes this reader's favorite.
+//
+// It touches no column of the photo, so two readers hearting the same picture
+// never contend, and one un-hearting it does not take the other's with it.
+func (s *Store) SetFavorite(ctx context.Context, viewer, photoID string, favorite bool) (*Photo, error) {
+	p, err := s.GetPhoto(ctx, viewer, photoID)
 	if err != nil {
 		return nil, err
 	}
-	if p.OwnerID != ownerID {
-		return nil, ErrForbidden
-	}
-	if _, err := s.exec(ctx,
-		`UPDATE photos SET favorite = ? WHERE key = ?`, favorite, photoID); err != nil {
+	if favorite {
+		if err := s.addFavorite(ctx, viewer, photoID); err != nil {
+			return nil, err
+		}
+	} else if _, err := s.exec(ctx,
+		`DELETE FROM favorites WHERE user_key = ? AND photo_key = ?`, viewer, photoID); err != nil {
 		return nil, err
 	}
 	p.Favorite = favorite
 	return p, nil
+}
+
+// addFavorite is idempotent: hearting something twice is not an error, it is
+// a double click.
+func (s *Store) addFavorite(ctx context.Context, viewer, photoID string) error {
+	_, err := s.exec(ctx,
+		`INSERT INTO favorites (user_key, photo_key, created_at) VALUES (?, ?, ?)
+		 ON CONFLICT (user_key, photo_key) DO NOTHING`,
+		viewer, photoID, micros(time.Now().UTC()))
+	return err
 }
 
 // --- column plumbing ----------------------------------------------------

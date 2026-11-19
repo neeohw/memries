@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Source, SourceInput, SourceType } from '../models/source';
+import { ExcludeEditor } from './ExcludeEditor';
 import { DriveIcon, PlusIcon, SyncIcon } from './icons';
 import { PageHeader } from './PageHeader';
 
@@ -15,14 +16,7 @@ const TYPES: Array<{
     label: 'On this server',
     locationLabel: 'Folder path',
     placeholder: '/data/photos/family',
-    hint: 'An absolute path the server can read, inside an allowed folder.',
-  },
-  {
-    id: 'smb',
-    label: 'Network share',
-    locationLabel: 'Share',
-    placeholder: 'smb://nas/photos/Family',
-    hint: 'SMB (Windows / NAS) share, e.g. smb://nas/photos or \\\\nas\\photos.',
+    hint: 'An absolute path the server can read, inside an allowed folder. Mount a network share on the server first, then add it here.',
   },
   {
     id: 'webdav',
@@ -35,7 +29,6 @@ const TYPES: Array<{
 
 const TYPE_LABEL: Record<SourceType, string> = {
   local: 'Server folder',
-  smb: 'Network share',
   webdav: 'WebDAV',
 };
 
@@ -44,8 +37,8 @@ const inputClass =
 
 type Draft = SourceInput & { password: string };
 
-function emptyDraft(ownerEmail: string): Draft {
-  return { name: '', type: 'local', location: '', username: '', password: '', ownerEmail };
+function emptyDraft(): Draft {
+  return { name: '', type: 'local', location: '', username: '', password: '', excludes: [] };
 }
 
 function draftFrom(source: Source): Draft {
@@ -55,7 +48,7 @@ function draftFrom(source: Source): Draft {
     location: source.location,
     username: source.username ?? '',
     password: '',
-    ownerEmail: source.ownerEmail,
+    excludes: source.excludes,
   };
 }
 
@@ -68,7 +61,6 @@ export function SourcesView({
   sources,
   loading,
   loadError,
-  defaultOwner,
   onCreate,
   onUpdate,
   onDelete,
@@ -77,7 +69,6 @@ export function SourcesView({
   sources: Source[];
   loading: boolean;
   loadError: boolean;
-  defaultOwner: string;
   onCreate: (input: SourceInput) => Promise<unknown>;
   onUpdate: (id: string, input: SourceInput) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
@@ -111,7 +102,7 @@ export function SourcesView({
 
         {editing === 'new' && (
           <SourceForm
-            initial={emptyDraft(defaultOwner)}
+            initial={emptyDraft()}
             onSubmit={async (input) => {
               await onCreate(input);
               setEditing(null);
@@ -211,10 +202,9 @@ function SourceCard({
           <p className="truncate text-xs text-ink" title={source.location}>
             {TYPE_LABEL[source.type]} · <span className="font-mono">{source.location}</span>
           </p>
-          <p className="mt-0.5 truncate text-xs text-ink">
-            For {source.ownerEmail}
-            {source.username ? ` · signed in as ${source.username}` : ''}
-          </p>
+          {source.username && (
+            <p className="mt-0.5 truncate text-xs text-ink">Signed in as {source.username}</p>
+          )}
         </div>
       </div>
       {error && (
@@ -313,7 +303,6 @@ function SourceForm({
       await onSubmit({
         ...draft,
         password: remote && draft.password ? draft.password : undefined,
-        ownerEmail: existing ? undefined : draft.ownerEmail,
       });
     } catch (err) {
       setError(errorText(err));
@@ -386,7 +375,7 @@ function SourceForm({
               type="text"
               value={draft.username}
               onChange={(event) => set({ username: event.target.value })}
-              placeholder={draft.type === 'smb' ? 'user or DOMAIN\\user' : 'user'}
+              placeholder="user"
               autoComplete="off"
               spellCheck={false}
               className={inputClass}
@@ -406,7 +395,9 @@ function SourceForm({
         </div>
       )}
 
-      <div className="grid gap-4 min-[640px]:grid-cols-2">
+      <ExcludeEditor value={draft.excludes ?? []} onChange={(excludes) => set({ excludes })} />
+
+      <div className="grid gap-4">
         <label className="text-sm font-medium text-plum">
           Name <span className="font-normal text-ink">(optional)</span>
           <input
@@ -415,18 +406,6 @@ function SourceForm({
             onChange={(event) => set({ name: event.target.value })}
             placeholder="Family photos"
             maxLength={80}
-            className={inputClass}
-          />
-        </label>
-        <label className="text-sm font-medium text-plum">
-          Show in the library of
-          <input
-            type="email"
-            required
-            value={draft.ownerEmail}
-            onChange={(event) => set({ ownerEmail: event.target.value })}
-            disabled={!!existing}
-            autoComplete="off"
             className={inputClass}
           />
         </label>

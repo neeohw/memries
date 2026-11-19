@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,28 +37,15 @@ func TestNormalizeLocalRejectsSymlinkOutOfRoot(t *testing.T) {
 	}
 }
 
-func TestParseSMB(t *testing.T) {
-	cases := map[string]string{
-		"smb://nas/photos":                 "smb://nas/photos",
-		"smb://nas:1445/photos/2024/":      "smb://nas:1445/photos/2024",
-		`\\nas\photos\Family\Summer`:       "smb://nas/photos/Family/Summer",
-		"//nas.local/share":                "smb://nas.local/share",
-		"SMB://10.0.0.2/share/a/./b/../c/": "smb://10.0.0.2/share/a/c",
+func TestSMBSourcesAreRejectedWithSomethingToDo(t *testing.T) {
+	// Rows written before ADR 0020 removed SMB still exist. Opening one must
+	// say what to do about it, not report an unknown type.
+	_, err := normalizeLocation(TypeSMB, "smb://nas/photos", nil)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("err = %v, want ErrInvalid", err)
 	}
-	for in, want := range cases {
-		got, err := normalizeLocation(TypeSMB, in, nil)
-		if err != nil || got != want {
-			t.Fatalf("%q: got %q err %v, want %q", in, got, err, want)
-		}
-	}
-	cfg, err := parseSMB("smb://nas/photos/Family")
-	if err != nil || cfg.Addr != "nas:445" || cfg.Share != "photos" || cfg.Dir != "Family" {
-		t.Fatalf("cfg = %+v err %v", cfg, err)
-	}
-	for _, bad := range []string{"smb://nas", "smb://user:pw@nas/share", "http://nas/share", "nas/share"} {
-		if _, err := normalizeLocation(TypeSMB, bad, nil); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("%q: err = %v", bad, err)
-		}
+	if !strings.Contains(err.Error(), "mount the share") {
+		t.Fatalf("error should say what to do instead, got %v", err)
 	}
 }
 

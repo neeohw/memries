@@ -1,16 +1,13 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/memries/memries/internal/auth"
-	"github.com/memries/memries/internal/index"
 )
 
 func (a *API) indexStatus(w http.ResponseWriter, r *http.Request) {
-	u, ok := auth.UserFromContext(r.Context())
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -18,12 +15,8 @@ func (a *API) indexStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "index unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	s, err := a.Index.Status(r.Context(), u.Key, u.Email)
+	s, err := a.Index.Status(r.Context())
 	if err != nil {
-		if errors.Is(err, index.ErrInvalidEmail) {
-			http.Error(w, "bad email", http.StatusBadRequest)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -31,8 +24,7 @@ func (a *API) indexStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) startIndex(w http.ResponseWriter, r *http.Request) {
-	u, ok := auth.UserFromContext(r.Context())
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -40,12 +32,8 @@ func (a *API) startIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "index unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	s, err := a.Index.Start(r.Context(), u.Key, u.Email)
+	s, err := a.Index.Start(r.Context())
 	if err != nil {
-		if errors.Is(err, index.ErrInvalidEmail) {
-			http.Error(w, "bad email", http.StatusBadRequest)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-const indexRunColumns = `key, owner_id, prefix, status, discovered, processed,
+const indexRunColumns = `key, prefix, status, discovered, processed,
 	indexed, skipped, failed, error, started_at, finished_at, updated_at`
 
 func scanIndexRun(sc rowScanner) (*IndexRun, error) {
@@ -16,7 +16,7 @@ func scanIndexRun(sc rowScanner) (*IndexRun, error) {
 		updatedAt         int64
 	)
 	err := sc.Scan(
-		&run.Key, &run.OwnerID, &run.Prefix, &run.Status,
+		&run.Key, &run.Prefix, &run.Status,
 		&run.Discovered, &run.Processed, &run.Indexed, &run.Skipped, &run.Failed,
 		&run.Error, &started, &finished, &updatedAt,
 	)
@@ -29,11 +29,14 @@ func scanIndexRun(sc rowScanner) (*IndexRun, error) {
 	return &run, nil
 }
 
-// GetIndexRun returns the Owner's run, or (nil, nil) when none exists. The run
-// key is the owner key: one current run per Owner (ADR 0004).
-func (s *Store) GetIndexRun(ctx context.Context, ownerID string) (*IndexRun, error) {
+// IndexRunKey is the key of the one run row. The library is server-wide, so
+// there is nothing to key a second one by (ADR 0020).
+const IndexRunKey = "library"
+
+// GetIndexRun returns the current run, or (nil, nil) when none exists.
+func (s *Store) GetIndexRun(ctx context.Context) (*IndexRun, error) {
 	run, err := scanIndexRun(s.queryRow(ctx,
-		`SELECT `+indexRunColumns+` FROM index_runs WHERE key = ?`, ownerID))
+		`SELECT `+indexRunColumns+` FROM index_runs WHERE key = ?`, IndexRunKey))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -49,7 +52,7 @@ func (s *Store) UpsertIndexRun(ctx context.Context, run *IndexRun) error {
 		placeholders(len(splitColumns(cols))) + `)
 		ON CONFLICT (key) DO UPDATE SET ` + excludedAssignments(cols, "key")
 	_, err := s.exec(ctx, q,
-		run.Key, run.OwnerID, run.Prefix, run.Status,
+		run.Key, run.Prefix, run.Status,
 		run.Discovered, run.Processed, run.Indexed, run.Skipped, run.Failed,
 		run.Error, nullMicros(run.StartedAt), nullMicros(run.FinishedAt),
 		micros(run.UpdatedAt))

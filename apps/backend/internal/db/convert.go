@@ -54,9 +54,11 @@ func (b *boolVal) Scan(src any) error {
 	return nil
 }
 
-// photoColumns is the full projection, in the order scanPhoto reads it.
-const photoColumns = `key, kind, owner_id, taken_at, taken_at_local, taken_at_source,
-	tz_offset, favorite, hash, size_bytes, mime, width, height, orientation,
+// photoColumns is what is stored on the row. It carries no favorite: the
+// library is shared and a heart belongs to the reader who pressed it, so that
+// flag lives in the favorites table and is read per viewer (ADR 0020).
+const photoColumns = `key, kind, taken_at, taken_at_local, taken_at_source,
+	tz_offset, hash, size_bytes, mime, width, height, orientation,
 	storage_backend, storage_path, storage_bucket, storage_mtime,
 	exif_camera, exif_lens, exif_iso, exif_f_number, exif_shutter,
 	exif_gps_lat, exif_gps_lon, thumb_256, thumb_512, thumb_1024,
@@ -78,13 +80,13 @@ func scanPhoto(sc rowScanner) (*Photo, error) {
 		deletedAt sql.NullInt64
 	)
 	err := sc.Scan(
-		&p.Key, &p.Kind, &p.OwnerID, &takenAt, &p.TakenAtLocal, &p.TakenAtSource,
-		&p.TZOffset, &favorite, &p.Hash, &p.SizeBytes, &p.MIME,
+		&p.Key, &p.Kind, &takenAt, &p.TakenAtLocal, &p.TakenAtSource,
+		&p.TZOffset, &p.Hash, &p.SizeBytes, &p.MIME,
 		&p.Dims.W, &p.Dims.H, &p.Orientation,
 		&p.Storage.Backend, &p.Storage.Path, &p.Storage.Bucket, &mtime,
 		&p.EXIF.Camera, &p.EXIF.Lens, &p.EXIF.ISO, &p.EXIF.FNum, &p.EXIF.Shutter,
 		&lat, &lon, &p.Thumbs.S256, &p.Thumbs.S512, &p.Thumbs.S1024,
-		&imported, &deletedAt,
+		&imported, &deletedAt, &favorite,
 	)
 	if err != nil {
 		return nil, err
@@ -111,8 +113,8 @@ func photoValues(p *Photo) []any {
 		kind = "photo"
 	}
 	return []any{
-		p.Key, kind, p.OwnerID, micros(p.TakenAt), p.TakenAtLocal, p.TakenAtSource,
-		p.TZOffset, p.Favorite, p.Hash, p.SizeBytes, p.MIME,
+		p.Key, kind, micros(p.TakenAt), p.TakenAtLocal, p.TakenAtSource,
+		p.TZOffset, p.Hash, p.SizeBytes, p.MIME,
 		p.Dims.W, p.Dims.H, p.Orientation,
 		p.Storage.Backend, p.Storage.Path, p.Storage.Bucket, nullMicros(p.Storage.ModTime),
 		p.EXIF.Camera, p.EXIF.Lens, p.EXIF.ISO, p.EXIF.FNum, p.EXIF.Shutter,

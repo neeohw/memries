@@ -22,3 +22,10 @@ type Storage interface {
 	Delete(ctx context.Context, key string) error
 	Walk(ctx context.Context, prefix string, fn func(ObjectInfo) error) error
 }
+
+// SkipDirFunc reports whether a directory should be left unread.
+//
+// It takes the path relative to the backend's root, with no leading or
+// trailing slash, and is consulted before the directory is opened, so an
+// excluded tree costs nothing to read.
+type SkipDirFunc func(dir string) bool

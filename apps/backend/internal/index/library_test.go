@@ -52,7 +52,7 @@ func TestRecentOriginalsProbeSamplesPre1970Photos(t *testing.T) {
 		}},
 		Store: fakeStater{missing: map[string]bool{"admin@example.com/film-1962.jpg": true}},
 	}
-	if _, err := lib.RecentOriginalsMissing(context.Background(), "owner1"); err != nil {
+	if _, err := lib.RecentOriginalsMissing(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,7 +76,7 @@ func TestRecentOriginalsMissingWhenEverySampleIsGone(t *testing.T) {
 			"admin@example.com/old.jpg":      true,
 		}},
 	}
-	missing, err := lib.RecentOriginalsMissing(context.Background(), "owner1")
+	missing, err := lib.RecentOriginalsMissing(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestRecentOriginalsMissingIfAnyFileExists(t *testing.T) {
 		}},
 		Store: fakeStater{missing: map[string]bool{"admin@example.com/gone.jpg": true}},
 	}
-	missing, err := lib.RecentOriginalsMissing(context.Background(), "owner1")
+	missing, err := lib.RecentOriginalsMissing(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestRecentOriginalsMissingIfAnyFileExists(t *testing.T) {
 
 func TestRecentOriginalsMissingNoPhotos(t *testing.T) {
 	lib := Library{Photos: fakePhotoLister{}, Store: fakeStater{}}
-	missing, err := lib.RecentOriginalsMissing(context.Background(), "owner1")
+	missing, err := lib.RecentOriginalsMissing(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestRecentOriginalsMissingNoPhotos(t *testing.T) {
 
 func TestRecentOriginalsMissingPropagatesListError(t *testing.T) {
 	lib := Library{Photos: fakePhotoLister{err: errors.New("db down")}, Store: fakeStater{}}
-	if _, err := lib.RecentOriginalsMissing(context.Background(), "owner1"); err == nil {
+	if _, err := lib.RecentOriginalsMissing(context.Background()); err == nil {
 		t.Fatal("expected error")
 	}
 }

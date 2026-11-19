@@ -63,7 +63,7 @@ func main() {
 		log.Error("sources", "err", err)
 		os.Exit(1)
 	}
-	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.SourceRoots, LegacyRoot: cfg.LocalRoot, Log: log}
+	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.SourceRoots, Log: log}
 	idx := &index.Indexer{Store: reg, DB: dbc, Thumb: tg, Log: log}
 	lib := index.Library{Photos: dbc, Store: reg}
 	coord := index.NewCoordinator(ctx, idx, dbc, dbc, idx, lib, log).WithScopes(reg)

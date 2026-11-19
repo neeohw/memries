@@ -35,24 +35,25 @@ type Thumbs struct {
 }
 
 type Photo struct {
-	Key           string     `json:"_key"`
-	Kind          string     `json:"kind"` // photo|video
-	OwnerID       string     `json:"owner_id"`
-	TakenAt       time.Time  `json:"taken_at"`
-	TakenAtLocal  string     `json:"taken_at_local,omitempty"`
-	TakenAtSource string     `json:"taken_at_source,omitempty"`
-	TZOffset      int        `json:"tz_offset"`
-	Favorite      bool       `json:"favorite"`
-	Storage       StoragePtr `json:"storage"`
-	Hash          string     `json:"hash"`
-	SizeBytes     int64      `json:"size_bytes"`
-	MIME          string     `json:"mime"`
-	Dims          Dims       `json:"dims"`
-	Orientation   int        `json:"orientation"`
-	EXIF          EXIF       `json:"exif"`
-	Thumbs        Thumbs     `json:"thumbs"`
-	ImportedAt    time.Time  `json:"imported_at"`
-	DeletedAt     *time.Time `json:"deleted_at"`
+	Key           string    `json:"_key"`
+	Kind          string    `json:"kind"` // photo|video
+	TakenAt       time.Time `json:"taken_at"`
+	TakenAtLocal  string    `json:"taken_at_local,omitempty"`
+	TakenAtSource string    `json:"taken_at_source,omitempty"`
+	TZOffset      int       `json:"tz_offset"`
+	// Favorite is this request's reader's own, read from the favorites table
+	// rather than stored on the row (ADR 0020).
+	Favorite    bool       `json:"favorite"`
+	Storage     StoragePtr `json:"storage"`
+	Hash        string     `json:"hash"`
+	SizeBytes   int64      `json:"size_bytes"`
+	MIME        string     `json:"mime"`
+	Dims        Dims       `json:"dims"`
+	Orientation int        `json:"orientation"`
+	EXIF        EXIF       `json:"exif"`
+	Thumbs      Thumbs     `json:"thumbs"`
+	ImportedAt  time.Time  `json:"imported_at"`
+	DeletedAt   *time.Time `json:"deleted_at"`
 }
 
 type User struct {
@@ -63,25 +64,26 @@ type User struct {
 	// PasswordHash is an encoded argon2id hash (ADR 0016), empty when the user
 	// has no password yet. It is never serialised: no handler returns it, and
 	// `json:"-"` keeps it out of a response if one ever marshals a User.
-	PasswordHash    string    `json:"-"`
-	CreatedAt       time.Time `json:"created_at"`
-	SourcesMigrated bool      `json:"sources_migrated,omitempty"`
+	PasswordHash string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
-// Source is an admin-managed folder (local path, SMB share, or WebDAV
-// collection) whose media is indexed into one Owner's library. Photo storage
-// paths are "<source _key>/<path inside the source>".
+// Source is an admin-managed folder (a local path on the server, or a WebDAV
+// collection) whose media is indexed into the library. Sources are
+// server-wide, not per reader (ADR 0020). Photo storage paths are
+// "<source _key>/<path inside the source>".
 type Source struct {
-	Key        string    `json:"_key,omitempty"`
-	Name       string    `json:"name"`
-	Type       string    `json:"type"`     // local|smb|webdav
-	Location   string    `json:"location"` // /abs/path, smb://host/share/dir, https://host/dav/dir
-	Username   string    `json:"username,omitempty"`
-	Secret     string    `json:"secret,omitempty"` // sealed password; never leaves the backend
-	OwnerID    string    `json:"owner_id"`
-	OwnerEmail string    `json:"owner_email"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	Key      string `json:"_key,omitempty"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`     // local|webdav
+	Location string `json:"location"` // /abs/path or https://host/dav/dir
+	Username string `json:"username,omitempty"`
+	Secret   string `json:"secret,omitempty"` // sealed password; never leaves the backend
+	// Excludes are regular expressions matched against each directory's path
+	// below the Source root. A matching tree is never walked (ADR 0020).
+	Excludes  []string  `json:"excludes,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Album struct {
@@ -92,15 +94,10 @@ type Album struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-type ShareEdge struct {
-	From string `json:"_from"`
-	To   string `json:"_to"`
-	Role string `json:"role"`
-}
-
+// IndexRun is the state of the one index run there is: the library is
+// server-wide, so there is nothing to key a second one by (ADR 0020).
 type IndexRun struct {
 	Key        string     `json:"_key"`
-	OwnerID    string     `json:"owner_id"`
 	Prefix     string     `json:"prefix"`
 	Status     string     `json:"status"`
 	Discovered int        `json:"discovered"`

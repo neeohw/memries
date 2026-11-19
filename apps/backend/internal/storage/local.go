@@ -15,6 +15,12 @@ import (
 
 type Local struct {
 	root string
+
+	// SkipDir hides a directory tree from Walk. Set per Source from its
+	// exclude patterns, so the indexer needs no knowledge of them: a tree it
+	// never sees is a tree it never indexes, and the prune pass removes what
+	// it indexed before (ADR 0020).
+	SkipDir SkipDirFunc
 }
 
 func NewLocal(root string) (*Local, error) {
@@ -147,6 +153,14 @@ func (l *Local) Walk(ctx context.Context, prefix string, fn func(ObjectInfo) err
 			return err
 		}
 		if d.IsDir() {
+			// Checked before descending, so an excluded tree is never read.
+			// The walk's own base is never skipped: a Source that excluded
+			// itself would silently index nothing.
+			if l.SkipDir != nil && p != base {
+				if rel, rerr := filepath.Rel(l.root, p); rerr == nil && l.SkipDir(filepath.ToSlash(rel)) {
+					return fs.SkipDir
+				}
+			}
 			return nil
 		}
 		if ctx.Err() != nil {

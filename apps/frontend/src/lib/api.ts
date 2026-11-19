@@ -69,7 +69,7 @@ export type ApiSource = {
   location: string;
   username?: string;
   has_password?: boolean;
-  owner_email: string;
+  excludes?: string[];
   updated_at: string;
 };
 
@@ -81,13 +81,13 @@ export function mapSource(raw: ApiSource): Source {
     location: raw.location,
     username: raw.username || undefined,
     hasPassword: raw.has_password === true,
-    ownerEmail: raw.owner_email,
+    excludes: raw.excludes ?? [],
     updatedAt: raw.updated_at,
   };
 }
 
-export function sourceBody(input: SourceInput): Record<string, string> {
-  const body: Record<string, string> = {
+export function sourceBody(input: SourceInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {
     name: input.name.trim(),
     type: input.type,
     location: input.location.trim(),
@@ -96,7 +96,10 @@ export function sourceBody(input: SourceInput): Record<string, string> {
     body.username = (input.username ?? '').trim();
     if (input.password) body.password = input.password;
   }
-  if (input.ownerEmail?.trim()) body.owner_email = input.ownerEmail.trim();
+  // Always sent, including empty: leaving it out on an edit would be
+  // indistinguishable from "no change" and make removing the last pattern
+  // impossible.
+  body.excludes = (input.excludes ?? []).map((p) => p.trim()).filter(Boolean);
   return body;
 }
 

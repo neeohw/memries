@@ -7,9 +7,11 @@ import (
 	"testing"
 )
 
+// favoriteOf reads the flag as `reader` sees it: favorites are per reader,
+// so there is no such thing as "the" favorite flag of a photo (ADR 0020).
 func favoriteOf(t *testing.T, s *Store, key string) bool {
 	t.Helper()
-	p, err := s.GetPhoto(context.Background(), key)
+	p, err := s.GetPhoto(context.Background(), "reader", key)
 	if err != nil {
 		t.Fatalf("get %s: %v", key, err)
 	}
@@ -20,12 +22,12 @@ func TestSetFavoritesFlipsEveryGivenPhoto(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	mustUpsert(t, s,
-		photo("a", "owner-a", "2026-03-01T10:00:00"),
-		photo("b", "owner-a", "2026-03-02T10:00:00"),
-		photo("c", "owner-a", "2026-03-03T10:00:00"),
+		photo("a", "2026-03-01T10:00:00"),
+		photo("b", "2026-03-02T10:00:00"),
+		photo("c", "2026-03-03T10:00:00"),
 	)
 
-	n, err := s.SetFavorites(ctx, "owner-a", []string{"a", "c"}, true)
+	n, err := s.SetFavorites(ctx, "reader", []string{"a", "c"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +42,7 @@ func TestSetFavoritesFlipsEveryGivenPhoto(t *testing.T) {
 	}
 
 	// And back off again.
-	if _, err := s.SetFavorites(ctx, "owner-a", []string{"a", "c"}, false); err != nil {
+	if _, err := s.SetFavorites(ctx, "reader", []string{"a", "c"}, false); err != nil {
 		t.Fatal(err)
 	}
 	if favoriteOf(t, s, "a") || favoriteOf(t, s, "c") {
@@ -51,11 +53,11 @@ func TestSetFavoritesFlipsEveryGivenPhoto(t *testing.T) {
 func TestSetFavoritesIgnoresDuplicateIDs(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	mustUpsert(t, s, photo("a", "owner-a", "2026-03-01T10:00:00"))
+	mustUpsert(t, s, photo("a", "2026-03-01T10:00:00"))
 
 	// Duplicates must not make the affected-row count disagree with the
 	// request and look like a permission failure.
-	n, err := s.SetFavorites(ctx, "owner-a", []string{"a", "a", "a"}, true)
+	n, err := s.SetFavorites(ctx, "reader", []string{"a", "a", "a"}, true)
 	if err != nil {
 		t.Fatalf("duplicates rejected: %v", err)
 	}
@@ -66,29 +68,27 @@ func TestSetFavoritesIgnoresDuplicateIDs(t *testing.T) {
 
 // The ids arrive from a client. One belonging to someone else must not be
 // honoured, and must not quietly succeed for the rest either.
-func TestSetFavoritesRefusesAnotherOwnersPhoto(t *testing.T) {
+func TestSetFavoritesRefusesAnIDThatIsNotALivePhoto(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	mustUpsert(t, s,
-		photo("mine", "owner-a", "2026-03-01T10:00:00"),
-		photo("theirs", "owner-b", "2026-03-02T10:00:00"),
-	)
+	mustUpsert(t, s, photo("real", "2026-03-01T10:00:00"))
 
-	_, err := s.SetFavorites(ctx, "owner-a", []string{"mine", "theirs"}, true)
+	_, err := s.SetFavorites(ctx, "reader", []string{"real", "ghost"}, true)
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("err = %v, want ErrForbidden", err)
 	}
-	if favoriteOf(t, s, "theirs") {
-		t.Error("another owner's photo was modified")
+	// All or nothing: the valid half must not have been applied either.
+	if favoriteOf(t, s, "real") {
+		t.Error("the batch was half applied")
 	}
 }
 
 func TestSetFavoritesRefusesAnUnknownPhoto(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	mustUpsert(t, s, photo("a", "owner-a", "2026-03-01T10:00:00"))
+	mustUpsert(t, s, photo("a", "2026-03-01T10:00:00"))
 
-	if _, err := s.SetFavorites(ctx, "owner-a", []string{"a", "ghost"}, true); !errors.Is(err, ErrForbidden) {
+	if _, err := s.SetFavorites(ctx, "reader", []string{"a", "ghost"}, true); !errors.Is(err, ErrForbidden) {
 		t.Errorf("err = %v, want ErrForbidden", err)
 	}
 }
@@ -116,8 +116,8 @@ func TestAddPhotosToAlbumAddsEveryGivenPhoto(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	mustUpsert(t, s,
-		photo("a", "owner-a", "2026-03-01T10:00:00"),
-		photo("b", "owner-a", "2026-03-02T10:00:00"),
+		photo("a", "2026-03-01T10:00:00"),
+		photo("b", "2026-03-02T10:00:00"),
 	)
 	album, err := s.CreateAlbum(ctx, "owner-a", "Trip")
 	if err != nil {
@@ -137,8 +137,8 @@ func TestAddPhotosToAlbumIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	mustUpsert(t, s,
-		photo("a", "owner-a", "2026-03-01T10:00:00"),
-		photo("b", "owner-a", "2026-03-02T10:00:00"),
+		photo("a", "2026-03-01T10:00:00"),
+		photo("b", "2026-03-02T10:00:00"),
 	)
 	album, _ := s.CreateAlbum(ctx, "owner-a", "Trip")
 
@@ -155,18 +155,15 @@ func TestAddPhotosToAlbumIsIdempotent(t *testing.T) {
 	}
 }
 
-// One foreign id must abort the whole batch, so a selection is never half
+// One unusable id must abort the whole batch, so a selection is never half
 // applied and the reader is never left guessing which half took.
-func TestAddPhotosToAlbumAddsNothingWhenOneIDIsForeign(t *testing.T) {
+func TestAddPhotosToAlbumAddsNothingWhenOneIDIsUnusable(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	mustUpsert(t, s,
-		photo("mine", "owner-a", "2026-03-01T10:00:00"),
-		photo("theirs", "owner-b", "2026-03-02T10:00:00"),
-	)
+	mustUpsert(t, s, photo("real", "2026-03-01T10:00:00"))
 	album, _ := s.CreateAlbum(ctx, "owner-a", "Trip")
 
-	_, err := s.AddPhotosToAlbum(ctx, "owner-a", album.ID, []string{"mine", "theirs"})
+	_, err := s.AddPhotosToAlbum(ctx, "owner-a", album.ID, []string{"real", "ghost"})
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("err = %v, want ErrForbidden", err)
 	}
@@ -182,7 +179,7 @@ func TestAddPhotosToAlbumAddsNothingWhenOneIDIsForeign(t *testing.T) {
 func TestAddPhotosToAlbumRefusesAnotherOwnersAlbum(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	mustUpsert(t, s, photo("a", "owner-a", "2026-03-01T10:00:00"))
+	mustUpsert(t, s, photo("a", "2026-03-01T10:00:00"))
 	album, _ := s.CreateAlbum(ctx, "owner-b", "Theirs")
 
 	if _, err := s.AddPhotosToAlbum(ctx, "owner-a", album.ID, []string{"a"}); !errors.Is(err, ErrForbidden) {
@@ -194,8 +191,8 @@ func TestAddPhotosToAlbumRefusesASoftDeletedPhoto(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	mustUpsert(t, s,
-		photo("a", "owner-a", "2026-03-01T10:00:00"),
-		photo("gone", "owner-a", "2026-03-02T10:00:00"),
+		photo("a", "2026-03-01T10:00:00"),
+		photo("gone", "2026-03-02T10:00:00"),
 	)
 	if err := s.SoftDeletePhoto(ctx, "gone"); err != nil {
 		t.Fatal(err)
@@ -210,7 +207,7 @@ func TestAddPhotosToAlbumRefusesASoftDeletedPhoto(t *testing.T) {
 func TestAddPhotosToAlbumRejectsEmptyAndOversizedBatches(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	mustUpsert(t, s, photo("a", "owner-a", "2026-03-01T10:00:00"))
+	mustUpsert(t, s, photo("a", "2026-03-01T10:00:00"))
 	album, _ := s.CreateAlbum(ctx, "owner-a", "Trip")
 
 	if _, err := s.AddPhotosToAlbum(ctx, "owner-a", album.ID, nil); err == nil {

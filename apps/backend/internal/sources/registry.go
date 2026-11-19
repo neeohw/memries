@@ -7,8 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -23,14 +21,11 @@ const Backend = "source"
 
 type Repo interface {
 	ListSources(ctx context.Context) ([]db.Source, error)
-	ListOwnerSources(ctx context.Context, ownerID string) ([]db.Source, error)
 	GetSource(ctx context.Context, key string) (*db.Source, error)
 	CreateSource(ctx context.Context, s *db.Source) error
 	ReplaceSource(ctx context.Context, s *db.Source) error
 	DeleteSource(ctx context.Context, key string) error
-	OwnerSourcesMigrated(ctx context.Context, ownerID string) (bool, error)
-	MarkOwnerSourcesMigrated(ctx context.Context, ownerID string) error
-	RelocatePhotoPrefix(ctx context.Context, ownerID, oldPrefix, newPrefix string) error
+	RelocatePhotoPrefix(ctx context.Context, oldPrefix, newPrefix string) error
 }
 
 // Registry owns the Source catalog and exposes every Source as one read-only
@@ -41,25 +36,24 @@ type Registry struct {
 	Sealer *Sealer
 	// Roots are the directories local Sources must live under.
 	Roots []string
-	// LegacyRoot holds pre-Source libraries at <LegacyRoot>/<owner email>.
-	LegacyRoot string
-	Log        *slog.Logger
+	Log   *slog.Logger
 	// Open builds a backend for a Source; tests swap it. Defaults to OpenStore.
 	Open func(src db.Source, password string, roots []string) (storage.Storage, error)
 
-	mu      sync.Mutex
-	stores  map[string]storage.Storage
-	migrate sync.Mutex
+	mu     sync.Mutex
+	stores map[string]storage.Storage
 }
 
 // Input is the admin form for creating or editing a Source.
 type Input struct {
-	Name       string  `json:"name"`
-	Type       string  `json:"type"`
-	Location   string  `json:"location"`
-	Username   string  `json:"username"`
-	Password   *string `json:"password"` // nil keeps the stored password on update
-	OwnerEmail string  `json:"owner_email"`
+	Name     string  `json:"name"`
+	Type     string  `json:"type"`
+	Location string  `json:"location"`
+	Username string  `json:"username"`
+	Password *string `json:"password"` // nil keeps the stored password on update
+	// Excludes are regular expressions matched against each directory's path
+	// below this Source's root; a matching tree is never walked (ADR 0020).
+	Excludes []string `json:"excludes"`
 }
 
 // View is a Source as the admin UI sees it: never includes the password.
@@ -70,8 +64,7 @@ type View struct {
 	Location    string    `json:"location"`
 	Username    string    `json:"username,omitempty"`
 	HasPassword bool      `json:"has_password"`
-	OwnerID     string    `json:"owner_id"`
-	OwnerEmail  string    `json:"owner_email"`
+	Excludes    []string  `json:"excludes,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -84,8 +77,7 @@ func viewOf(s db.Source) View {
 		Location:    s.Location,
 		Username:    s.Username,
 		HasPassword: s.Secret != "",
-		OwnerID:     s.OwnerID,
-		OwnerEmail:  s.OwnerEmail,
+		Excludes:    s.Excludes,
 		CreatedAt:   s.CreatedAt,
 		UpdatedAt:   s.UpdatedAt,
 	}
@@ -198,27 +190,38 @@ func (r *Registry) openSource(src db.Source) (storage.Storage, error) {
 }
 
 // OpenStore builds the storage backend for one Source.
+//
+// The Source's exclude patterns are compiled here and handed to the backend,
+// so the indexer needs no knowledge of them: a tree the walk never visits is
+// a tree it never indexes, and the scan's existing prune pass removes what an
+// earlier run put in the catalog (ADR 0020).
 func OpenStore(src db.Source, password string, roots []string) (storage.Storage, error) {
+	skip, err := CompileExcludes(src.Excludes)
+	if err != nil {
+		return nil, err
+	}
 	switch src.Type {
 	case TypeLocal:
 		loc, err := normalizeLocal(src.Location, roots)
 		if err != nil {
 			return nil, err
 		}
-		return storage.OpenLocal(loc)
-	case TypeSMB:
-		cfg, err := parseSMB(src.Location)
+		st, err := storage.OpenLocal(loc)
 		if err != nil {
 			return nil, err
 		}
-		cfg.User, cfg.Password = src.Username, password
-		return storage.NewSMB(cfg), nil
+		st.SkipDir = skip
+		return st, nil
+	case TypeSMB:
+		return nil, invalidf("SMB shares are no longer supported: mount the share on the server and add it as a folder (ADR 0020)")
 	case TypeWebDAV:
 		loc, err := normalizeWebDAV(src.Location)
 		if err != nil {
 			return nil, err
 		}
-		return storage.NewWebDAV(loc, src.Username, password), nil
+		st := storage.NewWebDAV(loc, src.Username, password)
+		st.SkipDir = skip
+		return st, nil
 	default:
 		return nil, fmt.Errorf("unknown source type %q", src.Type)
 	}
@@ -240,13 +243,10 @@ func closeStore(st storage.Storage) {
 
 // ---- index scopes ----
 
-// Scopes lists the Owner's Sources as index scopes, first turning a legacy
-// <LegacyRoot>/<email> folder into an explicit Source.
-func (r *Registry) Scopes(ctx context.Context, ownerID, email string) ([]index.Scope, error) {
-	if err := r.migrateLegacy(ctx, ownerID, email); err != nil {
-		return nil, fmt.Errorf("migrate legacy folder: %w", err)
-	}
-	srcs, err := r.Repo.ListOwnerSources(ctx, ownerID)
+// Scopes lists every Source as an index scope. Sources are server-wide, so
+// there is one library to resolve and no owner to resolve it for (ADR 0020).
+func (r *Registry) Scopes(ctx context.Context) ([]index.Scope, error) {
+	srcs, err := r.Repo.ListSources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -256,61 +256,6 @@ func (r *Registry) Scopes(ctx context.Context, ownerID, email string) ([]index.S
 	}
 	return out, nil
 }
-
-func (r *Registry) migrateLegacy(ctx context.Context, ownerID, email string) error {
-	r.migrate.Lock()
-	defer r.migrate.Unlock()
-	done, err := r.Repo.OwnerSourcesMigrated(ctx, ownerID)
-	if err != nil || done {
-		return err
-	}
-	prefix, perr := index.PrefixFromEmail(email)
-	if r.LegacyRoot != "" && perr == nil {
-		dir, err := filepath.Abs(filepath.Join(r.LegacyRoot, prefix))
-		if err != nil {
-			return err
-		}
-		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			src, err := r.legacySource(ctx, ownerID, prefix, dir)
-			if err != nil {
-				return err
-			}
-			if err := r.Repo.RelocatePhotoPrefix(ctx, ownerID, prefix, src.Key); err != nil {
-				return err
-			}
-			r.log().Info("migrated legacy folder to source", "owner", ownerID, "dir", dir, "source", src.Key)
-		}
-	}
-	return r.Repo.MarkOwnerSourcesMigrated(ctx, ownerID)
-}
-
-func (r *Registry) legacySource(ctx context.Context, ownerID, email, dir string) (*db.Source, error) {
-	existing, err := r.Repo.ListOwnerSources(ctx, ownerID)
-	if err != nil {
-		return nil, err
-	}
-	for i := range existing {
-		if existing[i].Type == TypeLocal && existing[i].Location == dir {
-			return &existing[i], nil
-		}
-	}
-	now := time.Now().UTC()
-	src := &db.Source{
-		Name:       "Photos",
-		Type:       TypeLocal,
-		Location:   dir,
-		OwnerID:    ownerID,
-		OwnerEmail: email,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := r.Repo.CreateSource(ctx, src); err != nil {
-		return nil, err
-	}
-	return src, nil
-}
-
-// ---- admin ----
 
 func (r *Registry) List(ctx context.Context) ([]View, error) {
 	srcs, err := r.Repo.ListSources(ctx)
@@ -325,16 +270,7 @@ func (r *Registry) List(ctx context.Context) ([]View, error) {
 }
 
 func (r *Registry) Create(ctx context.Context, in Input) (View, error) {
-	owner := strings.ToLower(strings.TrimSpace(in.OwnerEmail))
-	if _, err := index.PrefixFromEmail(owner); err != nil || !strings.Contains(owner, "@") {
-		return View{}, invalidf("owner email is required")
-	}
-	now := time.Now().UTC()
-	src := db.Source{
-		OwnerID:    db.UserKeyFromEmail(owner),
-		OwnerEmail: owner,
-		CreatedAt:  now,
-	}
+	src := db.Source{CreatedAt: time.Now().UTC()}
 	if err := r.apply(ctx, &src, in, ""); err != nil {
 		return View{}, err
 	}
@@ -348,11 +284,6 @@ func (r *Registry) Update(ctx context.Context, id string, in Input) (View, error
 	src, err := r.Repo.GetSource(ctx, id)
 	if err != nil {
 		return View{}, err
-	}
-	// Photo identity and ACL hang off owner_id; moving a Source between
-	// Owners would strand Photos, so it is delete-and-re-add instead.
-	if o := strings.ToLower(strings.TrimSpace(in.OwnerEmail)); o != "" && o != src.OwnerEmail {
-		return View{}, invalidf("owner cannot change; remove the folder and add it again for %s", o)
 	}
 	if err := r.apply(ctx, src, in, src.Secret); err != nil {
 		return View{}, err
@@ -399,7 +330,15 @@ func (r *Registry) apply(ctx context.Context, src *db.Source, in Input, keepSecr
 			return err
 		}
 	}
+	// Validated here rather than at scan time: a pattern that will not
+	// compile should be reported while the reader is still looking at the
+	// form, not hours later in a log nobody is watching.
+	excludes, err := ValidateExcludes(in.Excludes)
+	if err != nil {
+		return err
+	}
 	src.Name, src.Type, src.Location, src.Username, src.Secret = name, typ, loc, username, secret
+	src.Excludes = excludes
 	src.UpdatedAt = time.Now().UTC()
 	return r.probe(ctx, *src)
 }

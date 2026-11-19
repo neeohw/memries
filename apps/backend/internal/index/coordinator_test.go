@@ -64,10 +64,10 @@ func newMemStore() *memStore {
 	return &memStore{runs: map[string]*db.IndexRun{}}
 }
 
-func (m *memStore) GetIndexRun(_ context.Context, ownerID string) (*db.IndexRun, error) {
+func (m *memStore) GetIndexRun(_ context.Context) (*db.IndexRun, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	r := m.runs[ownerID]
+	r := m.runs[db.IndexRunKey]
 	if r == nil {
 		return nil, nil
 	}
@@ -99,7 +99,7 @@ type memCounter struct {
 	n int64
 }
 
-func (m memCounter) CountOwnerPhotos(context.Context, string) (int64, error) {
+func (m memCounter) CountPhotos(context.Context) (int64, error) {
 	return m.n, nil
 }
 
@@ -111,12 +111,12 @@ func (m memMediaCounter) CountMediaPrefix(context.Context, string) (int, error) 
 	return m.n, nil
 }
 
-func waitStatus(t *testing.T, c *Coordinator, owner, email, want string) Status {
+func waitStatus(t *testing.T, c *Coordinator, want string) Status {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	var last Status
 	for time.Now().Before(deadline) {
-		s, err := c.Status(context.Background(), owner, email)
+		s, err := c.Status(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,67 +130,38 @@ func waitStatus(t *testing.T, c *Coordinator, owner, email, want string) Status 
 	return last
 }
 
-func TestCoordinatorDerivesPrefixFromEmail(t *testing.T) {
-	runner := &fakeRunner{started: make(chan struct{}), block: make(chan struct{})}
-	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil)
-	if _, err := c.Start(context.Background(), "owner1", "Admin@Example.com"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-runner.started:
-	case <-time.After(time.Second):
-		t.Fatal("runner did not start")
-	}
-	opts := runner.last()
-	if opts.OwnerID != "owner1" || len(opts.Prefixes) != 1 || opts.Prefixes[0] != "admin@example.com" {
-		t.Fatalf("opts = %+v", opts)
-	}
-	close(runner.block)
-}
-
-func TestCoordinatorRejectsInvalidEmail(t *testing.T) {
-	runner := &fakeRunner{}
-	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil)
-	if _, err := c.Start(context.Background(), "owner1", "../etc"); err != ErrInvalidEmail {
-		t.Fatalf("got %v", err)
-	}
-	if runner.nCalls() != 0 {
-		t.Fatal("runner should not run")
-	}
-}
-
 func TestCoordinatorDedupesDuplicateStart(t *testing.T) {
 	runner := &fakeRunner{started: make(chan struct{}), block: make(chan struct{})}
-	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil)
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	<-runner.started
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if runner.nCalls() != 1 {
 		t.Fatalf("calls = %d", runner.nCalls())
 	}
 	close(runner.block)
-	waitStatus(t, c, "owner1", "admin@example.com", StatusComplete)
+	waitStatus(t, c, StatusComplete)
 }
 
 func TestCoordinatorRetriesAfterFailure(t *testing.T) {
 	runner := &fakeRunner{err: errors.New("disk unreadable")}
-	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil)
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	s := waitStatus(t, c, "owner1", "admin@example.com", StatusFailed)
+	s := waitStatus(t, c, StatusFailed)
 	if s.Error != "disk unreadable" {
 		t.Fatalf("error = %q", s.Error)
 	}
 	runner.err = nil
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitStatus(t, c, "owner1", "admin@example.com", StatusComplete)
+	waitStatus(t, c, StatusComplete)
 	if runner.nCalls() != 2 {
 		t.Fatalf("calls = %d", runner.nCalls())
 	}
@@ -199,15 +170,15 @@ func TestCoordinatorRetriesAfterFailure(t *testing.T) {
 func TestCoordinatorReconcileInterruptedRun(t *testing.T) {
 	store := newMemStore()
 	_ = store.UpsertIndexRun(context.Background(), &db.IndexRun{
-		Key:    "owner1",
+		Key:    db.IndexRunKey,
 		Status: StatusRunning,
-		Prefix: "admin@example.com",
+		Prefix: "src-1",
 	})
-	c := NewCoordinator(context.Background(), &fakeRunner{}, store, memCounter{}, memMediaCounter{}, nil, nil)
+	c := NewCoordinator(context.Background(), &fakeRunner{}, store, memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
 	if err := c.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	s, err := c.Status(context.Background(), "owner1", "admin@example.com")
+	s, err := c.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,8 +188,8 @@ func TestCoordinatorReconcileInterruptedRun(t *testing.T) {
 }
 
 func TestCoordinatorStatusNotStartedWhenDiskHasMoreFiles(t *testing.T) {
-	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 4}, memMediaCounter{n: 3165}, nil, nil)
-	s, err := c.Status(context.Background(), "owner1", "admin@example.com")
+	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 4}, memMediaCounter{n: 3165}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	s, err := c.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,8 +202,7 @@ func TestCoordinatorStatusNotStartedWhenCompleteRunButDiskHasMoreFiles(t *testin
 	store := newMemStore()
 	now := time.Now().UTC()
 	_ = store.UpsertIndexRun(context.Background(), &db.IndexRun{
-		Key:        "owner1",
-		OwnerID:    "owner1",
+		Key:        db.IndexRunKey,
 		Prefix:     "admin@example.com",
 		Status:     StatusComplete,
 		Discovered: 4,
@@ -241,8 +211,8 @@ func TestCoordinatorStatusNotStartedWhenCompleteRunButDiskHasMoreFiles(t *testin
 		FinishedAt: &now,
 		UpdatedAt:  now,
 	})
-	c := NewCoordinator(context.Background(), &fakeRunner{}, store, memCounter{n: 4}, memMediaCounter{n: 3165}, nil, nil)
-	s, err := c.Status(context.Background(), "owner1", "admin@example.com")
+	c := NewCoordinator(context.Background(), &fakeRunner{}, store, memCounter{n: 4}, memMediaCounter{n: 3165}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	s, err := c.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,8 +228,8 @@ func TestCoordinatorStatusNotStartedWhenOriginalsMissing(t *testing.T) {
 		}},
 		Store: fakeStater{missing: map[string]bool{"admin@example.com/gone.jpg": true}},
 	}
-	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 1}, memMediaCounter{n: 1}, lib, nil)
-	s, err := c.Status(context.Background(), "owner1", "admin@example.com")
+	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 1}, memMediaCounter{n: 1}, lib, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	s, err := c.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,29 +239,29 @@ func TestCoordinatorStatusNotStartedWhenOriginalsMissing(t *testing.T) {
 }
 
 func TestCoordinatorStatusInfersCompleteFromExistingPhotos(t *testing.T) {
-	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 4}, memMediaCounter{n: 4}, nil, nil)
-	s, err := c.Status(context.Background(), "owner1", "admin@example.com")
+	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 4}, memMediaCounter{n: 4}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	s, err := c.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.Status != StatusComplete {
 		t.Fatalf("got %q", s.Status)
 	}
-	if s.Prefix != "admin@example.com" {
+	if s.Prefix != "src-1" {
 		t.Fatalf("prefix = %q", s.Prefix)
 	}
 }
 
 func TestCoordinatorPersistsEmptyComplete(t *testing.T) {
 	store := newMemStore()
-	c := NewCoordinator(context.Background(), &fakeRunner{}, store, memCounter{}, memMediaCounter{}, nil, nil)
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	c := NewCoordinator(context.Background(), &fakeRunner{}, store, memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitStatus(t, c, "owner1", "admin@example.com", StatusComplete)
+	waitStatus(t, c, StatusComplete)
 
-	fresh := NewCoordinator(context.Background(), &fakeRunner{}, store, memCounter{}, memMediaCounter{}, nil, nil)
-	s, err := fresh.Status(context.Background(), "owner1", "admin@example.com")
+	fresh := NewCoordinator(context.Background(), &fakeRunner{}, store, memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	s, err := fresh.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,14 +276,14 @@ func TestCoordinatorReportsProgress(t *testing.T) {
 		block:   make(chan struct{}),
 		result:  Result{Discovered: 12, Processed: 4, Indexed: 3, Skipped: 1},
 	}
-	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil)
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	<-runner.started
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		s, err := c.Status(context.Background(), "owner1", "admin@example.com")
+		s, err := c.Status(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -328,28 +298,30 @@ func TestCoordinatorReportsProgress(t *testing.T) {
 
 func TestCoordinatorCompleteWithErrors(t *testing.T) {
 	runner := &fakeRunner{result: Result{Discovered: 2, Processed: 2, Indexed: 1, Failed: 1}}
-	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil)
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	s := waitStatus(t, c, "owner1", "admin@example.com", StatusCompleteWithErrors)
+	s := waitStatus(t, c, StatusCompleteWithErrors)
 	if s.Failed != 1 {
 		t.Fatalf("failed = %d", s.Failed)
 	}
 }
 
+// fixedScopes stands in for the Sources registry. The Coordinator has no
+// default resolver any more: Sources are the only place the library lives
+// (ADR 0020).
 type fixedScopes []Scope
 
-func (f fixedScopes) Scopes(context.Context, string, string) ([]Scope, error) { return f, nil }
+func (f fixedScopes) Scopes(context.Context) ([]Scope, error) { return f, nil }
 
 func TestCoordinatorWalksEverySourceScope(t *testing.T) {
 	runner := &fakeRunner{}
-	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).
-		WithScopes(fixedScopes{{Prefix: "101"}, {Prefix: "202", Remote: true}})
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "101"}, {Prefix: "202", Remote: true}})
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	s := waitStatus(t, c, "owner1", "admin@example.com", StatusComplete)
+	s := waitStatus(t, c, StatusComplete)
 	if s.Sources != 2 {
 		t.Fatalf("sources = %d", s.Sources)
 	}
@@ -359,9 +331,8 @@ func TestCoordinatorWalksEverySourceScope(t *testing.T) {
 }
 
 func TestCoordinatorRemoteScopesSkipDiskCount(t *testing.T) {
-	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 4}, memMediaCounter{n: 3165}, nil, nil).
-		WithScopes(fixedScopes{{Prefix: "202", Remote: true}})
-	s, err := c.Status(context.Background(), "owner1", "admin@example.com")
+	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 4}, memMediaCounter{n: 3165}, nil, nil).WithScopes(fixedScopes{{Prefix: "202", Remote: true}})
+	s, err := c.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,16 +343,16 @@ func TestCoordinatorRemoteScopesSkipDiskCount(t *testing.T) {
 
 func TestCoordinatorRescanQueuesFollowUpRun(t *testing.T) {
 	runner := &fakeRunner{started: make(chan struct{}), block: make(chan struct{})}
-	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil)
-	if _, err := c.Start(context.Background(), "owner1", "admin@example.com"); err != nil {
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	<-runner.started
-	if _, err := c.Rescan(context.Background(), "owner1", "admin@example.com"); err != nil {
+	if _, err := c.Rescan(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	close(runner.block)
-	waitStatus(t, c, "owner1", "admin@example.com", StatusComplete)
+	waitStatus(t, c, StatusComplete)
 	if runner.nCalls() != 2 {
 		t.Fatalf("calls = %d, want follow-up run after Rescan", runner.nCalls())
 	}

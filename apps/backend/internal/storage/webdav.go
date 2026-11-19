@@ -17,6 +17,10 @@ import (
 // WebDAV is a read-only Storage rooted at a WebDAV collection URL.
 type WebDAV struct {
 	client *gowebdav.Client
+
+	// SkipDir hides a directory tree from Walk, checked before the PROPFIND
+	// that would read it (ADR 0020).
+	SkipDir SkipDirFunc
 }
 
 func NewWebDAV(rootURL, user, password string) *WebDAV {
@@ -82,6 +86,9 @@ func (w *WebDAV) walk(ctx context.Context, dir string, fn func(ObjectInfo) error
 	for _, e := range entries {
 		child := path.Join(dir, e.Name())
 		if e.IsDir() {
+			if w.SkipDir != nil && w.SkipDir(strings.TrimPrefix(child, "/")) {
+				continue
+			}
 			if err := w.walk(ctx, child, fn); err != nil {
 				return err
 			}

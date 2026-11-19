@@ -11,7 +11,7 @@ import (
 const recentOriginalSample = 8
 
 type PhotoLister interface {
-	Photos(ctx context.Context, ownerID string, from, to time.Time, limit int, cursor string) ([]db.Photo, string, error)
+	Photos(ctx context.Context, viewer string, from, to time.Time, limit int, cursor string) ([]db.Photo, string, error)
 }
 
 type PathStater interface {
@@ -24,12 +24,14 @@ type Library struct {
 	Store  PathStater
 }
 
-func (l Library) RecentOriginalsMissing(ctx context.Context, ownerID string) (bool, error) {
+func (l Library) RecentOriginalsMissing(ctx context.Context) (bool, error) {
 	// Same window as the API's default (ADR 0005): unbounded below, so a
 	// library of pre-epoch film scans is sampled rather than looking empty.
 	from := time.Time{}
 	to := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
-	photos, _, err := l.Photos.Photos(ctx, ownerID, from, to, recentOriginalSample, "")
+	// No viewer: this only looks at storage paths, and the favorite flag it
+	// reads back is unused.
+	photos, _, err := l.Photos.Photos(ctx, "", from, to, recentOriginalSample, "")
 	if err != nil {
 		return false, err
 	}

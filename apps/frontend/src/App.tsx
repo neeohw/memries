@@ -293,7 +293,6 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               sources={sourcesQuery.data ?? []}
               loading={sourcesQuery.isLoading}
               loadError={sourcesQuery.isError}
-              defaultOwner={meQuery.data?.email ?? ''}
               onCreate={(input) => createSourceMutation.mutateAsync(input)}
               onUpdate={(id, input) => updateSourceMutation.mutateAsync({ id, input })}
               onDelete={(id) => deleteSourceMutation.mutateAsync(id)}

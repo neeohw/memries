@@ -9,7 +9,7 @@ import (
 	"github.com/memries/memries/internal/db"
 )
 
-type relocation struct{ owner, old, new string }
+type relocation struct{ old, new string }
 
 type memRepo struct {
 	mu        sync.Mutex
@@ -29,18 +29,6 @@ func (m *memRepo) ListSources(context.Context) ([]db.Source, error) {
 	var out []db.Source
 	for _, s := range m.sources {
 		out = append(out, s)
-	}
-	return out, nil
-}
-
-func (m *memRepo) ListOwnerSources(_ context.Context, owner string) ([]db.Source, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var out []db.Source
-	for _, s := range m.sources {
-		if s.OwnerID == owner {
-			out = append(out, s)
-		}
 	}
 	return out, nil
 }
@@ -84,22 +72,9 @@ func (m *memRepo) DeleteSource(_ context.Context, key string) error {
 	return nil
 }
 
-func (m *memRepo) OwnerSourcesMigrated(_ context.Context, owner string) (bool, error) {
+func (m *memRepo) RelocatePhotoPrefix(_ context.Context, old, new string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.migrated[owner], nil
-}
-
-func (m *memRepo) MarkOwnerSourcesMigrated(_ context.Context, owner string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.migrated[owner] = true
-	return nil
-}
-
-func (m *memRepo) RelocatePhotoPrefix(_ context.Context, owner, old, new string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.relocated = append(m.relocated, relocation{owner, strings.Clone(old), new})
+	m.relocated = append(m.relocated, relocation{strings.Clone(old), new})
 	return nil
 }

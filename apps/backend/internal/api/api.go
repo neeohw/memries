@@ -57,8 +57,7 @@ func (a *API) Routes(r chi.Router) {
 }
 
 func (a *API) timeline(w http.ResponseWriter, r *http.Request) {
-	u, ok := auth.UserFromContext(r.Context())
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -74,7 +73,7 @@ func (a *API) timeline(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	buckets, err := a.DB.Timeline(r.Context(), u.Key, g, from, to)
+	buckets, err := a.DB.Timeline(r.Context(), g, from, to)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -88,6 +87,8 @@ func (a *API) timeline(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) photos(w http.ResponseWriter, r *http.Request) {
+	// The library is the same for everyone; the reader decides only which
+	// photos come back favorited (ADR 0020).
 	u, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -123,13 +124,9 @@ func (a *API) photo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	p, err := a.DB.GetPhoto(r.Context(), id)
+	p, err := a.DB.GetPhoto(r.Context(), u.Key, id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if p.OwnerID != u.Key {
-		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	writeJSON(w, p)
@@ -146,13 +143,9 @@ func (a *API) thumb(w http.ResponseWriter, r *http.Request) {
 	if size == "" {
 		size = "256"
 	}
-	p, err := a.DB.GetPhoto(r.Context(), id)
+	p, err := a.DB.GetPhoto(r.Context(), u.Key, id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if p.OwnerID != u.Key {
-		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	var rel string
@@ -193,13 +186,9 @@ func (a *API) original(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	p, err := a.DB.GetPhoto(r.Context(), id)
+	p, err := a.DB.GetPhoto(r.Context(), u.Key, id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if p.OwnerID != u.Key {
-		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	store := a.Store

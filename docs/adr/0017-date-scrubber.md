@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-11-18
 - Amends: [0002](0002-spa-owned-timeline-groups.md) (`/api/timeline` now has a consumer)
-- Related: [0004](0004-owner-scoped-index-job-and-cursor-photos.md), [0005](0005-capture-time-stable-identity.md), [0007](0007-viewport-forced-compact-thumbs.md), [0014](0014-pluggable-sql-store.md)
+- Related: [0004](0004-cursor-paginated-photos.md), [0005](0005-capture-time-stable-identity.md), [0007](0007-viewport-forced-compact-thumbs.md), [0014](0014-pluggable-sql-store.md)
 
 ## Context
 
@@ -15,7 +15,7 @@ Two properties of the existing timeline shape the design, and neither was
 obvious before looking:
 
 **The track cannot be derived from what is loaded.** `/api/photos` is keyset
-paginated, newest first ([0004](0004-owner-scoped-index-job-and-cursor-photos.md)),
+paginated, newest first ([0004](0004-cursor-paginated-photos.md)),
 and `groupPhotos` buckets whatever has arrived
 ([0002](0002-spa-owned-timeline-groups.md)). A scrubber built from loaded
 photos would start as a one-month track and grow as the reader scrolled, so its

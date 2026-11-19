@@ -25,7 +25,7 @@ type SourceAdmin interface {
 
 // Rescanner queues an Index run for an Owner whose Sources changed.
 type Rescanner interface {
-	Rescan(ctx context.Context, ownerID, email string) (index.Status, error)
+	Rescan(ctx context.Context) (index.Status, error)
 }
 
 func (a *API) adminRoutes(r chi.Router) {
@@ -69,10 +69,6 @@ func (a *API) createSource(w http.ResponseWriter, r *http.Request) {
 	in, ok := readSourceInput(w, r)
 	if !ok {
 		return
-	}
-	if in.OwnerEmail == "" {
-		u, _ := auth.UserFromContext(r.Context())
-		in.OwnerEmail = u.Email
 	}
 	v, err := a.Sources.Create(r.Context(), in)
 	if err != nil {
@@ -131,8 +127,8 @@ func (a *API) rescan(ctx context.Context, v sources.View) {
 	if a.Rescan == nil {
 		return
 	}
-	if _, err := a.Rescan.Rescan(context.WithoutCancel(ctx), v.OwnerID, v.OwnerEmail); err != nil {
-		slog.Warn("rescan after source change", "source", v.ID, "owner", v.OwnerEmail, "err", err)
+	if _, err := a.Rescan.Rescan(context.WithoutCancel(ctx)); err != nil {
+		slog.Warn("rescan after source change", "source", v.ID, "err", err)
 	}
 }
 

@@ -6,11 +6,11 @@ import { SourcesView } from './SourcesView';
 const nas: Source = {
   id: '7',
   name: 'NAS',
-  type: 'smb',
-  location: 'smb://nas/photos',
+  type: 'webdav',
+  location: 'https://dav.example.com/photos',
   username: 'me',
   hasPassword: true,
-  ownerEmail: 'admin@example.com',
+  excludes: [],
   updatedAt: '2026-09-22T10:00:00Z',
 };
 
@@ -19,7 +19,6 @@ function renderView(overrides: Partial<Parameters<typeof SourcesView>[0]> = {}) 
     sources: [nas],
     loading: false,
     loadError: false,
-    defaultOwner: 'admin@example.com',
     onCreate: vi.fn(async () => {}),
     onUpdate: vi.fn(async () => {}),
     onDelete: vi.fn(async () => {}),
@@ -34,7 +33,9 @@ describe('SourcesView', () => {
   it('lists connected folders under a page heading', () => {
     renderView();
     expect(screen.getByRole('heading', { level: 1, name: 'Folders' })).toBeTruthy();
-    expect(screen.getByRole('article', { name: 'NAS' })).toHaveTextContent('smb://nas/photos');
+    expect(screen.getByRole('article', { name: 'NAS' })).toHaveTextContent(
+      'https://dav.example.com/photos',
+    );
     expect(screen.getByRole('button', { name: 'Scan now' })).toBeTruthy();
   });
 
@@ -62,7 +63,6 @@ describe('SourcesView', () => {
         location: 'https://dav.example.com/Photos',
         username: 'me',
         password: 'pw',
-        ownerEmail: 'admin@example.com',
       }),
     );
   });
@@ -71,17 +71,17 @@ describe('SourcesView', () => {
     renderView({
       sources: [],
       onCreate: vi.fn(async () => {
-        throw new Error('invalid source: cannot read smb://nas/x: access denied');
+        throw new Error('invalid source: cannot read https://dav/x: access denied');
       }),
     });
     fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
-    fireEvent.click(screen.getByRole('radio', { name: 'Network share' }));
-    fireEvent.change(screen.getByRole('textbox', { name: /Share/ }), {
-      target: { value: 'smb://nas/x' },
+    fireEvent.click(screen.getByRole('radio', { name: 'WebDAV' }));
+    fireEvent.change(screen.getByRole('textbox', { name: /URL/ }), {
+      target: { value: 'https://dav/x' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Connect folder' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'cannot read smb://nas/x: access denied',
+      'cannot read https://dav/x: access denied',
     );
   });
 
@@ -101,7 +101,7 @@ describe('SourcesView', () => {
     await waitFor(() => expect(props.onUpdate).toHaveBeenCalledTimes(1));
     expect(props.onUpdate).toHaveBeenCalledWith(
       '7',
-      expect.objectContaining({ password: undefined, ownerEmail: undefined }),
+      expect.objectContaining({ password: undefined }),
     );
   });
 });

@@ -17,11 +17,11 @@ Phase 1 (MVP) running:
 - [x] SQL schema with embedded migrations (photos, users, albums, sources, index runs)
 - [x] Photo indexer CLI (EXIF, sha256 dedup, 3-tier thumbs)
 - [x] Local password sign-in (argon2id) with a cookie session
-- [x] Timeline + photos API with per-owner ACL
+- [x] Timeline + photos API
 - [x] React timeline UI: virtual scroll, granularity toggle, lightbox
-- [x] Browser-started owner-scoped indexing job + splash progress
+- [x] Browser-started indexing job + splash progress
 - [x] Cursor-paginated photos API consumed by infinite scroll
-- [x] Persisted favorites and albums (owner-scoped)
+- [x] Persisted favorites and albums, per reader
 - [x] Capture time from EXIF DateTimeOriginal, then file birth time, then mtime — kept on folder sync
 - [x] Playwright BDD suite against an isolated Compose stack (`make e2e`)
 
@@ -39,7 +39,7 @@ BOOTSTRAP_PASSWORD=$(openssl rand -base64 12)
 ADMIN_EMAILS=admin@example.com
 EOF
 
-# Drop photos into ./data/photos/<owner-email>/...
+# Drop photos into ./data/photos/... and add it as a folder
 mkdir -p data/photos/admin@example.com
 
 # Catalog directory. Create it yourself: Docker would create a missing
@@ -50,14 +50,13 @@ docker compose build
 docker compose up -d
 ```
 
-Open http://localhost and sign in as `admin@example.com` with the `BOOTSTRAP_PASSWORD` you just generated. That variable gives every `ADMIN_EMAILS` account a password on a fresh install, and only ever fills an *empty* one, so it is safe to leave in `.env` ([ADR 0016](docs/adr/0016-local-password-auth.md)). After login the splash indexes the signed-in Owner's **folders** and then loads photos from `/api/photos`. On first login an existing `data/photos/<signed-in-email>` directory is turned into a folder automatically.
+Open http://localhost and sign in as `admin@example.com` with the `BOOTSTRAP_PASSWORD` you just generated. That variable gives every `ADMIN_EMAILS` account a password on a fresh install, and only ever fills an *empty* one, so it is safe to leave in `.env` ([ADR 0016](docs/adr/0016-local-password-auth.md)). After login the splash indexes the configured **folders** and then loads photos from `/api/photos`.
 
-Admins (`MEMRIES_ADMIN_EMAILS`) get a **Folders** tab to add more folders for any Owner:
+Admins (`MEMRIES_ADMIN_EMAILS`) get a **Folders** tab to add folders. They feed the one shared library:
 
 | Kind | Location example | Notes |
 |------|------------------|-------|
 | On this server | `/data/photos/family` | Must sit under `MEMRIES_LOCAL_ROOT` or a `MEMRIES_SOURCE_ROOTS` entry; mount host dirs into the backend container. NFS: mount on the host, add as a server folder. |
-| Network share (SMB2/3) | `smb://nas/photos/Family` or `\\nas\photos\Family` | Native client, no container privileges. Username may be `DOMAIN\user`. |
 | WebDAV | `https://cloud.example.com/remote.php/dav/files/me/Photos` | Nextcloud, ownCloud, Synology, … |
 
 Originals stay where they are and are streamed through the backend; thumbs are always generated into the local `MEMRIES_CACHE_ROOT`. The connection is checked before a folder is saved. Folder passwords are AES-GCM sealed in the catalog with a key derived from `MEMRIES_SESSION_KEY` (rotating it means re-entering folder passwords).
@@ -65,8 +64,8 @@ Originals stay where they are and are streamed through the backend; thumbs are a
 The CLI remains an idempotent fallback (hash skip unless `-force`):
 
 ```bash
-docker compose exec backend indexer -owner admin@example.com            # all of the owner's folders
-docker compose exec backend indexer -owner admin@example.com -source 123 # one folder id
+docker compose exec backend indexer                       # every folder
+docker compose exec backend indexer -source 123           # one folder id
 ```
 
 Libraries already populated by the CLI are treated as a completed initial import and are not re-scanned automatically.
@@ -118,7 +117,7 @@ Playwright BDD against a real Compose stack — not the one on `:80`. All featur
 - ❌ **Capture time** — Newest first. EXIF DateTimeOriginal wins; no EXIF uses file time. Sync keeps favorites and album membership.
 - ❌ **Empty library states** — Favorites, Search, and a new Album explain themselves when they have nothing to show.
 - ❌ **Index run splash** — Folder Sync shows the Index run, then Memories. A missing Original is pruned; a relocated Photo keeps its identity.
-- ❌ **Sign in** — The password form puts the owner on Memories.
+- ❌ **Sign in** — The password form puts the reader on Memories.
 - ❌ **Long-press photo actions** — Long-press offers album rows (name left, count right). Tapping a row adds the Photo once.
 - ❌ **Motion** — Open, close, granularity, and scroll move by default. Reduced motion makes them instant.
 - ❌ **Library navigation** — Side nav on wide viewports, bottom bar on narrow. Re-opening Albums leaves an Album page. Today jumps to the newest Timeline Group.
@@ -188,8 +187,8 @@ file ([ADR 0014](docs/adr/0014-pluggable-sql-store.md)) and sign-in is local
 
 - `/`             → frontend (built React + Tailwind)
 - `/api/*`        → backend (auth required)
-- `/api/index/status` → current/persisted index job for the signed-in owner
-- `/api/index`    → `POST` starts (or dedupes) that owner's folder scan
+- `/api/index/status` → the current or last index run
+- `/api/index`    → `POST` starts (or dedupes) a folder scan
 - `/api/photos`   → cursor page (`limit`, opaque `cursor` → `next_cursor`; optional `year`, `favorite`, `q`)
 - `/api/photos/{id}/favorite` → `PUT` `{ "favorite": true }`
 - `/api/albums`   → list/create albums
@@ -210,24 +209,25 @@ One SQLite file by default, or PostgreSQL via `DB_DRIVER=postgres`
 `apps/backend/internal/db/migrations/`, embedded in the binary and applied at
 start-up.
 
-- `photos` — `key` is normally the content sha256, plus `owner_id`, `taken_at`, `taken_at_local`, `storage_*`, `dims_*`, EXIF columns, `thumb_*`
+- `photos` — `key` is normally the content sha256, plus `taken_at`, `taken_at_local`, `storage_*`, `dims_*`, EXIF columns, `thumb_*`. No owner: the library is server-wide
 - `users` — `key` is sha1(email), plus `password_hash` (argon2id, never serialised)
+- `favorites` — `(user_key, photo_key)`; a heart belongs to the reader who pressed it
 - `albums` and `album_photos` — the membership join table
 - `sources` — admin-managed folders, with sealed credentials
-- `index_runs` — one row per owner; terminal status survives restarts
+- `index_runs` — one row, keyed `library`; terminal status survives restarts
 
 Timestamps are unix **microseconds** in `BIGINT`: SQLite has no timestamp type,
 and integers sort correctly and keep the composite cursor exact.
 
-Indexes: `(owner_id, taken_at DESC, key DESC)` for the cursor, unique
-`(owner_id, hash)` for owner-scoped dedup, `(owner_id, storage_path)`,
-`(owner_id, taken_at_local)`, unique `email`.
+Indexes: `(taken_at DESC, key DESC)` for the cursor, unique `hash` (one copy
+of a file in the library), `storage_path`, `taken_at_local`,
+`favorites(user_key)`, `albums(owner_id)`, unique `email`.
 
 `GET /api/photos` sorts `(taken_at DESC, _key DESC)` and uses an opaque composite cursor so photos that share a capture time are not skipped. The handler fetches `limit + 1` (default 200, max 500) and only emits `next_cursor` when another page exists.
 
 ## Photo layout convention
 
-An Index run walks every folder (Source) assigned to the signed-in Owner — the client never submits a path; only admins add folders. Photo storage paths are `<source id>/<path inside the folder>`. Unchanged files (same size + mtime) are skipped without re-reading, so re-scans of network folders are cheap. A folder that cannot be reached is reported as an error and its photos are kept, not pruned.
+An Index run walks every folder (Source) — the client never submits a path; only admins add folders, and they are server-wide. Photo storage paths are `<source id>/<path inside the folder>`. Unchanged files (same size + mtime) are skipped without re-reading, so re-scans of network folders are cheap. A folder that cannot be reached is reported as an error and its photos are kept, not pruned.
 
 Accepted media extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
 
@@ -275,7 +275,7 @@ pnpm --filter @memries/frontend dev
 - **`unknown flag --build`** — Two-step instead: `docker compose build && docker compose up -d`.
 - **The app shows the sign-in form instead of photos** — `/api/*` is session-only, and a 401 from `/api/me` is what renders the form. If it says it could not reach the server instead, the backend is down rather than the session being missing.
 - **Empty album after login** — the Owner has no folders yet. An admin adds one in the **Folders** tab (or drop files into `data/photos/<signed-in-email>` before first login).
-- **Broken featured photos / `/api/original/...` errors** — the timeline uses thumbs; the viewer falls back to a thumb if the original file is gone. Replacing or renaming the folder after a first import triggers another scan on refresh. Admins can also press **Scan now** on a folder. CLI fallback: `docker compose exec backend indexer -owner <signed-in-email>`.
+- **Broken featured photos / `/api/original/...` errors** — the timeline uses thumbs; the viewer falls back to a thumb if the original file is gone. Replacing or renaming the folder after a first import triggers another scan on refresh. Admins can also press **Scan now** on a folder. CLI fallback: `docker compose exec backend indexer`.
 
 ## Next phases
 
