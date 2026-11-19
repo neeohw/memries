@@ -66,6 +66,27 @@ func (a *API) createAlbum(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, view)
 }
 
+// deleteAlbums removes a selection of the reader's Albums. The Photos in them
+// are untouched — an Album groups the library, it does not own it.
+func (a *API) deleteAlbums(w http.ResponseWriter, r *http.Request) {
+	u, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	ids := r.URL.Query()["id"]
+	if len(ids) == 0 {
+		http.Error(w, "at least one album id is required", http.StatusBadRequest)
+		return
+	}
+	deleted, err := a.DB.DeleteAlbums(r.Context(), u.Key, ids)
+	if err != nil {
+		http.Error(w, err.Error(), libraryStatus(err))
+		return
+	}
+	writeJSON(w, map[string]any{"deleted": deleted})
+}
+
 func (a *API) album(w http.ResponseWriter, r *http.Request) {
 	u, ok := auth.UserFromContext(r.Context())
 	if !ok {

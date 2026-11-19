@@ -282,6 +282,17 @@ export async function createAlbum(name: string, photoIds?: string[]): Promise<Al
   return mapAlbum((await res.json()) as ApiAlbumView);
 }
 
+/**
+ * Deletes albums, leaving their photos in the library.
+ *
+ * Ids travel as repeated query parameters: a DELETE body is legal but proxies
+ * are allowed to drop it, and albums are few enough that a URL holds them.
+ */
+export async function deleteAlbums(ids: string[]): Promise<void> {
+  const query = ids.map((id) => `id=${encodeURIComponent(id)}`).join('&');
+  await apiFetch(`/api/albums?${query}`, { method: 'DELETE' });
+}
+
 export async function addPhotoToAlbum(albumId: string, photoId: string): Promise<Album> {
   const res = await apiFetch(`/api/albums/${encodeURIComponent(albumId)}/photos`, {
     method: 'POST',

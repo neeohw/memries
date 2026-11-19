@@ -85,6 +85,22 @@ selection (below) and losing it to a mistyped name would be rude.
 The album button is no longer disabled when there are no albums yet: making
 the first one from a selection is exactly what this adds.
 
+### Albums are selected and deleted the same way
+
+The album overview reuses `useSelectionState`, which is generic over ids, so
+shift-click ranges and "a click extends the selection once one is running"
+behave identically to the photo grid without a second implementation. The
+checkbox is a sibling of the open button for the same reason as on a tile.
+
+`DELETE /api/albums` takes repeated `id` query parameters rather than a body.
+A DELETE body is legal but proxies are allowed to drop it, and albums are few
+enough that a URL holds them. The batch is all or nothing: ownership of every
+id is checked before anything is deleted, so one foreign id deletes nothing.
+
+Deleting asks first. It is the only destructive action that can take several
+things at once, and while the photos survive — an Album groups the library, it
+does not own it — rebuilding an album by hand is slow.
+
 ### Interaction
 
 - A checkbox appears on each tile on hover or focus, and stays visible once

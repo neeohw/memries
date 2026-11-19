@@ -305,3 +305,79 @@ func TestCreateAlbumStillNeedsAName(t *testing.T) {
 		t.Fatalf("albums = %+v, want none", albums)
 	}
 }
+
+func TestDeleteAlbumsRemovesTheAlbumsAndTheirMembership(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustUpsert(t, s, photo("a", "2026-03-01T10:00:00"))
+	keep, _ := s.CreateAlbumWithPhotos(ctx, "owner", "Keep", []string{"a"})
+	gone, _ := s.CreateAlbumWithPhotos(ctx, "owner", "Gone", []string{"a"})
+
+	n, err := s.DeleteAlbums(ctx, "owner", []string{gone.ID})
+	if err != nil || n != 1 {
+		t.Fatalf("delete: n=%d err=%v", n, err)
+	}
+
+	albums, err := s.ListAlbums(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(albums) != 1 || albums[0].ID != keep.ID {
+		t.Fatalf("albums = %+v, want only Keep", albums)
+	}
+	// The photo is the library's, not the album's.
+	if _, err := s.GetPhoto(ctx, "owner", "a"); err != nil {
+		t.Fatalf("the photo was deleted with its album: %v", err)
+	}
+	// The membership rows went with it, so the key cannot be reused into a
+	// resurrected album.
+	if view, err := s.GetAlbumView(ctx, "owner", keep.ID); err != nil || view.PhotoCount != 1 {
+		t.Fatalf("the surviving album lost members: %+v err=%v", view, err)
+	}
+}
+
+func TestDeleteAlbumsRefusesAnotherOwnersAlbum(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mine, _ := s.CreateAlbum(ctx, "owner-a", "Mine")
+	theirs, _ := s.CreateAlbum(ctx, "owner-b", "Theirs")
+
+	_, err := s.DeleteAlbums(ctx, "owner-a", []string{mine.ID, theirs.ID})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
+	// All or nothing: the one they did own must survive too.
+	if albums, _ := s.ListAlbums(ctx, "owner-a"); len(albums) != 1 {
+		t.Fatalf("owner-a albums = %+v, want Mine kept", albums)
+	}
+	if albums, _ := s.ListAlbums(ctx, "owner-b"); len(albums) != 1 {
+		t.Fatal("another owner's album was deleted")
+	}
+}
+
+func TestDeleteAlbumsRefusesAnUnknownID(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mine, _ := s.CreateAlbum(ctx, "owner", "Mine")
+
+	if _, err := s.DeleteAlbums(ctx, "owner", []string{mine.ID, "ghost"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
+	if albums, _ := s.ListAlbums(ctx, "owner"); len(albums) != 1 {
+		t.Fatal("the batch was partly applied")
+	}
+}
+
+func TestDeleteAlbumsDeduplicatesAndTakesNone(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mine, _ := s.CreateAlbum(ctx, "owner", "Mine")
+
+	n, err := s.DeleteAlbums(ctx, "owner", []string{mine.ID, mine.ID})
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v, want 1/nil", n, err)
+	}
+	if n, err := s.DeleteAlbums(ctx, "owner", nil); err != nil || n != 0 {
+		t.Fatalf("empty: n=%d err=%v", n, err)
+	}
+}

@@ -1,28 +1,48 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSelectionState } from '../hooks/usePhotoSelection';
 import { compactThumbSize, thumbUrl } from '../lib/photoSrc';
+import { selectionLabel } from '../lib/selection';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import type { Album } from '../models/photo';
-import { FoldersIcon, PlusIcon } from './icons';
+import { CheckIcon, CloseIcon, FoldersIcon, PlusIcon, TrashIcon } from './icons';
 import { PageHeader } from './PageHeader';
 
 export function AlbumsView({
   albums,
   onCreate,
   onOpen,
+  onDelete,
   creating,
 }: {
   albums: Album[];
   onCreate: (name: string) => void;
   onOpen: (album: Album) => void;
+  onDelete?: (ids: string[]) => void;
   creating: boolean;
 }) {
   const [drafting, setDrafting] = useState(false);
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // The same selection machinery the photo grid uses, so shift-click ranges
+  // behave identically here (ADR 0018).
+  const albumIds = useMemo(() => albums.map((album) => album.id), [albums]);
+  const selection = useSelectionState(albumIds);
+
   useEffect(() => {
     if (drafting) inputRef.current?.focus();
   }, [drafting]);
+
+  // Escape clears, bound on the window because the click that built the
+  // selection may have left focus on any card.
+  useEffect(() => {
+    if (!selection.active) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') selection.clear();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection]);
 
   const submit = () => {
     const trimmed = name.trim();
@@ -34,20 +54,31 @@ export function AlbumsView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader
-        title="Albums"
-        actions={
-          <button
-            type="button"
-            onClick={() => setDrafting(true)}
-            disabled={drafting}
-            className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink transition duration-200 hover:bg-surface/70 hover:text-plum disabled:opacity-40"
-          >
-            <PlusIcon className="h-4 w-4" />
-            New album
-          </button>
-        }
-      />
+      {selection.active ? (
+        <AlbumSelectionBar
+          count={selection.count}
+          onClear={selection.clear}
+          onDelete={() => {
+            onDelete?.(selection.ids);
+            selection.clear();
+          }}
+        />
+      ) : (
+        <PageHeader
+          title="Albums"
+          actions={
+            <button
+              type="button"
+              onClick={() => setDrafting(true)}
+              disabled={drafting}
+              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink transition duration-200 hover:bg-surface/70 hover:text-plum disabled:opacity-40"
+            >
+              <PlusIcon className="h-4 w-4" />
+              New album
+            </button>
+          }
+        />
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-8 min-[640px]:px-5">
         {creating && (
@@ -109,7 +140,14 @@ export function AlbumsView({
 
           {albums.map((album) => (
             <li key={album.id}>
-              <AlbumCard album={album} onOpen={onOpen} />
+              <AlbumCard
+                album={album}
+                onOpen={onOpen}
+                selectable={!!onDelete}
+                selected={selection.selected.has(album.id)}
+                selectionActive={selection.active}
+                onToggle={(opts) => selection.toggle(album.id, opts)}
+              />
             </li>
           ))}
         </ul>
@@ -118,21 +156,157 @@ export function AlbumsView({
   );
 }
 
-function AlbumCard({ album, onOpen }: { album: Album; onOpen: (album: Album) => void }) {
+/**
+ * The bar that takes the header's place while albums are selected.
+ *
+ * Deleting is two steps. It is the only destructive action in the app that
+ * can take several things at once, and an album is slow to rebuild even
+ * though its photos are untouched.
+ */
+function AlbumSelectionBar({
+  count,
+  onClear,
+  onDelete,
+}: {
+  count: number;
+  onClear: () => void;
+  onDelete: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const noun = count === 1 ? 'album' : 'albums';
+
+  return (
+    <div
+      data-album-selection-bar
+      role="toolbar"
+      aria-label="Selected albums"
+      className="relative z-20 flex items-center gap-2 px-3 py-2 min-[640px]:px-5"
+    >
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="Clear selection"
+        title="Clear selection"
+        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
+      >
+        <CloseIcon className="h-5 w-5" />
+      </button>
+
+      <p aria-live="polite" className="min-w-0 flex-1 truncate text-sm font-medium text-plum">
+        {selectionLabel(count)}
+      </p>
+
+      {confirming ? (
+        <>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="min-h-10 shrink-0 rounded-full bg-plum px-4 text-sm font-medium text-cream transition hover:bg-plum/90"
+          >
+            {`Delete ${count} ${noun}`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="min-h-10 shrink-0 rounded-full px-3 text-sm font-medium text-ink transition hover:bg-surface/70"
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          aria-label={`Delete ${count} ${noun}`}
+          title={`Delete ${count} ${noun}`}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
+        >
+          <TrashIcon className="h-5 w-5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AlbumCard({
+  album,
+  onOpen,
+  selectable,
+  selected,
+  selectionActive,
+  onToggle,
+}: {
+  album: Album;
+  onOpen: (album: Album) => void;
+  selectable: boolean;
+  selected: boolean;
+  selectionActive: boolean;
+  onToggle: (opts?: { shiftKey?: boolean }) => void;
+}) {
   const coverId = album.coverPhotoId ?? album.photoIds[0];
   const count = album.photoCount;
   const countLabel = `${count} ${count === 1 ? 'photo' : 'photos'}`;
   const coverSize = compactThumbSize(useViewportWidth());
 
   return (
-    <article data-album-card className="album-card overflow-hidden rounded-xl">
+    <article
+      data-album-card
+      data-selected={selected ? 'true' : undefined}
+      className="album-card group relative overflow-hidden rounded-xl"
+    >
+      {selectable && (
+        // The same control as a photo tile's, down to the classes: one way to
+        // select a thing in this app (ADR 0018). A sibling of the open
+        // button, not a child, because that is a button and buttons cannot
+        // nest.
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selected}
+          aria-label={selected ? `Deselect album ${album.name}` : `Select album ${album.name}`}
+          data-select-album
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggle({ shiftKey: event.shiftKey });
+          }}
+          className={`absolute left-1.5 top-1.5 z-10 grid h-6 w-6 place-items-center rounded-full border transition ${
+            selected
+              ? 'border-plum bg-plum text-cream'
+              : 'border-cream/80 bg-black/25 text-transparent hover:text-cream/90'
+          } ${
+            selected || selectionActive
+              ? 'opacity-100'
+              : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
+          }`}
+        >
+          <CheckIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
       <button
         type="button"
-        onClick={() => onOpen(album)}
-        className="group block w-full text-left transition duration-200 active:scale-[0.99]"
-        aria-label={`Open album ${album.name}, ${countLabel}`}
+        onClick={(event) => {
+          // Once a selection is running, a plain click extends it rather than
+          // opening the album — the same rule the photo grid follows.
+          if (selectionActive) {
+            onToggle({ shiftKey: event.shiftKey });
+            return;
+          }
+          onOpen(album);
+        }}
+        className="block w-full text-left transition duration-200 active:scale-[0.99]"
+        aria-label={
+          selectionActive
+            ? `${selected ? 'Deselect' : 'Select'} album ${album.name}, ${countLabel}`
+            : `Open album ${album.name}, ${countLabel}`
+        }
       >
         <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-blush/50">
+          {selected && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-plum/30 ring-2 ring-inset ring-plum"
+            />
+          )}
           {coverId ? (
             <img
               src={thumbUrl(coverId, coverSize)}

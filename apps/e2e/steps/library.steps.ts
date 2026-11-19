@@ -205,6 +205,19 @@ Then('I should see {int} search results', async ({ page }, count: number) => {
   await expect(page.getByText(label, { exact: true })).toBeVisible();
 });
 
+When('I delete the album {string} from the overview', async ({ page }, name: string) => {
+  await openTab(page, 'Albums');
+  await page.getByRole('checkbox', { name: `Select album ${name}` }).click();
+  // Two steps: the first press asks, the second does it.
+  const confirm = page.getByRole('button', { name: /^Delete 1 album$/ });
+  await confirm.click();
+  await confirm.click();
+});
+
+Then('I should not see the album {string}', async ({ page }, name: string) => {
+  await expect(albumOpenButton(page, name)).toHaveCount(0);
+});
+
 When('I create an album named {string}', async ({ page }, name: string) => {
   await openTab(page, 'Albums');
   await page.getByRole('button', { name: 'New album' }).click();

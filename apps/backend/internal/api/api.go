@@ -43,6 +43,10 @@ func (a *API) Routes(r chi.Router) {
 	r.Put("/photos/{id}/favorite", a.setFavorite)
 	r.Get("/albums", a.albums)
 	r.Post("/albums", a.createAlbum)
+	// Ids travel as repeated query parameters rather than a body: a DELETE
+	// body is legal but proxies are allowed to drop it, and albums are few
+	// enough that a URL holds them comfortably.
+	r.Delete("/albums", a.deleteAlbums)
 	r.Get("/albums/{id}", a.album)
 	r.Post("/albums/{id}/photos", a.addAlbumPhoto)
 	r.Delete("/albums/{id}/photos/{photoId}", a.removeAlbumPhoto)

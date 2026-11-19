@@ -16,6 +16,7 @@ import {
   useAddPhotosToAlbum,
   useAlbums,
   useCreateAlbum,
+  useDeleteAlbums,
   useRemovePhotoFromAlbum,
 } from './hooks/useAlbums';
 import { useIndex } from './hooks/useIndex';
@@ -163,6 +164,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   const albumsQuery = useAlbums();
   const favoriteMutation = useToggleFavorite();
   const createAlbumMutation = useCreateAlbum();
+  const deleteAlbumsMutation = useDeleteAlbums();
   const addPhotoMutation = useAddPhotoToAlbum();
   const removePhotoMutation = useRemovePhotoFromAlbum();
   const batchFavoriteMutation = useBatchFavorite();
@@ -314,6 +316,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
             <AlbumsView
               albums={albums}
               onCreate={(name) => createAlbumMutation.mutate({ name })}
+              onDelete={(ids) => deleteAlbumsMutation.mutate(ids)}
               onOpen={(album) => setSelectedAlbumId(album.id)}
               creating={createAlbumMutation.isPending}
             />

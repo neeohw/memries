@@ -78,6 +78,21 @@ func (f *fakeLibrary) CreateAlbum(_ context.Context, ownerID, name string) (*db.
 	return view, nil
 }
 
+// Mirrors the store's all-or-nothing rule: one id the reader does not own and
+// nothing is deleted at all.
+func (f *fakeLibrary) DeleteAlbums(_ context.Context, ownerID string, albumIDs []string) (int, error) {
+	for _, id := range albumIDs {
+		if _, ok := f.albums[id]; !ok || f.albumOwner[id] != ownerID {
+			return 0, db.ErrForbidden
+		}
+	}
+	for _, id := range albumIDs {
+		delete(f.albums, id)
+		delete(f.albumOwner, id)
+	}
+	return len(albumIDs), nil
+}
+
 // Mirrors the store's all-or-nothing rule: one unusable id and no album is
 // created at all, rather than an empty one the reader did not ask for.
 func (f *fakeLibrary) CreateAlbumWithPhotos(ctx context.Context, ownerID, name string, photoIDs []string) (*db.AlbumView, error) {
@@ -581,5 +596,33 @@ func TestBatchEndpointsRequireASession(t *testing.T) {
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s: status %d, want 401", tc.method, tc.path, w.Code)
 		}
+	}
+}
+
+func TestDeleteAlbumsNeedsIDsAndOwnership(t *testing.T) {
+	lib := batchLibrary()
+	r := batchRouter(lib)
+
+	// No ids at all is a bad request, not a silent no-op.
+	w := doJSON(r, http.MethodDelete, "/albums", "", "owner")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("no ids: status %d, want 400", w.Code)
+	}
+
+	// An album the reader does not own takes nothing with it.
+	w = doJSON(r, http.MethodDelete, "/albums?id=album-1&id=ghost", "", "owner")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("foreign id: status %d, want 403: %s", w.Code, w.Body.String())
+	}
+	if _, ok := lib.albums["album-1"]; !ok {
+		t.Error("a refused batch deleted the album it did own")
+	}
+
+	w = doJSON(r, http.MethodDelete, "/albums?id=album-1", "", "owner")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	if _, ok := lib.albums["album-1"]; ok {
+		t.Error("the album was not deleted")
 	}
 }

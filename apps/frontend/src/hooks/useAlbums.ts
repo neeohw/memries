@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addPhotoToAlbum,
+  deleteAlbums,
   addPhotosToAlbum,
   createAlbum,
   fetchAlbum,
@@ -58,6 +59,35 @@ export function useCreateAlbum() {
       return { previous };
     },
     onError: (_error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(albumQueryKey, context.previous);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: albumQueryKey });
+    },
+  });
+}
+
+/**
+ * Deletes a selection of albums.
+ *
+ * The server refuses a batch holding an album the reader does not own, so
+ * there is no half-deleted state: the optimistic removal is either right or
+ * rolled back whole.
+ */
+export function useDeleteAlbums() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => deleteAlbums(ids),
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: albumQueryKey });
+      const previous = queryClient.getQueryData<Album[]>(albumQueryKey);
+      const gone = new Set(ids);
+      queryClient.setQueryData<Album[]>(albumQueryKey, (current) =>
+        (current ?? []).filter((album) => !gone.has(album.id)),
+      );
+      return { previous };
+    },
+    onError: (_error, _ids, context) => {
       if (context?.previous) queryClient.setQueryData(albumQueryKey, context.previous);
     },
     onSettled: () => {

@@ -132,3 +132,57 @@ func (s *Store) AddPhotosToAlbum(ctx context.Context, ownerID, albumID string, p
 	}
 	return s.albumViewForOwner(ctx, ownerID, albumID)
 }
+
+// MaxBatchAlbums caps one delete. A household does not have more albums than
+// this, and the cap stops one request building an unbounded SQL statement.
+const MaxBatchAlbums = 200
+
+// DeleteAlbums removes the reader's Albums and their membership rows.
+//
+// All or nothing, like the other batch writes (ADR 0018): ownership of every
+// id is checked before anything is deleted, so a batch holding one id the
+// reader does not own deletes nothing and answers ErrForbidden. The ids come
+// from a grid the reader is looking at, so a foreign id is a bug rather than
+// a routine condition, and a partial delete is impossible to undo.
+//
+// The Photos themselves are untouched. An Album is a way of grouping the
+// library, not a container that owns what is in it.
+func (s *Store) DeleteAlbums(ctx context.Context, ownerID string, albumIDs []string) (int, error) {
+	ids := dedupe(albumIDs)
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if len(ids) > MaxBatchAlbums {
+		return 0, fmt.Errorf("at most %d albums per request, got %d", MaxBatchAlbums, len(ids))
+	}
+
+	var args []any
+	args = append(args, ownerID)
+	countQ := `SELECT COUNT(*) FROM albums WHERE owner_id = ? AND ` +
+		inClause("key", ids, &args)
+	var owned int
+	if err := s.queryRow(ctx, countQ, args...).Scan(&owned); err != nil {
+		return 0, err
+	}
+	if owned != len(ids) {
+		return 0, ErrForbidden
+	}
+
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		var memberArgs []any
+		if _, err := tx.ExecContext(ctx, s.rebind(
+			`DELETE FROM album_photos WHERE `+inClause("album_key", ids, &memberArgs)),
+			memberArgs...); err != nil {
+			return err
+		}
+		albumArgs := []any{ownerID}
+		_, err := tx.ExecContext(ctx, s.rebind(
+			`DELETE FROM albums WHERE owner_id = ? AND `+inClause("key", ids, &albumArgs)),
+			albumArgs...)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(ids), nil
+}

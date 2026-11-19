@@ -9,6 +9,13 @@ Feature: Albums
     Then I should see the heading "Albums"
     And I should see the empty albums list
 
+  Scenario: An album is deleted by selecting it in the overview
+    Given I am signed in
+    When I create an album named "Holiday"
+    And I delete the album "Holiday" from the overview
+    Then I should not see the album "Holiday"
+    And I should see the empty albums list
+
   Scenario: Album count persists after reload
     Given I am signed in
     When I create an album named "Holiday"
