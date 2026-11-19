@@ -153,7 +153,7 @@ Then('I should not see the album page', async ({ page }) => {
 
 Then('I should see the empty favorites state', async ({ page }) => {
   await expect(page.locator('[data-empty="favorites"]')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Nothing starred yet' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nothing favorited yet' })).toBeVisible();
 });
 
 When('I open an empty album named {string}', async ({ page }, name: string) => {

@@ -31,7 +31,7 @@ export function FavoritesView({
               <HeartIcon className="h-7 w-7" />
             </span>
             <h3 className="mt-4 font-display text-2xl font-semibold tracking-tight text-plum">
-              Nothing starred yet
+              Nothing favorited yet
             </h3>
             <p className="mt-2 max-w-xs text-sm leading-relaxed text-ink/65">
               Tap the heart on a photo you love and it will gather here, like a little private
