@@ -2,7 +2,7 @@
 
 Real-stack browser tests against a **separate** Compose project (default `memries-e2e` on `18080`). They do not share ports or volumes with `make up`. All feature files run in one Playwright process.
 
-Locally (no `CI`) Playwright is headed and uses at most four workers. In a pipeline (`CI=true`) it is headless, one worker, four retries.
+Locally (no `CI`) Playwright uses at most four workers. In a pipeline (`CI=true`) it is one worker with four retries. Both are headless; `pnpm test:headed` opens real windows when you want to watch a run.
 
 ## First run
 

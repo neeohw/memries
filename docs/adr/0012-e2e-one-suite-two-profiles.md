@@ -3,15 +3,26 @@
 - Status: Accepted
 - Date: 2026-08-28
 - Source type: Internal decision (test orchestration)
-- Supersedes: [0009](0009-e2e-docker-skill-owns-isolated-stacks.md), e2e slices in [0010](0010-memries-platform-quality-shelf.md)
+- Supersedes: the per-feature stacks that preceded it, and the e2e slices in [0010](0010-memries-platform-quality-shelf.md)
 
 ## Key thesis
 
-`/e2e-docker` plans and records **one** Playwright suite against **one** Compose stack (`memries-e2e` on 18080). Locally the suite is headed and uses at most four workers. In CI it runs one test at a time. There are no per-feature stacks, slots, or worktrees.
+`/e2e-docker` plans and records **one** Playwright suite against **one** Compose stack (`memries-e2e` on 18080). Locally the suite uses at most four workers; in CI it runs one test at a time. Both are headless. There are no per-feature stacks, slots, or worktrees.
 
 ## Context
 
 ADR 0009 isolated each `.feature` file on the 19000 port band so four child agents could run in parallel. That cost Docker RAM, lease machinery, and sequential slices. The desktop can run the whole suite in one Playwright process. Pipelines need the opposite: serial, headless, retries.
+
+## Amendment, 2026-11-19 — headless by default
+
+The local profile ran headed so a developer could watch. A headed Chromium is
+a real desktop application: the window server brings it to the front when it
+launches, and Playwright cannot ask for a background window. With four workers
+over a suite this size that is a window stealing focus every few seconds,
+which makes the machine unusable for anything else while the suite runs.
+
+Both profiles are now headless. `pnpm --filter @memries/e2e test:headed`
+passes `--headed` for the times watching is the point.
 
 ## Amendment, 2026-11-18 — one account per worker
 
@@ -52,7 +63,7 @@ work; none of it lets one worker observe or destroy another's data.
 
 1. One Compose project, `memries-e2e`, default host ports 18080–18081 / 15173 / 18529 / 15556. `make e2e` is the only suite entry. `MEMRIES_E2E_FEATURE` remains an optional filter, not an isolation path.
 2. Playwright profile comes from `process.env.CI` via [`apps/e2e/scripts/e2e-profile.mjs`](../../apps/e2e/scripts/e2e-profile.mjs):
-   - No `CI`: headed, `workers: 4`, `fullyParallel: true`, `retries: 0`, no trace/screenshot.
+   - No `CI`: `workers: 4`, `fullyParallel: true`, `retries: 0`, headless, no trace/screenshot.
    - `CI=true`: headless, `workers: 1`, `fullyParallel: false`, `retries: 4`, `forbidOnly`, reporter `list` + `github`, `trace: 'on-first-retry'`, `screenshot: 'only-on-failure'`.
 3. `/e2e-docker` is parent-only in this checkout: `plan` (dry JSON) → optional coverage under `apps/e2e/` → `make e2e` → `record memries`. No child agents, no merge/close of feature worktrees.
 4. last-runs has one id `memries`. The first `record` drops leftover per-feature keys. `lastCommit` advances only on pass. README tag is one suite line; the catalog keeps feature blurbs and marks them from that finding.

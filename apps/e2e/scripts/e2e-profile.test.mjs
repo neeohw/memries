@@ -3,14 +3,14 @@ import { describe, it } from 'node:test';
 import { resolveE2ePlaywrightProfile } from './e2e-profile.mjs';
 
 describe('resolveE2ePlaywrightProfile', () => {
-  it('uses at most four local workers, headed, and no retries when CI is unset', () => {
+  it('uses at most four local workers, headless, and no retries when CI is unset', () => {
     assert.deepEqual(resolveE2ePlaywrightProfile({}), {
       inCI: false,
       fullyParallel: true,
       workers: 4,
       retries: 0,
       forbidOnly: false,
-      headless: false,
+      headless: true,
       trace: 'off',
       screenshot: 'off',
       reporter: 'list',

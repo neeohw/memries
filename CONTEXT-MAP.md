@@ -15,7 +15,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0008](docs/adr/0008-smart-date-search.md) | Search smart dates are SPA-parsed; `/api/photos` gets `month` / `local_from` / `local_to`; Filter opens Search |
 | [0010](docs/adr/0010-memries-platform-quality-shelf.md) | Local `/platform-quality`: a11y → e2e suite → lint → format; e2e slices superseded by [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) |
 | [0011](docs/adr/0011-turborepo-pnpm-workspace.md) | pnpm + Turbo workspace under `apps/`; prune + fill-extras in Docker; quality shelf paths retargeted |
-| [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) | One `memries-e2e` stack; `/e2e-docker` plans and records id `memries`; local headed + 4 workers, CI one-by-one; one owner account per worker |
+| [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) | One `memries-e2e` stack; `/e2e-docker` plans and records id `memries`; headless; 4 workers locally, CI one-by-one; one owner account per worker |
 | [0013](docs/adr/0013-admin-managed-sources.md) | Admin-managed Sources (local path or WebDAV); keys `<source id>/<path>`; thumbs stay on local disk |
 | [0014](docs/adr/0014-pluggable-sql-store.md) | Relational catalog over `database/sql`: SQLite default, PostgreSQL optional; pure-Go drivers keep `CGO_ENABLED=0` |
 | [0015](docs/adr/0015-build-tagged-thumbnail-backend.md) | Thumbnail backend chosen by build tag: pure Go default, `-tags vips` (3.3x) for the device; chained ladder; atomic writes |
