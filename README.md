@@ -52,7 +52,7 @@ docker compose up -d
 
 Open http://localhost and sign in as `admin@example.com` with the `BOOTSTRAP_PASSWORD` you just generated. That variable gives every `ADMIN_EMAILS` account a password on a fresh install, and only ever fills an *empty* one, so it is safe to leave in `.env` ([ADR 0016](docs/adr/0016-local-password-auth.md)). After login the splash indexes the configured **folders** and then loads photos from `/api/photos`.
 
-Admins (`MEMRIES_ADMIN_EMAILS`) get a **Folders** tab to add folders, and a gear icon for **Server settings**. They feed the one shared library:
+Admins (`MEMRIES_ADMIN_EMAILS`) get a gear icon holding **Folders** and **Storage** ([0024](docs/adr/0024-admin-area.md)). Folders feed the one shared library:
 
 | Kind | Location example | Notes |
 |------|------------------|-------|
@@ -63,7 +63,7 @@ Originals stay where they are and are streamed through the backend; thumbs are a
 
 ### Thumbnail folder
 
-The gear icon moves the thumbnail cache without editing env or restarting
+The gear → **Storage** moves the thumbnail cache without editing env or restarting
 ([0022](docs/adr/0022-admin-settings-thumbnail-location.md)) — the point of
 it on a Pi, where 8GB of eMMC does not hold a 12k-photo ladder. The page shows
 the free space on the holding filesystem.
@@ -291,7 +291,7 @@ pnpm --filter @memries/frontend dev
 - **`too many sign-in attempts`** — the per-address and per-account limiter allows eight attempts, then one more every 30 seconds. A successful sign-in clears it; so does restarting the backend, since the buckets are in memory.
 - **`unknown flag --build`** — Two-step instead: `docker compose build && docker compose up -d`.
 - **The app shows the sign-in form instead of photos** — `/api/*` is session-only, and a 401 from `/api/me` is what renders the form. If it says it could not reach the server instead, the backend is down rather than the session being missing.
-- **Empty album after login** — the Owner has no folders yet. An admin adds one in the **Folders** tab (or drop files into `data/photos/<signed-in-email>` before first login).
+- **Empty album after login** — the Owner has no folders yet. An admin adds one under the gear → **Folders** (or drop files into `data/photos/<signed-in-email>` before first login).
 - **Broken featured photos / `/api/original/...` errors** — the timeline uses thumbs; the viewer falls back to a thumb if the original file is gone. Replacing or renaming the folder after a first import triggers another scan on refresh. Admins can also press **Scan now** on a folder. CLI fallback: `docker compose exec backend indexer`.
 
 ## Next phases

@@ -22,7 +22,6 @@ export const nl: Messages = {
     memories: 'Herinneringen',
     albums: 'Albums',
     favorites: 'Favorieten',
-    folders: 'Mappen',
   },
   timeline: {
     scanFolder: 'Je map doorzoeken',
@@ -224,6 +223,12 @@ export const nl: Messages = {
     movedTitle: 'Miniaturen verplaatst',
     movedBody:
       'Bestaande miniaturen zijn in de oude map gebleven. Scan een map om ze opnieuw te genereren in de nieuwe.',
+  },
+  admin: {
+    heading: 'Beheer',
+    sections: 'Beheeronderdelen',
+    folders: 'Mappen',
+    storage: 'Opslag',
   },
   account: {
     heading: 'Account',

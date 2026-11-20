@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlbumPage } from './components/AlbumPage';
 import { LoginScreen } from './components/LoginScreen';
 import { AccountView } from './components/AccountView';
+import { AdminLayout } from './components/AdminLayout';
 import { SettingsView } from './components/SettingsView';
 import { AlbumsView } from './components/AlbumsView';
 import { AppShell } from './components/AppShell';
@@ -295,21 +296,6 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               }
             />
           )}
-          {tab === 'settings' && admin && (
-            <SettingsView
-              settings={settingsQuery.data}
-              loading={settingsQuery.isLoading}
-              loadError={settingsQuery.isError}
-              onSave={(path) => thumbnailRootMutation.mutate(path)}
-              saving={thumbnailRootMutation.isPending}
-              saveError={
-                thumbnailRootMutation.isError
-                  ? (thumbnailRootMutation.error as Error).message
-                  : undefined
-              }
-              moved={thumbnailRootMutation.data?.needsReindex === true}
-            />
-          )}
           {tab === 'account' && (
             <AccountView
               email={meQuery.data?.email ?? ''}
@@ -319,17 +305,36 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               saving={savingLocale}
             />
           )}
-          {tab === 'folders' && admin && (
-            <SourcesView
-              sources={sourcesQuery.data ?? []}
-              loading={sourcesQuery.isLoading}
-              loadError={sourcesQuery.isError}
-              onCreate={(input) => createSourceMutation.mutateAsync(input)}
-              onUpdate={(id, input) => updateSourceMutation.mutateAsync({ id, input })}
-              onDelete={(id) => deleteSourceMutation.mutateAsync(id)}
-              onScan={(id) => scanSourceMutation.mutateAsync(id)}
-              indexStatus={indexStatus}
-            />
+          {(tab === 'folders' || tab === 'settings') && admin && (
+            <AdminLayout tab={tab} onTabChange={changeTab}>
+              {tab === 'folders' && (
+                <SourcesView
+                  sources={sourcesQuery.data ?? []}
+                  loading={sourcesQuery.isLoading}
+                  loadError={sourcesQuery.isError}
+                  onCreate={(input) => createSourceMutation.mutateAsync(input)}
+                  onUpdate={(id, input) => updateSourceMutation.mutateAsync({ id, input })}
+                  onDelete={(id) => deleteSourceMutation.mutateAsync(id)}
+                  onScan={(id) => scanSourceMutation.mutateAsync(id)}
+                  indexStatus={indexStatus}
+                />
+              )}
+              {tab === 'settings' && (
+                <SettingsView
+                  settings={settingsQuery.data}
+                  loading={settingsQuery.isLoading}
+                  loadError={settingsQuery.isError}
+                  onSave={(path) => thumbnailRootMutation.mutate(path)}
+                  saving={thumbnailRootMutation.isPending}
+                  saveError={
+                    thumbnailRootMutation.isError
+                      ? (thumbnailRootMutation.error as Error).message
+                      : undefined
+                  }
+                  moved={thumbnailRootMutation.data?.needsReindex === true}
+                />
+              )}
+            </AdminLayout>
           )}
           {tab === 'albums' && selectedAlbumId && (
             <AlbumPage

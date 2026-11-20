@@ -25,6 +25,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0021](docs/adr/0021-interface-languages.md) | English and Dutch from typed dictionaries; `users.locale` per reader, empty follows the browser; dates render en-GB/nl-NL; chosen on the Account page |
 | [0022](docs/adr/0022-admin-settings-thumbnail-location.md) | `settings` key/value table; admins move the thumbnail folder at runtime, confined to `MEMRIES_CACHE_ROOTS` and never inside a Source |
 | [0023](docs/adr/0023-scan-progress.md) | Live scan progress on Folders: one panel per library, indeterminate until discovery counts, live region |
+| [0024](docs/adr/0024-admin-area.md) | Folders and Storage sit behind the admin gear with a section strip; the nav bar is browsing only |
 | [0019](docs/adr/0019-pointer-driven-timeline-zoom.md) | Granularity is a 3-step zoom ladder (year/month/week, no day); Ctrl+wheel and pinch, − level + control replaces the radiogroup, period headings drill in, level kept in `sessionStorage` |
 
 ## Contexts

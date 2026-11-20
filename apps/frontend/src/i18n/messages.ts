@@ -23,7 +23,6 @@ export const en = {
     memories: 'Memories',
     albums: 'Albums',
     favorites: 'Favorites',
-    folders: 'Folders',
   },
   timeline: {
     scanFolder: 'Scan your folder',
@@ -225,6 +224,12 @@ export const en = {
     movedTitle: 'Thumbnails moved',
     movedBody:
       'Existing thumbnails stayed in the old folder. Scan a folder to generate them again in the new one.',
+  },
+  admin: {
+    heading: 'Admin',
+    sections: 'Admin sections',
+    folders: 'Folders',
+    storage: 'Storage',
   },
   account: {
     heading: 'Account',

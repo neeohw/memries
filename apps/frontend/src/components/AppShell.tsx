@@ -44,13 +44,16 @@ export function AppShell({
             <span className="sr-only">Memries</span>
           </span>
           <nav aria-label={t('nav.main')} className="w-full">
-            <NavButtons tab={tab} onChange={onTabChange} orientation="vertical" admin={admin} />
+            <NavButtons tab={tab} onChange={onTabChange} orientation="vertical" />
           </nav>
         </div>
         <div className="flex w-full flex-col items-center">
           <ThemeToggle />
           {admin && (
-            <SettingsButton selected={tab === 'settings'} onOpen={() => onTabChange('settings')} />
+            <SettingsButton
+              selected={tab === 'settings' || tab === 'folders'}
+              onOpen={() => onTabChange('folders')}
+            />
           )}
           <AccountButton selected={tab === 'account'} onOpen={() => onTabChange('account')} />
         </div>
@@ -61,12 +64,12 @@ export function AppShell({
           tab={tab}
           admin={admin}
           onOpenAccount={() => onTabChange('account')}
-          onOpenSettings={() => onTabChange('settings')}
+          onOpenSettings={() => onTabChange('folders')}
         />
         <main id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col outline-none">
           {children}
         </main>
-        <BottomNavigation tab={tab} onChange={onTabChange} admin={admin} />
+        <BottomNavigation tab={tab} onChange={onTabChange} />
       </div>
     </div>
   );
