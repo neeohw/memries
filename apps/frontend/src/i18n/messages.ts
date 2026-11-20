@@ -132,6 +132,11 @@ export const en = {
     failed: 'Invalid login or password.',
   },
   indexing: {
+    queued: 'Waiting to open your folder…',
+    looking: 'Looking through your folder…',
+    reading: 'Reading {processed} of {discovered}…',
+    stopped: 'Indexing stopped before it finished.',
+    someFailed: 'Some files could not be read. Opening what we have…',
     opening: 'Opening your album…',
     heading: 'Indexing your files',
     progress: 'Indexing progress',
@@ -139,7 +144,31 @@ export const en = {
     retry: 'Try again',
     retrying: 'Retrying…',
   },
+  scan: {
+    title: 'Scanning',
+    queued: 'Queued…',
+    looking: 'Looking through the folders…',
+    counted: '{processed} of {discovered} files',
+    progress: 'Scan progress',
+    done: 'Scan finished',
+    summary: '{indexed} added · {skipped} unchanged',
+    failedCount: {
+      one: '{count} file could not be read',
+      other: '{count} files could not be read',
+    },
+    stopped: 'The scan stopped before it finished.',
+  },
   folders: {
+    intro:
+      'Photos in these folders appear in the shared library. Originals stay where they are; thumbnails are made once and kept on this server.',
+    loading: 'Loading folders…',
+    loadError: 'We could not load the folder list.',
+    whereLegend: 'Where are the photos?',
+    usernamePlaceholder: 'user',
+    connected: {
+      one: '{count} connected',
+      other: '{count} connected',
+    },
     heading: 'Folders',
     add: 'Add folder',
     connect: 'Connect folder',

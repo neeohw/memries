@@ -23,7 +23,7 @@ export function IndexingScreen({
   const copy = loadError
     ? t('indexing.unreachable')
     : status
-      ? indexStatusCopy(status)
+      ? indexStatusCopy(status, t)
       : t('indexing.opening');
   const showRetry = loadError || (!!status && canRetryIndex(status));
   const discovered = status?.discovered ?? 0;

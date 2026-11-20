@@ -34,14 +34,29 @@ export function shouldInvalidatePhotos(prev: IndexStatus | undefined, next: Inde
   return !!prev && shouldPoll(prev) && isIndexReady(next);
 }
 
-export function indexStatusCopy(status: IndexStatus): string {
-  if (status.status === 'queued') return 'Waiting to open your folder…';
+/**
+ * The line under the indexing screen's title.
+ *
+ * Takes the translator rather than returning English: this is the main thing
+ * a reader sees while waiting, so it has to speak their language (ADR 0021).
+ * The server's own error text is passed through as it comes.
+ */
+export function indexStatusCopy(
+  status: IndexStatus,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string {
+  if (status.status === 'queued') return t('indexing.queued');
   if (status.status === 'running') {
-    if (status.discovered === 0) return 'Looking through your folder…';
-    return `Reading ${status.processed} of ${status.discovered}…`;
+    if (status.discovered === 0) return t('indexing.looking');
+    return t('indexing.reading', { processed: status.processed, discovered: status.discovered });
   }
-  if (status.status === 'failed') return status.error || 'Indexing stopped before it finished.';
-  if (status.status === 'complete_with_errors')
-    return 'Some files could not be read. Opening what we have…';
-  return 'Opening your album…';
+  if (status.status === 'failed') return status.error || t('indexing.stopped');
+  if (status.status === 'complete_with_errors') return t('indexing.someFailed');
+  return t('indexing.opening');
+}
+
+/** Percentage of discovered files processed, or 0 before discovery finishes. */
+export function indexProgress(status: IndexStatus): number {
+  if (status.discovered <= 0) return 0;
+  return Math.min(100, Math.round((status.processed / status.discovered) * 100));
 }

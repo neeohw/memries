@@ -309,4 +309,6 @@ The indexer writes a UTC instant, the original local wall clock (`taken_at_local
 2. Filesystem creation / birth time when the OS exposes it
 3. File modification time
 
+Pressing **Scan now** shows live progress on the Folders page — file counts while it walks, then what was added, unchanged and unreadable ([0023](docs/adr/0023-scan-progress.md)).
+
 Folder **Sync** reconciles by owner + path before content hash. A file that changes in place keeps the same photo id, so favorites and album membership survive. Timeline grouping uses `taken_at_local` (year / month / ISO Monday–Sunday week / day). The label above the list is the first visible period.

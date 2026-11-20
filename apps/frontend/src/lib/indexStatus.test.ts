@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   canRetryIndex,
+  indexProgress,
+  indexStatusCopy,
   isIndexReady,
   shouldAutoStart,
   shouldInvalidatePhotos,
   shouldPoll,
   type IndexStatus,
 } from './indexStatus';
+import { createTranslator } from '../i18n/I18nProvider';
+
+/** Like status(), but for the cases that care about the counts too. */
+function counted(overrides: Partial<IndexStatus> = {}): IndexStatus {
+  return { ...status('running'), ...overrides };
+}
 
 function status(phase: IndexStatus['status']): IndexStatus {
   return {
@@ -49,5 +57,45 @@ describe('index status decisions', () => {
     expect(shouldInvalidatePhotos(status('running'), status('complete'))).toBe(true);
     expect(shouldInvalidatePhotos(undefined, status('complete'))).toBe(false);
     expect(shouldInvalidatePhotos(status('complete'), status('complete'))).toBe(false);
+  });
+});
+
+describe('indexStatusCopy', () => {
+  // The waiting line is the main thing on screen during a first index, so it
+  // goes through the translator rather than returning English (ADR 0021).
+  const t = createTranslator('nl');
+
+  it('speaks the reader’s language', () => {
+    expect(indexStatusCopy(counted({ status: 'queued' }), t)).toBe('Wachten om je map te openen…');
+    expect(indexStatusCopy(counted({ status: 'running' }), t)).toBe('Je map doorzoeken…');
+    expect(indexStatusCopy(counted({ discovered: 9, processed: 3 }), t)).toBe('3 van 9 gelezen…');
+    expect(indexStatusCopy(counted({ status: 'complete' }), t)).toBe('Je album wordt geopend…');
+  });
+
+  // The server's message says what actually went wrong; it is passed through
+  // rather than replaced with a translated generality.
+  it('prefers the server error over its own wording', () => {
+    expect(indexStatusCopy(counted({ status: 'failed', error: 'permission denied' }), t)).toBe(
+      'permission denied',
+    );
+    expect(indexStatusCopy(counted({ status: 'failed' }), t)).toBe(
+      'Indexeren is gestopt voordat het klaar was.',
+    );
+  });
+});
+
+describe('indexProgress', () => {
+  it('is zero until discovery has a denominator', () => {
+    expect(indexProgress(counted({ discovered: 0, processed: 0 }))).toBe(0);
+  });
+
+  it('rounds to whole percent', () => {
+    expect(indexProgress(counted({ discovered: 3, processed: 1 }))).toBe(33);
+  });
+
+  // A tree that grew during the walk can report more processed than
+  // discovered; the bar must not overflow.
+  it('never exceeds 100', () => {
+    expect(indexProgress(counted({ discovered: 10, processed: 14 }))).toBe(100);
   });
 });

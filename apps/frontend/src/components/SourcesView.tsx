@@ -4,6 +4,8 @@ import type { Source, SourceInput, SourceType } from '../models/source';
 import { ExcludeEditor } from './ExcludeEditor';
 import { DriveIcon, PlusIcon, SyncIcon } from './icons';
 import { PageHeader } from './PageHeader';
+import { ScanProgress } from './ScanProgress';
+import type { IndexStatus } from '../lib/indexStatus';
 
 const TYPES: Array<{
   id: SourceType;
@@ -68,6 +70,7 @@ export function SourcesView({
   onUpdate,
   onDelete,
   onScan,
+  indexStatus,
 }: {
   sources: Source[];
   loading: boolean;
@@ -76,6 +79,8 @@ export function SourcesView({
   onUpdate: (id: string, input: SourceInput) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
   onScan: (id: string) => Promise<unknown>;
+  /** Live progress for a scan in flight (ADR 0023). */
+  indexStatus?: IndexStatus;
 }) {
   const { t: tr } = useI18n();
   const [editing, setEditing] = useState<string | 'new' | null>(null);
@@ -84,7 +89,7 @@ export function SourcesView({
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title={tr('folders.heading')}
-        meta={sources.length > 0 ? `${sources.length} connected` : undefined}
+        meta={sources.length > 0 ? tr('folders.connected', { count: sources.length }) : undefined}
         actions={
           <button
             type="button"
@@ -93,16 +98,15 @@ export function SourcesView({
             className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink transition duration-200 hover:bg-surface/70 hover:text-plum disabled:opacity-40"
           >
             <PlusIcon className="h-4 w-4" />
-            Add folder
+            {tr('folders.add')}
           </button>
         }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-8 min-[640px]:px-5">
-        <p className="mb-4 max-w-2xl text-sm leading-relaxed text-ink">
-          Photos in these folders appear in their owner’s Memories. Originals stay where they are;
-          thumbnails are made once and kept on this server’s disk.
-        </p>
+        <p className="mb-4 max-w-2xl text-sm leading-relaxed text-ink">{tr('folders.intro')}</p>
+
+        <ScanProgress status={indexStatus} />
 
         {editing === 'new' && (
           <SourceForm
@@ -117,17 +121,17 @@ export function SourcesView({
 
         {loading && (
           <p className="mt-10 text-center text-sm text-ink" role="status">
-            Loading folders…
+            {tr('folders.loading')}
           </p>
         )}
         {loadError && (
           <p className="mt-10 text-center text-sm text-ink" role="alert">
-            We could not load the folder list.
+            {tr('folders.loadError')}
           </p>
         )}
         {!loading && !loadError && sources.length === 0 && editing !== 'new' && (
           <p className="mt-10 text-center text-sm text-ink" role="status">
-            No folders connected yet.
+            {tr('folders.empty')}
           </p>
         )}
 
@@ -176,7 +180,6 @@ function SourceCard({
   const { t: tr } = useI18n();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState<'scan' | 'delete' | null>(null);
-  const [scanned, setScanned] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const run = async (kind: 'scan' | 'delete', action: () => Promise<unknown>) => {
@@ -184,7 +187,6 @@ function SourceCard({
     setError(null);
     try {
       await action();
-      if (kind === 'scan') setScanned(true);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -208,18 +210,15 @@ function SourceCard({
             {tr(TYPE_LABEL[source.type])} · <span className="font-mono">{source.location}</span>
           </p>
           {source.username && (
-            <p className="mt-0.5 truncate text-xs text-ink">Signed in as {source.username}</p>
+            <p className="mt-0.5 truncate text-xs text-ink">
+              {tr('folders.signedInAs', { username: source.username })}
+            </p>
           )}
         </div>
       </div>
       {error && (
         <p className="text-sm text-plum" role="alert">
           {error}
-        </p>
-      )}
-      {scanned && !error && (
-        <p className="text-xs text-ink" role="status">
-          Scan queued.
         </p>
       )}
       <div className="mt-auto flex flex-wrap gap-2">
@@ -328,7 +327,7 @@ function SourceForm({
       }}
     >
       <fieldset>
-        <legend className="text-sm font-medium text-plum">Where are the photos?</legend>
+        <legend className="text-sm font-medium text-plum">{tr('folders.whereLegend')}</legend>
         <div className="mt-2 flex flex-wrap gap-2">
           {TYPES.map((t) => (
             <label
@@ -381,7 +380,7 @@ function SourceForm({
               type="text"
               value={draft.username}
               onChange={(event) => set({ username: event.target.value })}
-              placeholder="user"
+              placeholder={tr('folders.usernamePlaceholder')}
               autoComplete="off"
               spellCheck={false}
               className={inputClass}

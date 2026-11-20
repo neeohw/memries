@@ -41,7 +41,7 @@ describe('SourcesView', () => {
 
   it('announces an empty list', () => {
     renderView({ sources: [] });
-    expect(screen.getByRole('status')).toHaveTextContent('No folders connected yet.');
+    expect(screen.getByRole('status')).toHaveTextContent('No photo folders are connected yet.');
   });
 
   it('adds a WebDAV folder with credentials for the signed-in owner', async () => {

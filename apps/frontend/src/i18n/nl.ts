@@ -131,6 +131,11 @@ export const nl: Messages = {
     failed: 'Ongeldige login of wachtwoord.',
   },
   indexing: {
+    queued: 'Wachten om je map te openen…',
+    looking: 'Je map doorzoeken…',
+    reading: '{processed} van {discovered} gelezen…',
+    stopped: 'Indexeren is gestopt voordat het klaar was.',
+    someFailed: 'Sommige bestanden konden niet worden gelezen. We openen wat we hebben…',
     opening: 'Je album wordt geopend…',
     heading: 'Je bestanden worden doorzocht',
     progress: 'Voortgang doorzoeken',
@@ -138,7 +143,31 @@ export const nl: Messages = {
     retry: 'Opnieuw proberen',
     retrying: 'Opnieuw proberen…',
   },
+  scan: {
+    title: 'Scannen',
+    queued: 'In wachtrij…',
+    looking: 'De mappen doorzoeken…',
+    counted: '{processed} van {discovered} bestanden',
+    progress: 'Voortgang scan',
+    done: 'Scan voltooid',
+    summary: '{indexed} toegevoegd · {skipped} onveranderd',
+    failedCount: {
+      one: '{count} bestand kon niet worden gelezen',
+      other: '{count} bestanden konden niet worden gelezen',
+    },
+    stopped: 'De scan is gestopt voordat deze klaar was.',
+  },
   folders: {
+    intro:
+      'Foto’s in deze mappen komen in de gedeelde bibliotheek. Originelen blijven staan waar ze staan; miniaturen worden één keer gemaakt en op deze server bewaard.',
+    loading: 'Mappen laden…',
+    loadError: 'We konden de mappenlijst niet laden.',
+    whereLegend: 'Waar staan de foto’s?',
+    usernamePlaceholder: 'gebruiker',
+    connected: {
+      one: '{count} verbonden',
+      other: '{count} verbonden',
+    },
     heading: 'Mappen',
     add: 'Map toevoegen',
     connect: 'Map verbinden',

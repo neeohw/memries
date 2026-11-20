@@ -328,6 +328,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               onUpdate={(id, input) => updateSourceMutation.mutateAsync({ id, input })}
               onDelete={(id) => deleteSourceMutation.mutateAsync(id)}
               onScan={(id) => scanSourceMutation.mutateAsync(id)}
+              indexStatus={indexStatus}
             />
           )}
           {tab === 'albums' && selectedAlbumId && (
