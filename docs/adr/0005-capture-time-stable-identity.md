@@ -25,7 +25,7 @@ optional `tz_offset`, and `taken_at_source`, in this order:
 2. Filesystem creation / birth time where the OS exposes it
 3. File modification time
 
-The timeline, the search year facet and the period headings all read
+The timeline and the period headings read
 `taken_at_local`, never `taken_at`: the reader thinks in the clock the camera
 showed, and a photo taken at 23:00 must not move to the next day because the
 server is in another timezone. Weeks are ISO, Monday to Sunday.

@@ -147,62 +147,8 @@ When('I open the Filter on memories', async ({ page }) => {
   await page.getByRole('button', { name: 'Filter', exact: true }).click();
 });
 
-When('I search for {string}', async ({ page }, phrase: string) => {
-  const field = page.getByRole('searchbox', { name: 'Search memories' });
-  await field.fill(phrase);
-});
-
-When('I choose the search suggestion {string}', async ({ page }, chip: string) => {
-  await page.getByRole('button', { name: chip, exact: true }).click();
-});
-
 Then('I should see the heading {string}', async ({ page }, name: string) => {
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
-});
-
-Then('I should see the search suggestions', async ({ page }) => {
-  await expect(page.getByRole('list', { name: 'Search suggestions' })).toBeVisible();
-});
-
-Then('the search should read {string}', async ({ page }, reading: string) => {
-  await expect(page.getByRole('status').filter({ hasText: reading })).toBeVisible();
-});
-
-Then('I should see the photo from {string} in search results', async ({ page }, day: string) => {
-  await expect(photoByDay(page, day).first()).toBeVisible();
-});
-
-Then(
-  'I should not see the photo from {string} in search results',
-  async ({ page }, day: string) => {
-    await expect(photoByDay(page, day)).toHaveCount(0);
-  },
-);
-
-Then('I should see no matching search results', async ({ page }) => {
-  await expect(page.getByText('No memories match that search.', { exact: true })).toBeVisible();
-});
-
-When('I search for year {string}', async ({ page }, year: string) => {
-  await openTab(page, 'Search');
-  const yearButton = page.getByRole('button', { name: year, exact: true });
-  if (!(await yearButton.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: 'Years', exact: true }).click();
-  }
-  await yearButton.click();
-});
-
-When('I filter search to favorites', async ({ page }) => {
-  await openTab(page, 'Search');
-  await page
-    .getByRole('button', { name: 'Favorites', exact: true })
-    .and(page.locator('[aria-pressed]'))
-    .click();
-});
-
-Then('I should see {int} search results', async ({ page }, count: number) => {
-  const label = count === 1 ? '1 result' : `${count} results`;
-  await expect(page.getByText(label, { exact: true })).toBeVisible();
 });
 
 When('I delete the album {string} from the overview', async ({ page }, name: string) => {
@@ -289,14 +235,6 @@ Then(
 );
 
 When('I open the photo from {string}', async ({ page }, day: string) => {
-  const search = page.getByRole('heading', { name: 'Search', exact: true });
-  if (await search.isVisible().catch(() => false)) {
-    const photo = photoByDay(page, day).first();
-    await expect(photo).toBeVisible();
-    await photo.click();
-    await expect(photoViewer(page)).toBeVisible();
-    return;
-  }
   await openTab(page, 'Memories');
   const photo = await revealPhoto(page, day);
   await photo.click();

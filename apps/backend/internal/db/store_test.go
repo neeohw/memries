@@ -292,12 +292,7 @@ func TestPhotoFilters(t *testing.T) {
 		filter PhotoFilter
 		want   []string
 	}{
-		{"year", PhotoFilter{Years: []string{"2026"}}, []string{"m1", "j2"}},
-		{"years multi", PhotoFilter{Years: []string{"2025", "2026"}}, []string{"m1", "j2", "j1"}},
-		{"month", PhotoFilter{Months: []string{"01"}}, []string{"j2", "j1"}},
 		{"favorite", PhotoFilter{Favorite: &yes}, []string{"j2"}},
-		{"local range", PhotoFilter{LocalFrom: "2026-01-01", LocalTo: "2026-02-01"}, []string{"j2"}},
-		{"query", PhotoFilter{Query: "2026-03"}, []string{"m1"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -319,22 +314,6 @@ func TestPhotoFilters(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// A LIKE wildcard typed by the user must match literally, not as a wildcard.
-func TestQueryFilterEscapesWildcards(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	mustUpsert(t, s, photo("p1", "2026-03-01T10:00:00"))
-	got, _, err := s.PhotosFiltered(ctx, "reader",
-		at("2020-01-01T00:00:00Z"), at("2030-01-01T00:00:00Z"), 50, "",
-		PhotoFilter{Query: "%"})
-	if err != nil {
-		t.Fatalf("filtered: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("query %q matched %d rows, want 0 (wildcard must be literal)", "%", len(got))
 	}
 }
 

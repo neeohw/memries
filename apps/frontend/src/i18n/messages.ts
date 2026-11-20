@@ -23,7 +23,6 @@ export const en = {
     memories: 'Memories',
     albums: 'Albums',
     favorites: 'Favorites',
-    search: 'Search',
     folders: 'Folders',
   },
   timeline: {
@@ -123,16 +122,6 @@ export const en = {
       one: '{count} memory',
       other: '{count} memories',
     },
-  },
-  search: {
-    heading: 'Search',
-    placeholder: 'Yesterday, last winter, June…',
-    filters: 'Search filters',
-    suggestions: 'Search suggestions',
-    years: 'Years',
-    favoritesOnly: 'Favorites only',
-    clearDate: 'Clear search date',
-    noResults: 'Nothing matched that.',
   },
   signIn: {
     heading: 'Sign in',

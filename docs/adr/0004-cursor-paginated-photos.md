@@ -44,8 +44,8 @@ than a second count.
 
 ## Consequences
 
-- Search and Favorites use this cursor with filters rather than a second
-  in-memory catalog ([0008](0008-smart-date-search.md)).
+- Favorites uses this cursor with a filter rather than a second in-memory
+  catalog.
 - There are no WebSockets; the splash polls while a run is active.
 - An interrupted run is failed, not resumed. The reader retries.
 - Changing the page order means changing the cursor, and the cursor tests are

@@ -1,6 +1,6 @@
 export type Granularity = 'year' | 'month' | 'week';
 
-export type NavTab = 'memories' | 'albums' | 'favorites' | 'search' | 'folders' | 'account';
+export type NavTab = 'memories' | 'albums' | 'favorites' | 'folders' | 'account';
 
 export interface Album {
   id: string;
@@ -36,13 +36,4 @@ export interface TimelineGroup {
   label: string;
   sublabel: string;
   photos: Photo[];
-}
-
-export type SearchCategory = 'years' | 'favorites';
-
-export interface SearchState {
-  query: string;
-  years: string[];
-  favoritesOnly: boolean;
-  openCategory: SearchCategory | null;
 }

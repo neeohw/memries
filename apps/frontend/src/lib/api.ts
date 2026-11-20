@@ -54,12 +54,7 @@ export type PhotosPage = {
 };
 
 export type PhotoFilter = {
-  years?: string[];
-  months?: string[];
   favorite?: boolean;
-  q?: string;
-  localFrom?: string;
-  localTo?: string;
 };
 
 export type ApiSource = {
@@ -210,15 +205,6 @@ export async function fetchPhotosPage(cursor?: string, filter?: PhotoFilter): Pr
   if (cursor) params.set('cursor', cursor);
   if (filter?.favorite === true) params.set('favorite', 'true');
   if (filter?.favorite === false) params.set('favorite', 'false');
-  if (filter?.q) params.set('q', filter.q);
-  if (filter?.localFrom) params.set('local_from', filter.localFrom);
-  if (filter?.localTo) params.set('local_to', filter.localTo);
-  for (const year of filter?.years ?? []) {
-    params.append('year', year);
-  }
-  for (const month of filter?.months ?? []) {
-    params.append('month', month);
-  }
   const res = await apiFetch(`/api/photos?${params}`);
   const body = (await res.json()) as { photos?: ApiPhoto[]; next_cursor?: string };
   return {

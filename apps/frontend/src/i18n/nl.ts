@@ -22,7 +22,6 @@ export const nl: Messages = {
     memories: 'Herinneringen',
     albums: 'Albums',
     favorites: 'Favorieten',
-    search: 'Zoeken',
     folders: 'Mappen',
   },
   timeline: {
@@ -122,16 +121,6 @@ export const nl: Messages = {
       one: '{count} herinnering',
       other: '{count} herinneringen',
     },
-  },
-  search: {
-    heading: 'Zoeken',
-    placeholder: 'Gisteren, afgelopen winter, juni…',
-    filters: 'Zoekfilters',
-    suggestions: 'Zoeksuggesties',
-    years: 'Jaren',
-    favoritesOnly: 'Alleen favorieten',
-    clearDate: 'Zoekdatum wissen',
-    noResults: 'Daar is niets voor gevonden.',
   },
   signIn: {
     heading: 'Aanmelden',

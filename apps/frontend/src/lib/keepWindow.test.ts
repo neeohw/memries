@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  chunkIntoRows,
-  rowWindow,
-  searchGridColumns,
-  shouldMountThumb,
-  thumbsGridColumns,
-} from './keepWindow';
+import { chunkIntoRows, rowWindow, shouldMountThumb, thumbsGridColumns } from './keepWindow';
 
 describe('grid columns', () => {
   it('adds thumb columns as the viewport widens', () => {
@@ -17,15 +11,6 @@ describe('grid columns', () => {
     expect(thumbsGridColumns(1500)).toBe(10);
     expect(thumbsGridColumns(1920)).toBe(12);
     expect(thumbsGridColumns(2560)).toBe(14);
-  });
-
-  it('adds search columns as the viewport widens', () => {
-    expect(searchGridColumns(390)).toBe(2);
-    expect(searchGridColumns(640)).toBe(3);
-    expect(searchGridColumns(800)).toBe(4);
-    expect(searchGridColumns(1024)).toBe(5);
-    expect(searchGridColumns(1440)).toBe(6);
-    expect(searchGridColumns(1920)).toBe(8);
   });
 });
 

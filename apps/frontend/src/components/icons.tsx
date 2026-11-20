@@ -23,15 +23,6 @@ export function FilterIcon(props: IconProps) {
   );
 }
 
-export function SearchIcon(props: IconProps) {
-  return (
-    <svg {...icon(props)}>
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m16 16 4 4" />
-    </svg>
-  );
-}
-
 export function HeartIcon({ filled, ...props }: IconProps & { filled?: boolean }) {
   return (
     <svg {...icon(props)} fill={filled ? 'currentColor' : 'none'}>

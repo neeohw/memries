@@ -392,42 +392,17 @@ func TestPhotosPassesYearAndFavoriteFilters(t *testing.T) {
 	a := &API{DB: lib}
 	r := chi.NewRouter()
 	a.Routes(r)
-	req := httptest.NewRequest(http.MethodGet, "/photos?year=2024&favorite=true", nil)
+	req := httptest.NewRequest(http.MethodGet, "/photos?favorite=true", nil)
 	req = withUser(req, "owner")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("got %d", w.Code)
-	}
-	if len(lib.filter.Years) != 1 || lib.filter.Years[0] != "2024" {
-		t.Fatalf("years %+v", lib.filter.Years)
 	}
 	if lib.filter.Favorite == nil || !*lib.filter.Favorite {
 		t.Fatal("expected favorite filter")
 	}
 }
-
-func TestPhotosPassesMonthAndLocalTakenAtBounds(t *testing.T) {
-	lib := &fakeLibrary{photos: map[string]*db.Photo{}}
-	a := &API{DB: lib}
-	r := chi.NewRouter()
-	a.Routes(r)
-	req := httptest.NewRequest(http.MethodGet, "/photos?month=06&local_from=2026-08-25&local_to=2026-08-26", nil)
-	req = withUser(req, "owner")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("got %d", w.Code)
-	}
-	if len(lib.filter.Months) != 1 || lib.filter.Months[0] != "06" {
-		t.Fatalf("months %+v", lib.filter.Months)
-	}
-	if lib.filter.LocalFrom != "2026-08-25" || lib.filter.LocalTo != "2026-08-26" {
-		t.Fatalf("local bounds %q %q", lib.filter.LocalFrom, lib.filter.LocalTo)
-	}
-}
-
-// --- batch endpoints (ADR 0018) ----------------------------------------
 
 func batchLibrary() *fakeLibrary {
 	return &fakeLibrary{

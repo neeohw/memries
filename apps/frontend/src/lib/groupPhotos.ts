@@ -44,16 +44,6 @@ export function groupPhotos(
   }));
 }
 
-export function photoFacets(photos: Photo[]): { years: string[] } {
-  const years = new Set<string>();
-  for (const photo of photos) {
-    years.add(photo.takenAt.slice(0, 4));
-  }
-  return {
-    years: [...years].sort((a, b) => b.localeCompare(a)),
-  };
-}
-
 export function searchPhotos(
   photos: Photo[],
   opts: {

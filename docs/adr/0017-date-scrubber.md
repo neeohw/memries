@@ -121,7 +121,7 @@ heights that `justifyRows` makes unavailable.
   `db.Timeline` were already right. The only server-side edit in this
   workstream was none at all.
 - **The first page is now 500 photos** instead of 50, for every consumer of
-  `fetchPhotosPage`, including Search and Favorites. Fewer, larger requests.
+  `fetchPhotosPage`, including Favorites. Fewer, larger requests.
 - **Far jumps still visibly load.** A jump to the oldest month of a large,
   freshly opened library pages its way there behind an `aria-busy` track. This
   is the known weak point of the chosen model.

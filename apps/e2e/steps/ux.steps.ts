@@ -174,10 +174,6 @@ Then('I should see the empty albums list', async ({ page }) => {
   await expect(page.getByRole('status').filter({ hasText: 'No albums yet.' })).toBeVisible();
 });
 
-Then('the search suggestion chips should be ready', async ({ page }) => {
-  await expect(page.locator('[data-suggestion-chip]')).toHaveCount(8);
-});
-
 Then('the year facet {string} is selected', async ({ page }, year: string) => {
   await expect(page.getByRole('button', { name: year, exact: true })).toHaveAttribute(
     'aria-pressed',

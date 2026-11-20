@@ -11,15 +11,6 @@ export function thumbsGridColumns(width: number): number {
   return 4;
 }
 
-export function searchGridColumns(width: number): number {
-  if (width >= 1800) return 8;
-  if (width >= 1400) return 6;
-  if (width >= 1024) return 5;
-  if (width >= 800) return 4;
-  if (width >= 640) return 3;
-  return 2;
-}
-
 export function rowWindow(
   rowCount: number,
   firstVisible: number,

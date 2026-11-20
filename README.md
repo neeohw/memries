@@ -115,18 +115,17 @@ Playwright BDD against a real Compose stack — not the one on `:80`. All featur
 <!-- e2e-last-runs-catalog:start -->
 - ❌ **Albums** — Create, add a Photo, count survives reload. Opening an Album shows its Photos. Long-press on the Album page unmembers; the Photo stays in the library.
 - ❌ **Capture time** — Newest first. EXIF DateTimeOriginal wins; no EXIF uses file time. Sync keeps favorites and album membership.
-- ❌ **Empty library states** — Favorites, Search, and a new Album explain themselves when they have nothing to show.
+- ❌ **Empty library states** — Favorites and a new Album explain themselves when they have nothing to show.
 - ❌ **Index run splash** — Folder Sync shows the Index run, then Memories. A missing Original is pruned; a relocated Photo keeps its identity.
 - ❌ **Sign in** — The password form puts the reader on Memories.
 - ❌ **Long-press photo actions** — Long-press offers album rows (name left, count right). Tapping a row adds the Photo once.
 - ❌ **Motion** — Open, close, granularity, and scroll move by default. Reduced motion makes them instant.
 - ❌ **Library navigation** — Side nav on wide viewports, bottom bar on narrow. Re-opening Albums leaves an Album page. Today jumps to the newest Timeline Group.
-- ❌ **Search** — Filter on Memories opens Search. Smart dates (`yesterday`, `last winter`, `a day in june`) plus year and favorites facets. Library clock is frozen at 26 August 2026.
 - ❌ **Light and dark theme** — First visit follows the system. Toggle persists.
 - ❌ **Timeline periods** — Year / month / week / day headings follow capture time. The pinned label follows the first visible Timeline Group.
 - ❌ **Photo viewer gestures** — Swipe past a threshold for next/previous. A short drag snaps back. Drag down dismisses.
 - ❌ **Photo viewer keyboard** — The viewer is a dialog: Escape closes, arrows move, F favorites, Tab stays inside. Close returns focus to the Photo.
-- ❌ **Photo viewer** — Opens from Memories and Search. Favorite, album, next/previous, close.
+- ❌ **Photo viewer** — Opens from Memories. Favorite, album, next/previous, close.
 <!-- e2e-last-runs-catalog:end -->
 
 ```bash
@@ -292,4 +291,4 @@ The indexer writes a UTC instant, the original local wall clock (`taken_at_local
 2. Filesystem creation / birth time when the OS exposes it
 3. File modification time
 
-Folder **Sync** reconciles by owner + path before content hash. A file that changes in place keeps the same photo id, so favorites and album membership survive. Timeline grouping and search use `taken_at_local` (year / month / ISO Monday–Sunday week / day). The label above the list is the first visible period.
+Folder **Sync** reconciles by owner + path before content hash. A file that changes in place keeps the same photo id, so favorites and album membership survive. Timeline grouping uses `taken_at_local` (year / month / ISO Monday–Sunday week / day). The label above the list is the first visible period.

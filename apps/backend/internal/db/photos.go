@@ -96,13 +96,11 @@ func (s *Store) Timeline(ctx context.Context, granularity string, from, to time.
 	return out, rows.Err()
 }
 
+// PhotoFilter narrows a page of photos. Favorites is the only axis the
+// product has: smart-date search was removed, and will come back with face
+// recognition rather than as a date parser.
 type PhotoFilter struct {
-	Years     []string
-	Months    []string
-	Favorite  *bool
-	Query     string
-	LocalFrom string
-	LocalTo   string
+	Favorite *bool
 }
 
 func (s *Store) Photos(ctx context.Context, viewer string, from, to time.Time, limit int, cursor string) ([]Photo, string, error) {
@@ -205,37 +203,18 @@ func (s *Store) bucketExpr(granularity string) string {
 }
 
 func appendPhotoFilter(viewer string, filter PhotoFilter, where *[]string, args *[]any) {
-	if len(filter.Years) > 0 {
-		*where = append(*where, inClause("substr(taken_at_local, 1, 4)", filter.Years, args))
+	if filter.Favorite == nil {
+		return
 	}
-	if len(filter.Months) > 0 {
-		*where = append(*where, inClause("substr(taken_at_local, 6, 2)", filter.Months, args))
+	// Favorites are the viewer's own, so this filters on their rows rather
+	// than on a column of the shared photo.
+	clause := `EXISTS (SELECT 1 FROM favorites f
+		WHERE f.photo_key = photos.key AND f.user_key = ?)`
+	if !*filter.Favorite {
+		clause = "NOT " + clause
 	}
-	if filter.LocalFrom != "" {
-		*where = append(*where, "substr(taken_at_local, 1, 10) >= ?")
-		*args = append(*args, filter.LocalFrom)
-	}
-	if filter.LocalTo != "" {
-		*where = append(*where, "substr(taken_at_local, 1, 10) < ?")
-		*args = append(*args, filter.LocalTo)
-	}
-	if filter.Favorite != nil {
-		// Favorites are the viewer's own, so this filters on their rows
-		// rather than on a column of the shared photo.
-		clause := `EXISTS (SELECT 1 FROM favorites f
-			WHERE f.photo_key = photos.key AND f.user_key = ?)`
-		if !*filter.Favorite {
-			clause = "NOT " + clause
-		}
-		*where = append(*where, clause)
-		*args = append(*args, viewer)
-	}
-	if q := strings.ToLower(strings.TrimSpace(filter.Query)); q != "" {
-		// The query is a literal substring, so LIKE wildcards typed by the
-		// reader must not act as wildcards.
-		*where = append(*where, `LOWER(taken_at_local) LIKE ? ESCAPE '\'`)
-		*args = append(*args, "%"+escapeLike(q)+"%")
-	}
+	*where = append(*where, clause)
+	*args = append(*args, viewer)
 }
 
 // escapeLike neutralises LIKE metacharacters so the pattern matches literally.

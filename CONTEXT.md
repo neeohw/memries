@@ -32,10 +32,7 @@ The source file on Storage, streamed by `/api/original/{id}` only in the photo v
 _Avoid_: full image from the catalog
 
 **TakenAt**:
-Capture clock used for Timeline Groups: EXIF `DateTimeOriginal` (then digitized / `DateTime`), else filesystem birth time, else mtime. The UI buckets on `taken_at_local`. Search smart dates use the same wall clock. See [docs/adr/0005-capture-time-stable-identity.md](docs/adr/0005-capture-time-stable-identity.md).
-
-**Smart date**:
-A typed or suggested calendar phrase on Search (`yesterday`, `last winter`, `a day in june`) parsed in the SPA and applied as `/api/photos` filters. Not a second catalog.
+Capture clock used for Timeline Groups: EXIF `DateTimeOriginal` (then digitized / `DateTime`), else filesystem birth time, else mtime. The UI buckets on `taken_at_local`. See [docs/adr/0005-capture-time-stable-identity.md](docs/adr/0005-capture-time-stable-identity.md).
 
 **Granularity**:
 `year` / `month` / `week` / `day` for Timeline Groups.

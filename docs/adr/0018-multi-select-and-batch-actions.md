@@ -59,7 +59,7 @@ building an unbounded SQL statement.
 The tile that needs the selection sits three components below the component
 that owns it (`Timeline` → `TimelineSection` → `PhotoGrid` → `PhotoCard`), and
 several views render grids. A context means anything not wrapped in a provider
-gets an inert selection and behaves exactly as before, so Favorites, Search and
+gets an inert selection and behaves exactly as before, so Favorites and
 Album pages are untouched by this change.
 
 `useSelectionState` is split from `PhotoSelectionProvider` because the
@@ -125,7 +125,7 @@ does not own it — rebuilding an album by hand is slow.
 
 ## Consequences
 
-- Favorites, Search and the Album page render grids with no provider, so they
+- Favorites and the Album page render grids with no provider, so they
   have no selection yet. Extending them is a provider and a toolbar each, not
   new plumbing.
 - **Timeline-level composition is not unit tested.** `virtua` renders nothing

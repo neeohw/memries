@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlbumPage } from './components/AlbumPage';
 import { LoginScreen } from './components/LoginScreen';
@@ -9,7 +9,6 @@ import { FavoritesView } from './components/FavoritesView';
 import { IndexingScreen } from './components/IndexingScreen';
 import { PhotoActionsMenu } from './components/PhotoActionsMenu';
 import { PhotoViewer } from './components/PhotoViewer';
-import { SearchView } from './components/SearchView';
 import { SourcesView } from './components/SourcesView';
 import { Timeline } from './components/Timeline';
 import {
@@ -36,15 +35,7 @@ import { I18nProvider, useT } from './i18n/I18nProvider';
 import { useLocale } from './hooks/useLocale';
 import { isUnauthorized, signIn, signOut } from './lib/api';
 import { flattenPhotos, useBatchFavorite, usePhotos, useToggleFavorite } from './hooks/usePhotos';
-import { parseSmartDate } from './lib/parseSmartDate';
-import type { NavTab, Photo, SearchState } from './models/photo';
-
-const INITIAL_SEARCH: SearchState = {
-  query: '',
-  years: [],
-  favoritesOnly: false,
-  openCategory: null,
-};
+import type { NavTab, Photo } from './models/photo';
 
 /**
  * Auth gate (ADR 0016). `/api/me` answering 401 is what shows the sign-in
@@ -143,7 +134,6 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   } = useIndex();
   const [tab, setTab] = useState<NavTab>('memories');
   const [granularity, setGranularity] = useStoredZoom();
-  const [search, setSearch] = useState<SearchState>(INITIAL_SEARCH);
   const [lastFocus, setLastFocus] = useState<HTMLElement | null>(null);
   const [viewer, setViewer] = useState<{
     id: string;
@@ -159,23 +149,6 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   // scrubber is ready the moment Memories is.
   const histogramQuery = useTimelineHistogram(isReadyForPhotos);
   const favoritesQuery = usePhotos(isReadyForPhotos && tab === 'favorites', { favorite: true });
-  const parsedDate = useMemo(() => parseSmartDate(search.query, new Date()), [search.query]);
-  const searchFilter = useMemo(() => {
-    const years = [...search.years];
-    for (const year of parsedDate?.years ?? []) {
-      if (!years.includes(year)) years.push(year);
-    }
-    const query = search.query.trim();
-    return {
-      years: years.length > 0 ? years : undefined,
-      months: parsedDate?.months,
-      localFrom: parsedDate?.localFrom,
-      localTo: parsedDate?.localTo,
-      favorite: search.favoritesOnly || undefined,
-      q: parsedDate || !query ? undefined : query,
-    };
-  }, [parsedDate, search.favoritesOnly, search.query, search.years]);
-  const searchQuery = usePhotos(isReadyForPhotos && tab === 'search', searchFilter);
 
   const meQuery = useMe();
   const admin = meQuery.data?.admin === true;
@@ -199,8 +172,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   const batchFavoriteMutation = useBatchFavorite();
   const addPhotosMutation = useAddPhotosToAlbum();
 
-  const activeQuery =
-    tab === 'favorites' ? favoritesQuery : tab === 'search' ? searchQuery : timelineQuery;
+  const activeQuery = tab === 'favorites' ? favoritesQuery : timelineQuery;
   const showQueryError = activeQuery.isError && tab !== 'folders';
 
   const loadSettled = activeQuery.isSuccess || activeQuery.isError;
@@ -214,11 +186,9 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
 
   const timelinePhotos = flattenPhotos(timelineQuery.data);
   const favoritesPhotos = flattenPhotos(favoritesQuery.data);
-  const searchPhotos = flattenPhotos(searchQuery.data);
   const albums = albumsQuery.data ?? [];
 
-  const tabPhotos =
-    tab === 'favorites' ? favoritesPhotos : tab === 'search' ? searchPhotos : timelinePhotos;
+  const tabPhotos = tab === 'favorites' ? favoritesPhotos : timelinePhotos;
 
   const liveViewerList = viewer
     ? viewer.list.map((item) => tabPhotos.find((photo) => photo.id === item.id) ?? item)
@@ -306,7 +276,6 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               fetchError={timelineQuery.isFetchNextPageError}
               onRescan={handleRescan}
               rescanning={rescanning}
-              onFilter={() => changeTab('search')}
               noFolders={indexStatus?.sources === 0}
               onAddFolder={admin ? () => changeTab('folders') : undefined}
               histogram={histogramQuery.data}
@@ -361,18 +330,6 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
           )}
           {favoritesQuery.isSuccess && tab === 'favorites' && (
             <FavoritesView photos={favoritesPhotos} onOpen={openPhoto} onActions={openActions} />
-          )}
-          {tab === 'search' && !searchQuery.isError && (
-            <SearchView
-              photos={searchPhotos}
-              facetPhotos={timelinePhotos}
-              search={search}
-              onSearchChange={setSearch}
-              onOpen={openPhoto}
-              onActions={openActions}
-              autoFocus
-              ready={searchQuery.isSuccess}
-            />
           )}
 
           {viewer && liveViewerList.length > 0 && (

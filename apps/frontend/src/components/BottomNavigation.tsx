@@ -1,7 +1,7 @@
 import { useSlidingHighlight } from '../hooks/useSlidingHighlight';
 import type { NavTab } from '../models/photo';
 import { useI18n } from '../i18n/I18nProvider';
-import { AlbumIcon, DriveIcon, FoldersIcon, HeartIcon, SearchIcon } from './icons';
+import { AlbumIcon, DriveIcon, FoldersIcon, HeartIcon } from './icons';
 
 type NavItem = { id: NavTab; label: string; icon: typeof AlbumIcon };
 
@@ -9,7 +9,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'memories', label: 'nav.memories', icon: AlbumIcon },
   { id: 'favorites', label: 'nav.favorites', icon: HeartIcon },
   { id: 'albums', label: 'nav.albums', icon: FoldersIcon },
-  { id: 'search', label: 'nav.search', icon: SearchIcon },
 ];
 
 const ADMIN_ITEMS: NavItem[] = [{ id: 'folders', label: 'nav.folders', icon: DriveIcon }];

@@ -1,5 +1,5 @@
 Feature: Photo viewer
-  Opens from Memories and Search. Favorite, album, next/previous, close.
+  Opens from Memories. Favorite, album, next/previous, close.
 
   Scenario Outline: Viewer actions from <origin>
     Given I am signed in
@@ -18,4 +18,3 @@ Feature: Photo viewer
     Examples:
       | origin   |
       | Memories |
-      | Search   |

@@ -6,21 +6,28 @@ import (
 	"time"
 )
 
-func TestParsePhotoFilterReadsYearFavoriteAndQuery(t *testing.T) {
-	q := url.Values{
-		"year":     []string{"2024", "2025"},
-		"favorite": []string{"true"},
-		"q":        []string{"2024-08"},
-	}
-	got := parsePhotoFilter(q)
-	if len(got.Years) != 2 || got.Years[0] != "2024" || got.Years[1] != "2025" {
-		t.Fatalf("years %+v", got.Years)
-	}
+func TestParsePhotoFilterReadsFavorite(t *testing.T) {
+	got := parsePhotoFilter(url.Values{"favorite": []string{"true"}})
 	if got.Favorite == nil || !*got.Favorite {
 		t.Fatal("expected favorite true")
 	}
-	if got.Query != "2024-08" {
-		t.Fatalf("query %q", got.Query)
+
+	got = parsePhotoFilter(url.Values{"favorite": []string{"false"}})
+	if got.Favorite == nil || *got.Favorite {
+		t.Fatal("expected favorite false")
+	}
+
+	// Absent, unparseable, or a leftover search parameter: no filter at all,
+	// rather than a guess.
+	for _, q := range []url.Values{
+		{},
+		{"favorite": []string{""}},
+		{"favorite": []string{"maybe"}},
+		{"q": []string{"2024-08"}, "year": []string{"2024"}},
+	} {
+		if parsePhotoFilter(q).Favorite != nil {
+			t.Errorf("%v produced a filter", q)
+		}
 	}
 }
 
@@ -59,39 +66,5 @@ func TestParseRangeDefaultStillExcludesTheFarFuture(t *testing.T) {
 	farFuture := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
 	if farFuture.Before(to) {
 		t.Fatalf("default range ends at %s, which admits %s", to, farFuture)
-	}
-}
-
-func TestParsePhotoFilterEmptyMeansNoConstraint(t *testing.T) {
-	got := parsePhotoFilter(url.Values{})
-	if got.Favorite != nil || len(got.Years) != 0 || len(got.Months) != 0 || got.Query != "" || got.LocalFrom != "" || got.LocalTo != "" {
-		t.Fatalf("got %+v", got)
-	}
-}
-
-func TestParsePhotoFilterReadsMonthAndLocalTakenAtBounds(t *testing.T) {
-	q := url.Values{
-		"month":      []string{"06", "07"},
-		"local_from": []string{"2025-12-01"},
-		"local_to":   []string{"2026-03-01"},
-	}
-	got := parsePhotoFilter(q)
-	if len(got.Months) != 2 || got.Months[0] != "06" || got.Months[1] != "07" {
-		t.Fatalf("months %+v", got.Months)
-	}
-	if got.LocalFrom != "2025-12-01" || got.LocalTo != "2026-03-01" {
-		t.Fatalf("local bounds %q %q", got.LocalFrom, got.LocalTo)
-	}
-}
-
-func TestParsePhotoFilterIgnoresInvalidMonthAndLocalDays(t *testing.T) {
-	q := url.Values{
-		"month":      []string{"13", "ab", "6"},
-		"local_from": []string{"2025-1-1"},
-		"local_to":   []string{"yesterday"},
-	}
-	got := parsePhotoFilter(q)
-	if len(got.Months) != 0 || got.LocalFrom != "" || got.LocalTo != "" {
-		t.Fatalf("got %+v", got)
 	}
 }

@@ -17,7 +17,7 @@ A **Timeline Group** is a date bucket. It is not an Album.
 
 ## Decision
 
-Memories, Search and Favorites page photos from `GET /api/photos`. The SPA
+Memories and Favorites page photos from `GET /api/photos`. The SPA
 buckets them itself: `groupPhotos` sorts by `taken_at_local` and groups by the
 current zoom level, and `justifyRows` packs each group into rows from the real
 aspect ratios.
@@ -36,7 +36,7 @@ library, which is the summary that endpoint already returns.
 ## Consequences
 
 - Grouping is a UI decision and can change without a new endpoint shape.
-- Search, Favorites and a zoom change only see photos already in the infinite
+- Favorites and a zoom change only see photos already in the infinite
   query. With a page size of 500 ([0017](0017-date-scrubber.md)) that is
   usually the visible era, but it is not a global index.
 - Because `virtua` renders nothing in jsdom, Timeline composition cannot be
