@@ -1,23 +1,23 @@
 import type { ReactNode } from 'react';
 import type { NavTab } from '../models/photo';
 import { BottomNavigation, NavButtons } from './BottomNavigation';
-import { SignOutButton } from './SignOutButton';
+import { AccountButton } from './AccountButton';
 import { ThemeToggle } from './ThemeToggle';
 import { TopHeader } from './TopHeader';
+import { useI18n } from '../i18n/I18nProvider';
 
 export function AppShell({
   tab,
   onTabChange,
   admin = false,
-  onSignOut,
   children,
 }: {
   tab: NavTab;
   onTabChange: (tab: NavTab) => void;
   admin?: boolean;
-  onSignOut?: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <div className="relative flex h-dvh overflow-hidden bg-cream text-plum">
       <a
@@ -42,18 +42,18 @@ export function AppShell({
             />
             <span className="sr-only">Memries</span>
           </span>
-          <nav aria-label="Main" className="w-full">
+          <nav aria-label={t('nav.main')} className="w-full">
             <NavButtons tab={tab} onChange={onTabChange} orientation="vertical" admin={admin} />
           </nav>
         </div>
         <div className="flex w-full flex-col items-center">
           <ThemeToggle />
-          {onSignOut && <SignOutButton onSignOut={onSignOut} />}
+          <AccountButton selected={tab === 'account'} onOpen={() => onTabChange('account')} />
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopHeader onSignOut={onSignOut} />
+        <TopHeader selected={tab === 'account'} onOpenAccount={() => onTabChange('account')} />
         <main id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col outline-none">
           {children}
         </main>

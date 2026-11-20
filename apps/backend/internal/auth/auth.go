@@ -53,6 +53,11 @@ type SessionUser struct {
 	Name  string
 }
 
+// localeReader is the slice of the catalog the locale endpoints need.
+type localeReader interface {
+	SetUserLocale(ctx context.Context, key, locale string) error
+}
+
 func init() {
 	gob.Register(&SessionUser{})
 }
@@ -63,6 +68,7 @@ type UserStore interface {
 	GetUserByEmail(ctx context.Context, email string) (*db.User, error)
 	UpsertUserByEmail(ctx context.Context, email, name string) (*db.User, error)
 	SetPasswordHash(ctx context.Context, key, hash string) error
+	SetUserLocale(ctx context.Context, key, locale string) error
 }
 
 type Auth struct {
@@ -228,7 +234,7 @@ func (a *Auth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("login accepted", "login", login, "addr", addr)
-	a.writeUser(w, &SessionUser{Key: user.Key, Email: user.Email, Name: user.Name})
+	a.writeUser(r.Context(), w, &SessionUser{Key: user.Key, Email: user.Email, Name: user.Name})
 }
 
 // authenticate resolves and checks the credentials, spending the same work
@@ -286,15 +292,53 @@ func (a *Auth) MeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	a.writeUser(w, u)
+	a.writeUser(r.Context(), w, u)
 }
 
-func (a *Auth) writeUser(w http.ResponseWriter, u *SessionUser) {
+func (a *Auth) writeUser(ctx context.Context, w http.ResponseWriter, u *SessionUser) {
+	// The stored locale is read fresh rather than kept in the session: a
+	// change made in one tab should reach the next request in another, and
+	// the session cookie would hold a stale copy until sign-out.
+	locale := ""
+	if stored, err := a.db.GetUserByEmail(ctx, u.Email); err == nil && stored != nil {
+		locale = stored.Locale
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
 		*SessionUser
-		Admin bool `json:"admin"`
-	}{u, a.cfg.IsAdmin(u.Email)})
+		Admin  bool   `json:"admin"`
+		Locale string `json:"locale"`
+	}{u, a.cfg.IsAdmin(u.Email), locale})
+}
+
+// SetLocaleHandler records the reader's interface language.
+//
+// An empty locale is legal and means "follow the browser", which is how a
+// reader undoes a choice rather than having to pick their own language back.
+func (a *Auth) SetLocaleHandler(w http.ResponseWriter, r *http.Request) {
+	u, ok := UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		Locale string `json:"locale"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<10)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if !db.IsSupportedLocale(body.Locale) {
+		http.Error(w, "unsupported locale", http.StatusBadRequest)
+		return
+	}
+	if err := a.db.SetUserLocale(r.Context(), u.Key, body.Locale); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"locale": body.Locale})
 }
 
 func (a *Auth) Middleware(next http.Handler) http.Handler {

@@ -123,6 +123,8 @@ describe('signIn', () => {
       email: 'admin@example.com',
       name: 'Admin',
       admin: true,
+      // A server that sends no locale means "follow the browser" (ADR 0021).
+      locale: '',
     });
 
     const [url, init] = fetchMock.mock.calls[0];

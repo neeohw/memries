@@ -3,6 +3,7 @@ import { usePhotoPress } from '../hooks/usePhotoPress';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { useRevealOnScroll } from '../hooks/useRevealOnScroll';
 import { useViewportWidth } from '../hooks/useViewportWidth';
+import { useI18n } from '../i18n/I18nProvider';
 import { usePhotoSelection } from '../hooks/usePhotoSelection';
 import { photoOpenLabel, photoSelectLabel } from '../lib/photoName';
 import { compactThumbSize, sizedThumbUrl, timelineSrc, type PhotoDensity } from '../lib/photoSrc';
@@ -41,6 +42,7 @@ export function PhotoCard({
     ? sizedThumbUrl(photo.id, Math.max(size.width, size.height), photo.hash)
     : timelineSrc(photo, density, viewportWidth);
 
+  const { t, intl } = useI18n();
   const selection = usePhotoSelection();
   const selected = selection.selected.has(photo.id);
 
@@ -71,7 +73,9 @@ export function PhotoCard({
   const radius = density === 'thumb' || size ? 'rounded-md' : 'rounded-2xl';
 
   // The label has to say what the click will actually do.
-  const ariaLabel = selection.active ? photoSelectLabel(photo, selected) : photoOpenLabel(photo);
+  const ariaLabel = selection.active
+    ? photoSelectLabel(photo, selected, t, intl)
+    : photoOpenLabel(photo, t, intl);
 
   return (
     <figure
@@ -151,7 +155,7 @@ export function PhotoCard({
         type="button"
         role="checkbox"
         aria-checked={selected}
-        aria-label={photoSelectLabel(photo, selected)}
+        aria-label={photoSelectLabel(photo, selected, t, intl)}
         data-select-photo
         onClick={(event) => {
           event.stopPropagation();

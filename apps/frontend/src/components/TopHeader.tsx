@@ -1,7 +1,13 @@
-import { SignOutButton } from './SignOutButton';
+import { AccountButton } from './AccountButton';
 import { ThemeToggle } from './ThemeToggle';
 
-export function TopHeader({ onSignOut }: { onSignOut?: () => void }) {
+export function TopHeader({
+  selected = false,
+  onOpenAccount,
+}: {
+  selected?: boolean;
+  onOpenAccount?: () => void;
+}) {
   return (
     <header className="flex items-center justify-between gap-3 px-3 py-1.5 min-[800px]:hidden">
       <div className="flex items-center gap-2">
@@ -13,7 +19,7 @@ export function TopHeader({ onSignOut }: { onSignOut?: () => void }) {
       </div>
       <div className="flex items-center">
         <ThemeToggle />
-        {onSignOut && <SignOutButton onSignOut={onSignOut} />}
+        {onOpenAccount && <AccountButton selected={selected} onOpen={onOpenAccount} />}
       </div>
     </header>
   );

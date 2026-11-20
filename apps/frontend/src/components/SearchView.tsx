@@ -8,13 +8,14 @@ import { photoFacets } from '../lib/groupPhotos';
 import { chunkIntoRows, rowWindow, searchGridColumns } from '../lib/keepWindow';
 import { parseSmartDate, SEARCH_SUGGESTIONS } from '../lib/parseSmartDate';
 import { compactThumbSize, compactThumbUrl } from '../lib/photoSrc';
+import { useI18n } from '../i18n/I18nProvider';
 import type { Photo, SearchCategory, SearchState } from '../models/photo';
 import { FavoriteBadge } from './FavoriteBadge';
 import { CloseIcon, SearchIcon } from './icons';
 
 const CATEGORIES: { id: SearchCategory; label: string }[] = [
-  { id: 'years', label: 'Years' },
-  { id: 'favorites', label: 'Favorites' },
+  { id: 'years', label: 'search.years' },
+  { id: 'favorites', label: 'search.favoritesOnly' },
 ];
 
 export function SearchView({
@@ -36,6 +37,7 @@ export function SearchView({
   autoFocus: boolean;
   ready?: boolean;
 }) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const reducedMotion = usePrefersReducedMotion();
   const facets = useMemo(() => photoFacets(facetPhotos), [facetPhotos]);
@@ -94,7 +96,7 @@ export function SearchView({
             autoComplete="off"
             value={search.query}
             onChange={(event) => onSearchChange({ ...search, query: event.target.value })}
-            placeholder="Yesterday, last winter, June…"
+            placeholder={t('search.placeholder')}
             className="h-11 min-w-0 w-full bg-transparent text-base text-plum outline-none placeholder:text-ink focus-visible:ring-0 focus-visible:ring-offset-0"
           />
         </label>
@@ -106,7 +108,7 @@ export function SearchView({
               type="button"
               onClick={() => onSearchChange({ ...search, query: '' })}
               className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink transition hover:text-plum"
-              aria-label="Clear search date"
+              aria-label={t('search.clearDate')}
             >
               <CloseIcon className="h-4 w-4" />
             </button>
@@ -123,7 +125,7 @@ export function SearchView({
               </p>
               <ul
                 className="no-scrollbar -mx-3 flex gap-1.5 overflow-x-auto px-3 min-[640px]:-mx-5 min-[640px]:px-5 min-[1024px]:mx-0 min-[1024px]:mb-5 min-[1024px]:flex-wrap min-[1024px]:overflow-visible min-[1024px]:px-0"
-                aria-label="Search suggestions"
+                aria-label={t('search.suggestions')}
               >
                 {SEARCH_SUGGESTIONS.map((suggestion, index) => (
                   <li key={suggestion.chip} className="shrink-0">
@@ -150,7 +152,7 @@ export function SearchView({
           <div
             className="mt-2 flex flex-wrap gap-1.5 min-[1024px]:mt-0"
             role="group"
-            aria-label="Search filters"
+            aria-label={t('search.filters')}
           >
             {CATEGORIES.map((category) => {
               const active =
@@ -171,14 +173,18 @@ export function SearchView({
                     active ? 'bg-plum text-cream' : 'bg-surface/70 text-ink hover:text-plum'
                   }`}
                 >
-                  {category.label}
+                  {t(category.label)}
                 </button>
               );
             })}
           </div>
 
           {facetOptions.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Years">
+            <div
+              className="mt-2 flex flex-wrap gap-1.5"
+              role="group"
+              aria-label={t('search.years')}
+            >
               {facetOptions.map((option) => {
                 const selected = selectedFacets.includes(option);
                 return (
@@ -285,7 +291,8 @@ function SearchResultButton({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const viewportWidth = useViewportWidth();
   const box = compactThumbSize(viewportWidth);
-  const ariaLabel = photoOpenLabel(photo);
+  const { t, intl } = useI18n();
+  const ariaLabel = photoOpenLabel(photo, t, intl);
 
   const press = usePhotoPress({
     onOpen: () => {

@@ -1,4 +1,5 @@
-import { canZoomIn, canZoomOut, zoomBy, zoomDisplayLabel, zoomLabel } from '../lib/zoom';
+import { useI18n } from '../i18n/I18nProvider';
+import { canZoomIn, canZoomOut, zoomBy } from '../lib/zoom';
 import type { Granularity } from '../models/photo';
 import { MinusIcon, PlusIcon } from './icons';
 
@@ -22,6 +23,7 @@ export function ZoomControl({
   onChange: (value: Granularity) => void;
   className?: string;
 }) {
+  const { t } = useI18n();
   const inAvailable = canZoomIn(value);
   const outAvailable = canZoomOut(value);
 
@@ -30,7 +32,7 @@ export function ZoomControl({
       data-zoom-control
       data-granularity={value}
       role="group"
-      aria-label="Timeline zoom"
+      aria-label={t('timeline.zoomGroup')}
       // Below 640px the period label is absolutely positioned under the
       // header, so this control and the two icon buttons are the whole row.
       // Stretching it keeps those buttons on the right edge where they were,
@@ -42,8 +44,8 @@ export function ZoomControl({
         type="button"
         onClick={() => onChange(zoomBy(value, -1))}
         disabled={!outAvailable}
-        aria-label="Zoom out, group by a longer period"
-        title="Zoom out (Ctrl + scroll)"
+        aria-label={t('timeline.zoomOut')}
+        title={t('timeline.zoomOutTitle')}
         className="grid h-9 w-9 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface hover:text-plum active:scale-95 disabled:opacity-40 disabled:hover:bg-transparent"
       >
         <MinusIcon className="h-4 w-4" />
@@ -65,18 +67,18 @@ export function ZoomControl({
         aria-hidden
         className="w-14 shrink-0 select-none text-center text-xs font-medium text-plum min-[640px]:text-sm"
       >
-        {zoomDisplayLabel(value)}
+        {t(`timeline.level.${value}`)}
       </span>
       <p aria-live="polite" className="sr-only">
-        {zoomLabel(value)}
+        {t('timeline.groupedBy', { level: t(`timeline.level.${value}`).toLowerCase() })}
       </p>
 
       <button
         type="button"
         onClick={() => onChange(zoomBy(value, 1))}
         disabled={!inAvailable}
-        aria-label="Zoom in, group by a shorter period"
-        title="Zoom in (Ctrl + scroll)"
+        aria-label={t('timeline.zoomIn')}
+        title={t('timeline.zoomInTitle')}
         className="grid h-9 w-9 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface hover:text-plum active:scale-95 disabled:opacity-40 disabled:hover:bg-transparent"
       >
         <PlusIcon className="h-4 w-4" />

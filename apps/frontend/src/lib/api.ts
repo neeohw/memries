@@ -319,8 +319,27 @@ export async function removePhotoFromAlbum(albumId: string, photoId: string): Pr
   return mapAlbum((await res.json()) as ApiAlbumView);
 }
 
-function mapMe(body: { Email?: string; Name?: string; admin?: boolean }): Me {
-  return { email: body.Email ?? '', name: body.Name ?? '', admin: body.admin === true };
+function mapMe(body: { Email?: string; Name?: string; admin?: boolean; locale?: string }): Me {
+  return {
+    email: body.Email ?? '',
+    name: body.Name ?? '',
+    admin: body.admin === true,
+    locale: body.locale ?? '',
+  };
+}
+
+/**
+ * Records the reader's interface language on their account (ADR 0021).
+ *
+ * An empty locale is legal and means "follow the browser", which is how a
+ * reader undoes a choice.
+ */
+export async function setLocale(locale: string): Promise<void> {
+  await apiFetch('/api/me/locale', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ locale }),
+  });
 }
 
 export async function fetchMe(): Promise<Me> {

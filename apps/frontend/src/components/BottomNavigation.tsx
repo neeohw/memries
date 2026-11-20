@@ -1,17 +1,18 @@
 import { useSlidingHighlight } from '../hooks/useSlidingHighlight';
 import type { NavTab } from '../models/photo';
+import { useI18n } from '../i18n/I18nProvider';
 import { AlbumIcon, DriveIcon, FoldersIcon, HeartIcon, SearchIcon } from './icons';
 
 type NavItem = { id: NavTab; label: string; icon: typeof AlbumIcon };
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'memories', label: 'Memories', icon: AlbumIcon },
-  { id: 'favorites', label: 'Favorites', icon: HeartIcon },
-  { id: 'albums', label: 'Albums', icon: FoldersIcon },
-  { id: 'search', label: 'Search', icon: SearchIcon },
+  { id: 'memories', label: 'nav.memories', icon: AlbumIcon },
+  { id: 'favorites', label: 'nav.favorites', icon: HeartIcon },
+  { id: 'albums', label: 'nav.albums', icon: FoldersIcon },
+  { id: 'search', label: 'nav.search', icon: SearchIcon },
 ];
 
-const ADMIN_ITEMS: NavItem[] = [{ id: 'folders', label: 'Folders', icon: DriveIcon }];
+const ADMIN_ITEMS: NavItem[] = [{ id: 'folders', label: 'nav.folders', icon: DriveIcon }];
 
 function navItems(admin: boolean): NavItem[] {
   return admin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
@@ -30,6 +31,7 @@ function NavButton({
   layout: 'vertical' | 'horizontal';
   buttonRef?: (node: HTMLButtonElement | null) => void;
 }) {
+  const { t } = useI18n();
   const Icon = item.icon;
   return (
     <button
@@ -48,16 +50,16 @@ function NavButton({
       )}
       {layout === 'vertical' ? (
         <>
-          <span className="sr-only">{item.label}</span>
+          <span className="sr-only">{t(item.label)}</span>
           <span
             aria-hidden
             className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-x-1 -translate-y-1/2 whitespace-nowrap rounded-lg bg-plum px-2.5 py-1 text-xs font-medium text-cream opacity-0 shadow-lift transition duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100 motion-reduce:transition-none"
           >
-            {item.label}
+            {t(item.label)}
           </span>
         </>
       ) : (
-        <span className="max-w-full truncate">{item.label}</span>
+        <span className="max-w-full truncate">{t(item.label)}</span>
       )}
     </button>
   );
@@ -139,10 +141,11 @@ export function BottomNavigation({
   onChange: (tab: NavTab) => void;
   admin?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <nav
       data-nav-layout="bottom"
-      aria-label="Main"
+      aria-label={t('nav.main')}
       className="border-t border-plum/10 bg-cream/80 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-xl min-[800px]:hidden"
     >
       <NavButtons tab={tab} onChange={onChange} orientation="horizontal" admin={admin} />

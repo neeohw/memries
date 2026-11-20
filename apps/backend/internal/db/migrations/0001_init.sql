@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS users (
   -- argon2id encoded hash (ADR 0016). Empty means the user cannot log in
   -- with a password yet.
   password_hash    TEXT NOT NULL DEFAULT '',
+  -- Preferred interface language: 'en', 'nl', or empty to follow whatever
+  -- the reader's browser asks for (ADR 0021).
+  locale           TEXT NOT NULL DEFAULT '',
   created_at       BIGINT NOT NULL
 );
 

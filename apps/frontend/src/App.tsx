@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlbumPage } from './components/AlbumPage';
 import { LoginScreen } from './components/LoginScreen';
+import { AccountView } from './components/AccountView';
 import { AlbumsView } from './components/AlbumsView';
 import { AppShell } from './components/AppShell';
 import { FavoritesView } from './components/FavoritesView';
@@ -31,6 +32,8 @@ import {
   useSources,
   useUpdateSource,
 } from './hooks/useSources';
+import { I18nProvider, useT } from './i18n/I18nProvider';
+import { useLocale } from './hooks/useLocale';
 import { isUnauthorized, signIn, signOut } from './lib/api';
 import { flattenPhotos, useBatchFavorite, usePhotos, useToggleFavorite } from './hooks/usePhotos';
 import { parseSmartDate } from './lib/parseSmartDate';
@@ -51,6 +54,9 @@ const INITIAL_SEARCH: SearchState = {
 export default function App() {
   const queryClient = useQueryClient();
   const me = useMe();
+  // Resolved before the session is known, so the sign-in form and the error
+  // screens are already in the reader's browser language (ADR 0021).
+  const { locale } = useLocale(me.data);
 
   const handleSignIn = useCallback(
     async (login: string, password: string) => {
@@ -68,10 +74,28 @@ export default function App() {
     void signOut().finally(() => queryClient.clear());
   }, [queryClient]);
 
+  return (
+    <I18nProvider locale={locale}>
+      <AppRoutes me={me} onSignIn={handleSignIn} onSignOut={handleSignOut} />
+    </I18nProvider>
+  );
+}
+
+function AppRoutes({
+  me,
+  onSignIn,
+  onSignOut,
+}: {
+  me: ReturnType<typeof useMe>;
+  onSignIn: (login: string, password: string) => Promise<void>;
+  onSignOut: () => void;
+}) {
+  const t = useT();
+
   if (me.isPending) {
     return (
       <div className="grid min-h-dvh place-items-center bg-cream" role="status">
-        <span className="sr-only">Loading</span>
+        <span className="sr-only">{t('app.loading')}</span>
         <span
           className="h-10 w-10 animate-pulse rounded-full bg-gradient-to-br from-peach to-blush"
           aria-hidden
@@ -82,7 +106,7 @@ export default function App() {
 
   if (me.isError) {
     if (isUnauthorized(me.error)) {
-      return <LoginScreen onSignIn={handleSignIn} />;
+      return <LoginScreen onSignIn={onSignIn} />;
     }
     return (
       <div
@@ -90,21 +114,21 @@ export default function App() {
         role="alert"
       >
         <p className="font-display text-2xl font-semibold tracking-tight">
-          We could not reach the server
+          {t('app.unreachableTitle')}
         </p>
-        <p className="mt-2 max-w-xs text-sm text-ink">Check that Memries is running, then retry.</p>
+        <p className="mt-2 max-w-xs text-sm text-ink">{t('app.unreachableBody')}</p>
         <button
           type="button"
           onClick={() => void me.refetch()}
           className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
         >
-          Try again
+          {t('app.retry')}
         </button>
       </div>
     );
   }
 
-  return <Library onSignOut={handleSignOut} />;
+  return <Library onSignOut={onSignOut} />;
 }
 
 function Library({ onSignOut }: { onSignOut: () => void }) {
@@ -155,6 +179,11 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
 
   const meQuery = useMe();
   const admin = meQuery.data?.admin === true;
+  const {
+    stored: storedLocale,
+    setLocale: changeLocale,
+    saving: savingLocale,
+  } = useLocale(meQuery.data);
   const sourcesQuery = useSources(admin && tab === 'folders');
   const createSourceMutation = useCreateSource();
   const updateSourceMutation = useUpdateSource();
@@ -241,7 +270,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   return (
     <>
       {showGallery && (
-        <AppShell tab={tab} onTabChange={changeTab} admin={admin} onSignOut={onSignOut}>
+        <AppShell tab={tab} onTabChange={changeTab} admin={admin}>
           {showQueryError && (
             <div
               className="flex flex-1 flex-col items-center justify-center px-6 text-center"
@@ -291,6 +320,15 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               onSelectionAddToAlbum={(ids, albumId) =>
                 addPhotosMutation.mutate({ albumId, photoIds: ids })
               }
+            />
+          )}
+          {tab === 'account' && (
+            <AccountView
+              email={meQuery.data?.email ?? ''}
+              locale={storedLocale}
+              onLocaleChange={changeLocale}
+              onSignOut={onSignOut}
+              saving={savingLocale}
             />
           )}
           {tab === 'folders' && admin && (

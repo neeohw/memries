@@ -1,3 +1,15 @@
+/**
+ * Dates rendered in the reader's language (ADR 0021).
+ *
+ * Every formatter takes an optional BCP 47 `locale`. Passing it explicitly
+ * rather than reading a module-level "current language" keeps these pure:
+ * a label is a function of its inputs, and a test does not depend on what
+ * some other test set last.
+ *
+ * Omitted, the locale is the browser's, which is what these did before a
+ * language could be chosen.
+ */
+
 export function addMinutes(isoLocal: string, minutes: number): string {
   const [datePart, timePart] = isoLocal.split('T');
   const [year, month, day] = datePart.split('-').map(Number);
@@ -12,9 +24,9 @@ export function addMinutes(isoLocal: string, minutes: number): string {
   return `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}T${pad(hh)}:${pad(mm)}:00`;
 }
 
-export function formatDayLabel(isoDate: string): string {
+export function formatDayLabel(isoDate: string, locale?: string): string {
   const [y, m, d] = isoDate.slice(0, 10).split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale, {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -23,26 +35,26 @@ export function formatDayLabel(isoDate: string): string {
   });
 }
 
-export function formatMonthLabel(yearMonth: string): string {
+export function formatMonthLabel(yearMonth: string, locale?: string): string {
   const [y, m] = yearMonth.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, {
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(locale, {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
   });
 }
 
-export function formatTime(takenAt: string): string {
-  return new Date(`${takenAt}Z`).toLocaleTimeString(undefined, {
+export function formatTime(takenAt: string, locale?: string): string {
+  return new Date(`${takenAt}Z`).toLocaleTimeString(locale, {
     hour: 'numeric',
     minute: '2-digit',
     timeZone: 'UTC',
   });
 }
 
-export function formatCompactDate(takenAt: string): string {
+export function formatCompactDate(takenAt: string, locale?: string): string {
   const [y, m, d] = takenAt.slice(0, 10).split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -69,7 +81,7 @@ export function mondayOfIsoWeek(year: number, week: number): Date {
   return monday;
 }
 
-export function formatWeekLabel(key: string): string {
+export function formatWeekLabel(key: string, locale?: string): string {
   const [yearStr, weekStr] = key.split('-W');
   const year = Number(yearStr);
   const week = Number(weekStr);
@@ -78,22 +90,11 @@ export function formatWeekLabel(key: string): string {
   end.setUTCDate(start.getUTCDate() + 6);
   const startDay = start.getUTCDate();
   const endDay = end.getUTCDate();
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  const startMonth = months[start.getUTCMonth()];
-  const endMonth = months[end.getUTCMonth()];
+  // Month names come from Intl rather than a hard-coded English list, so a
+  // week range reads as "13–19 mrt 2023" in Dutch.
+  const month = new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' });
+  const startMonth = month.format(start);
+  const endMonth = month.format(end);
   if (
     start.getUTCMonth() === end.getUTCMonth() &&
     start.getUTCFullYear() === end.getUTCFullYear()

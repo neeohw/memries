@@ -27,4 +27,6 @@ export interface Me {
   email: string;
   name: string;
   admin: boolean;
+  /** 'en', 'nl', or empty to follow the browser (ADR 0021). */
+  locale: string;
 }

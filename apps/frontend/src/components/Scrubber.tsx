@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 import { formatMonthLabel } from '../lib/formatDate';
 import {
   type ScrubberScale,
@@ -29,6 +30,7 @@ export function Scrubber({
   revealed?: boolean;
   reducedMotion?: boolean;
 }) {
+  const { t } = useI18n();
   const trackRef = useRef<HTMLDivElement>(null);
   const [dragFraction, setDragFraction] = useState<number | null>(null);
   const [active, setActive] = useState(false);
@@ -113,7 +115,7 @@ export function Scrubber({
         ref={trackRef}
         role="slider"
         tabIndex={0}
-        aria-label="Jump to date"
+        aria-label={t('timeline.jumpToDate')}
         aria-orientation="vertical"
         aria-valuemin={0}
         aria-valuemax={segments.length - 1}

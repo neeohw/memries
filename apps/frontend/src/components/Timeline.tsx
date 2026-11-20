@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 import { VList, type VListHandle } from 'virtua';
 import { groupPhotos, nearestGroupIndex } from '../lib/groupPhotos';
 import {
@@ -87,8 +88,16 @@ export function Timeline({
   onSelectionAddToAlbum?: (ids: string[], albumId: string) => void;
   onSelectionCreateAlbum?: (ids: string[], name: string) => void;
 }) {
+  const { t, intl } = useI18n();
   const reducedMotion = usePrefersReducedMotion();
-  const groups = useMemo(() => groupPhotos(photos, granularity), [photos, granularity]);
+  const groups = useMemo(
+    () =>
+      groupPhotos(photos, granularity, {
+        locale: intl,
+        memories: (count) => t('favorites.count', { count }),
+      }),
+    [photos, granularity, intl, t],
+  );
   const listRef = useRef<VListHandle>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<string | null>(null);
@@ -318,7 +327,7 @@ export function Timeline({
   return (
     <PhotoSelectionProvider value={selection}>
       <div ref={rootRef} className="flex min-h-0 flex-1 flex-col">
-        <h1 className="sr-only">Your memries</h1>
+        <h1 className="sr-only">{t('timeline.heading')}</h1>
         {selection.active ? (
           // Takes the header's place while a selection is live, so the count and
           // the way out are always where the period label was (ADR 0018).
@@ -356,8 +365,8 @@ export function Timeline({
               <button
                 type="button"
                 onClick={onFilter}
-                aria-label="Filter"
-                title="Filter"
+                aria-label={t('timeline.filter')}
+                title={t('timeline.filter')}
                 className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
               >
                 <FilterIcon className="h-5 w-5" />
@@ -368,8 +377,8 @@ export function Timeline({
                 type="button"
                 onClick={onRescan}
                 disabled={rescanning}
-                aria-label={rescanning ? 'Syncing…' : 'Sync folder'}
-                title={rescanning ? 'Syncing…' : 'Sync folder'}
+                aria-label={rescanning ? t('timeline.syncing') : t('timeline.syncFolder')}
+                title={rescanning ? t('timeline.syncing') : t('timeline.syncFolder')}
                 className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95 disabled:opacity-50"
               >
                 <SyncIcon
@@ -383,9 +392,7 @@ export function Timeline({
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {groups.length === 0 ? (
             <div className="flex flex-col items-center px-6 py-12 text-center" role="status">
-              <p className="text-ink">
-                {noFolders ? 'No photo folders are connected yet.' : 'No memories here yet.'}
-              </p>
+              <p className="text-ink">{noFolders ? t('folders.empty') : t('timeline.empty')}</p>
               {noFolders && !onAddFolder && (
                 <p className="mt-2 max-w-xs text-sm text-ink">
                   Ask an admin to add a folder for your account.
@@ -407,7 +414,7 @@ export function Timeline({
                   disabled={rescanning}
                   className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream disabled:opacity-60"
                 >
-                  {rescanning ? 'Scanning your folder…' : 'Scan your folder'}
+                  {rescanning ? t('timeline.scanning') : t('timeline.scanFolder')}
                 </button>
               )}
             </div>
@@ -492,7 +499,7 @@ export function Timeline({
                     />
                     {isFetchingNextPage && (
                       <p className="py-3 text-center text-sm text-ink" role="status">
-                        Loading more memories…
+                        {t('timeline.loadingMore')}
                       </p>
                     )}
                     {fetchError && (
@@ -526,7 +533,7 @@ export function Timeline({
               className={`absolute bottom-4 z-20 flex min-h-11 items-center gap-2 rounded-full bg-plum px-4 py-2 text-sm font-medium text-cream shadow-lift transition duration-200 active:scale-95 min-[800px]:bottom-6 ${
                 hasScrubber ? 'right-14 min-[800px]:right-16' : 'right-4 min-[800px]:right-6'
               } ${reducedMotion ? '' : 'animate-fab-in'}`}
-              aria-label="Back to today"
+              aria-label={t('timeline.backToToday')}
               data-today-fab
             >
               <TodayIcon className="h-4 w-4" />

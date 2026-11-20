@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { canRetryIndex, indexStatusCopy, type IndexStatus } from '../lib/indexStatus';
 
@@ -17,12 +18,13 @@ export function IndexingScreen({
   retrying?: boolean;
   loadError?: boolean;
 }) {
+  const { t } = useI18n();
   const reducedMotion = usePrefersReducedMotion();
   const copy = loadError
-    ? 'We could not reach the library.'
+    ? t('indexing.unreachable')
     : status
       ? indexStatusCopy(status)
-      : 'Opening your album…';
+      : t('indexing.opening');
   const showRetry = loadError || (!!status && canRetryIndex(status));
   const discovered = status?.discovered ?? 0;
   const processed = status?.processed ?? 0;
@@ -71,7 +73,7 @@ export function IndexingScreen({
             aria-valuemin={0}
             aria-valuemax={discovered}
             aria-valuenow={processed}
-            aria-label="Indexing progress"
+            aria-label={t('indexing.progress')}
           >
             <div
               className="h-full rounded-full bg-peach transition-[width] duration-300"

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 import { CloseIcon } from './icons';
 
 /**
@@ -15,6 +16,7 @@ export function ExcludeEditor({
   value: string[];
   onChange: (next: string[]) => void;
 }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
 
@@ -26,11 +28,11 @@ export function ExcludeEditor({
     try {
       new RegExp(pattern);
     } catch {
-      setError('That is not a valid expression.');
+      setError(t('folders.excludeInvalid'));
       return;
     }
     if (value.includes(pattern)) {
-      setError('That pattern is already in the list.');
+      setError(t('folders.excludeDuplicate'));
       return;
     }
     setError('');

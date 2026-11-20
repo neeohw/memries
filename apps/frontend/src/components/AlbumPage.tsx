@@ -1,4 +1,5 @@
 import { useAlbum } from '../hooks/useAlbums';
+import { useI18n } from '../i18n/I18nProvider';
 import type { Photo } from '../models/photo';
 import { ChevronLeftIcon } from './icons';
 import { PageHeader } from './PageHeader';
@@ -15,6 +16,7 @@ export function AlbumPage({
   onOpen: (photo: Photo, origin: HTMLElement, list: Photo[]) => void;
   onActions?: (photo: Photo, origin: HTMLElement) => void;
 }) {
+  const { t } = useI18n();
   const query = useAlbum(albumId);
   const album = query.data?.album;
   const photos = query.data?.photos ?? [];
@@ -22,7 +24,7 @@ export function AlbumPage({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title={album?.name ?? 'Album'}
+        title={album?.name ?? t('albums.fallbackName')}
         meta={
           album ? `${album.photoCount} ${album.photoCount === 1 ? 'photo' : 'photos'}` : undefined
         }
@@ -30,8 +32,8 @@ export function AlbumPage({
           <button
             type="button"
             onClick={onBack}
-            aria-label="Back to albums"
-            title="Back to albums"
+            aria-label={t('albums.backToAlbums')}
+            title={t('albums.backToAlbums')}
             className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition hover:bg-surface/70 hover:text-plum"
           >
             <ChevronLeftIcon className="h-5 w-5" />
@@ -65,7 +67,7 @@ export function AlbumPage({
           album &&
           (photos.length === 0 ? (
             <p className="mt-10 text-center text-sm text-ink" role="status">
-              No photos in this album yet.
+              {t('albums.emptyAlbum')}
             </p>
           ) : (
             <PhotoGrid

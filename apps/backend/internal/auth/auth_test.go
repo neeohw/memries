@@ -22,7 +22,21 @@ type fakeUsers struct {
 	byEmail map[string]*db.User
 	upserts []string
 	setHash map[string]string
+	locales map[string]string
 	getErr  error
+}
+
+func (f *fakeUsers) SetUserLocale(_ context.Context, key, locale string) error {
+	if f.locales == nil {
+		f.locales = map[string]string{}
+	}
+	f.locales[key] = locale
+	for _, u := range f.byEmail {
+		if u.Key == key {
+			u.Locale = locale
+		}
+	}
+	return nil
 }
 
 func newFakeUsers() *fakeUsers {
@@ -489,4 +503,79 @@ func TestBootstrapWarnsWhenNobodyCanSignIn(t *testing.T) {
 			t.Errorf("warned about a working install; log was %q", got)
 		}
 	})
+}
+
+func TestSetLocaleHandlerStoresASupportedLanguage(t *testing.T) {
+	users := newFakeUsers()
+	u := users.add("a@example.com", "pw", t)
+	a := newTestAuth(t, users, testConfig("http://localhost"))
+
+	for _, locale := range []string{"nl", "en", ""} {
+		req := httptest.NewRequest(http.MethodPut, "/api/me/locale",
+			strings.NewReader(`{"locale":"`+locale+`"}`))
+		req = req.WithContext(WithUser(req.Context(), &SessionUser{Key: u.Key, Email: u.Email}))
+		w := httptest.NewRecorder()
+		a.SetLocaleHandler(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("locale %q: status %d: %s", locale, w.Code, w.Body.String())
+		}
+		if users.locales[u.Key] != locale {
+			t.Errorf("stored %q, want %q", users.locales[u.Key], locale)
+		}
+	}
+}
+
+func TestSetLocaleHandlerRefusesAnUnknownLanguage(t *testing.T) {
+	users := newFakeUsers()
+	u := users.add("a@example.com", "pw", t)
+	a := newTestAuth(t, users, testConfig("http://localhost"))
+
+	req := httptest.NewRequest(http.MethodPut, "/api/me/locale",
+		strings.NewReader(`{"locale":"de"}`))
+	req = req.WithContext(WithUser(req.Context(), &SessionUser{Key: u.Key, Email: u.Email}))
+	w := httptest.NewRecorder()
+	a.SetLocaleHandler(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400", w.Code)
+	}
+	if _, ok := users.locales[u.Key]; ok {
+		t.Error("an unsupported locale was stored")
+	}
+}
+
+func TestSetLocaleHandlerNeedsASession(t *testing.T) {
+	users := newFakeUsers()
+	a := newTestAuth(t, users, testConfig("http://localhost"))
+	req := httptest.NewRequest(http.MethodPut, "/api/me/locale", strings.NewReader(`{"locale":"nl"}`))
+	w := httptest.NewRecorder()
+	a.SetLocaleHandler(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401", w.Code)
+	}
+}
+
+func TestMeReportsTheStoredLocale(t *testing.T) {
+	users := newFakeUsers()
+	u := users.add("a@example.com", "pw", t)
+	u.Locale = "nl"
+	a := newTestAuth(t, users, testConfig("http://localhost"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req = req.WithContext(WithUser(req.Context(), &SessionUser{Key: u.Key, Email: u.Email}))
+	w := httptest.NewRecorder()
+	a.MeHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var body struct {
+		Locale string `json:"locale"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Locale != "nl" {
+		t.Fatalf("locale = %q, want nl", body.Locale)
+	}
 }

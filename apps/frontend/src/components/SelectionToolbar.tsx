@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { selectionLabel } from '../lib/selection';
+import { useI18n } from '../i18n/I18nProvider';
 import type { Album } from '../models/photo';
 import { AlbumIcon, CloseIcon, HeartIcon, PlusIcon } from './icons';
 
@@ -31,23 +31,26 @@ export function SelectionToolbar({
   onCreateAlbum: (name: string) => void;
   busy?: boolean;
 }) {
+  const { t } = useI18n();
   const [picking, setPicking] = useState(false);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState('');
-  const favoriteLabel = allFavorited ? 'Remove from favorites' : 'Add to favorites';
+  const favoriteLabel = allFavorited
+    ? t('selection.removeFromFavorites')
+    : t('selection.addToFavorites');
 
   return (
     <div
       data-selection-toolbar
       role="toolbar"
-      aria-label="Selected photos"
+      aria-label={t('selection.toolbar')}
       className="relative z-20 flex items-center gap-2 px-3 py-2 min-[640px]:px-5"
     >
       <button
         type="button"
         onClick={onClear}
-        aria-label="Clear selection"
-        title="Clear selection"
+        aria-label={t('selection.clear')}
+        title={t('selection.clear')}
         className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
       >
         <CloseIcon className="h-5 w-5" />
@@ -56,7 +59,7 @@ export function SelectionToolbar({
       {/* The count is the toolbar's heading and its live announcement: a
           screen reader hears the selection grow without moving focus. */}
       <p aria-live="polite" className="min-w-0 flex-1 truncate text-sm font-medium text-plum">
-        {selectionLabel(count)}
+        {t('selection.count', { count })}
       </p>
 
       <button
@@ -78,8 +81,8 @@ export function SelectionToolbar({
             setNaming(false);
           }}
           disabled={busy}
-          aria-label="Add to album"
-          title="Add to album"
+          aria-label={t('selection.addToAlbum')}
+          title={t('selection.addToAlbum')}
           aria-haspopup="menu"
           aria-expanded={picking}
           className="grid h-10 w-10 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95 disabled:opacity-50"
@@ -99,7 +102,7 @@ export function SelectionToolbar({
             />
             <div
               role="menu"
-              aria-label="Albums"
+              aria-label={t('nav.albums')}
               className="absolute right-0 top-11 z-40 max-h-72 w-64 overflow-y-auto rounded-2xl bg-surface p-1 shadow-lift"
             >
               {naming ? (
@@ -119,7 +122,7 @@ export function SelectionToolbar({
                   }}
                 >
                   <label className="min-w-0 flex-1">
-                    <span className="sr-only">New album name</span>
+                    <span className="sr-only">{t('selection.newAlbumName')}</span>
                     <input
                       autoFocus
                       type="text"
@@ -134,7 +137,7 @@ export function SelectionToolbar({
                           setDraft('');
                         }
                       }}
-                      placeholder={`Album of ${count} ${count === 1 ? 'photo' : 'photos'}`}
+                      placeholder={t('selection.albumOfPhotos', { count })}
                       maxLength={80}
                       className="h-10 w-full rounded-xl bg-cream px-3 text-sm text-plum outline-none ring-1 ring-plum/10 placeholder:text-ink/60 focus-visible:ring-2 focus-visible:ring-peach"
                     />
@@ -144,7 +147,7 @@ export function SelectionToolbar({
                     disabled={!draft.trim()}
                     className="h-10 shrink-0 rounded-xl px-3 text-sm font-medium text-plum transition hover:bg-blush/40 disabled:opacity-40"
                   >
-                    Create
+                    {t('selection.create')}
                   </button>
                 </form>
               ) : (
@@ -155,7 +158,7 @@ export function SelectionToolbar({
                   className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm font-medium text-plum transition hover:bg-blush/40"
                 >
                   <PlusIcon className="h-4 w-4 shrink-0" />
-                  New album
+                  {t('selection.newAlbum')}
                 </button>
               )}
 

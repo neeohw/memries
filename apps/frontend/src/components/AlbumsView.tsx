@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 import { useSelectionState } from '../hooks/usePhotoSelection';
 import { compactThumbSize, thumbUrl } from '../lib/photoSrc';
-import { selectionLabel } from '../lib/selection';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import type { Album } from '../models/photo';
 import { CheckIcon, CloseIcon, FoldersIcon, PlusIcon, TrashIcon } from './icons';
@@ -20,6 +20,7 @@ export function AlbumsView({
   onDelete?: (ids: string[]) => void;
   creating: boolean;
 }) {
+  const { t } = useI18n();
   const [drafting, setDrafting] = useState(false);
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,7 +66,7 @@ export function AlbumsView({
         />
       ) : (
         <PageHeader
-          title="Albums"
+          title={t('albums.heading')}
           actions={
             <button
               type="button"
@@ -74,7 +75,7 @@ export function AlbumsView({
               className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink transition duration-200 hover:bg-surface/70 hover:text-plum disabled:opacity-40"
             >
               <PlusIcon className="h-4 w-4" />
-              New album
+              {t('albums.newAlbum')}
             </button>
           }
         />
@@ -83,13 +84,13 @@ export function AlbumsView({
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-8 min-[640px]:px-5">
         {creating && (
           <p className="sr-only" role="status">
-            Creating album…
+            {t('albums.creating')}
           </p>
         )}
 
         {albums.length === 0 && !drafting && (
           <p className="mt-10 text-center text-sm text-ink" role="status">
-            No albums yet.
+            {t('albums.empty')}
           </p>
         )}
 
@@ -111,7 +112,7 @@ export function AlbumsView({
                     type="text"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="Summer, the house, Tuesday…"
+                    placeholder={t('albums.namePlaceholder')}
                     className="mt-2 h-11 w-full rounded-xl bg-cream px-3 text-sm text-plum outline-none ring-1 ring-plum/10 placeholder:text-ink"
                   />
                 </label>
@@ -131,7 +132,7 @@ export function AlbumsView({
                     }}
                     className="min-h-10 rounded-full bg-surface px-4 text-sm font-medium text-ink"
                   >
-                    Cancel
+                    {t('albums.cancel')}
                   </button>
                 </div>
               </form>
@@ -172,28 +173,29 @@ function AlbumSelectionBar({
   onClear: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
-  const noun = count === 1 ? 'album' : 'albums';
+  const deleteLabel = t('albums.deleteCount', { count });
 
   return (
     <div
       data-album-selection-bar
       role="toolbar"
-      aria-label="Selected albums"
+      aria-label={t('albums.toolbar')}
       className="relative z-20 flex items-center gap-2 px-3 py-2 min-[640px]:px-5"
     >
       <button
         type="button"
         onClick={onClear}
-        aria-label="Clear selection"
-        title="Clear selection"
+        aria-label={t('selection.clear')}
+        title={t('selection.clear')}
         className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
       >
         <CloseIcon className="h-5 w-5" />
       </button>
 
       <p aria-live="polite" className="min-w-0 flex-1 truncate text-sm font-medium text-plum">
-        {selectionLabel(count)}
+        {t('selection.count', { count })}
       </p>
 
       {confirming ? (
@@ -203,22 +205,22 @@ function AlbumSelectionBar({
             onClick={onDelete}
             className="min-h-10 shrink-0 rounded-full bg-plum px-4 text-sm font-medium text-cream transition hover:bg-plum/90"
           >
-            {`Delete ${count} ${noun}`}
+            {deleteLabel}
           </button>
           <button
             type="button"
             onClick={() => setConfirming(false)}
             className="min-h-10 shrink-0 rounded-full px-3 text-sm font-medium text-ink transition hover:bg-surface/70"
           >
-            Cancel
+            {t('albums.cancel')}
           </button>
         </>
       ) : (
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          aria-label={`Delete ${count} ${noun}`}
-          title={`Delete ${count} ${noun}`}
+          aria-label={deleteLabel}
+          title={deleteLabel}
           className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95"
         >
           <TrashIcon className="h-5 w-5" />
@@ -243,9 +245,10 @@ function AlbumCard({
   selectionActive: boolean;
   onToggle: (opts?: { shiftKey?: boolean }) => void;
 }) {
+  const { t } = useI18n();
   const coverId = album.coverPhotoId ?? album.photoIds[0];
   const count = album.photoCount;
-  const countLabel = `${count} ${count === 1 ? 'photo' : 'photos'}`;
+  const countLabel = t('albums.photoCount', { count });
   const coverSize = compactThumbSize(useViewportWidth());
 
   return (
@@ -263,7 +266,11 @@ function AlbumCard({
           type="button"
           role="checkbox"
           aria-checked={selected}
-          aria-label={selected ? `Deselect album ${album.name}` : `Select album ${album.name}`}
+          aria-label={
+            selected
+              ? t('albums.deselect', { name: album.name })
+              : t('albums.select', { name: album.name })
+          }
           data-select-album
           onClick={(event) => {
             event.stopPropagation();
@@ -296,8 +303,11 @@ function AlbumCard({
         className="block w-full text-left transition duration-200 active:scale-[0.99]"
         aria-label={
           selectionActive
-            ? `${selected ? 'Deselect' : 'Select'} album ${album.name}, ${countLabel}`
-            : `Open album ${album.name}, ${countLabel}`
+            ? t(selected ? 'albums.deselectWithCount' : 'albums.selectWithCount', {
+                name: album.name,
+                count: countLabel,
+              })
+            : t('albums.open', { name: album.name, count: countLabel })
         }
       >
         <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-blush/50">

@@ -126,6 +126,15 @@ export function TrashIcon(props: IconProps) {
   );
 }
 
+export function PersonIcon(props: IconProps) {
+  return (
+    <svg {...icon(props)}>
+      <circle cx="12" cy="8.5" r="3.5" />
+      <path d="M5 19.5a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
+
 export function SunIcon(props: IconProps) {
   return (
     <svg {...icon(props)}>

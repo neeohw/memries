@@ -105,6 +105,7 @@ func main() {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(a.Middleware)
 		r.Get("/me", a.MeHandler)
+		r.Put("/me/locale", a.SetLocaleHandler)
 		apiH.Routes(r)
 	})
 

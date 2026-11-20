@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 import type { Source, SourceInput, SourceType } from '../models/source';
 import { ExcludeEditor } from './ExcludeEditor';
 import { DriveIcon, PlusIcon, SyncIcon } from './icons';
@@ -13,23 +14,23 @@ const TYPES: Array<{
 }> = [
   {
     id: 'local',
-    label: 'On this server',
-    locationLabel: 'Folder path',
+    label: 'folders.typeLocal',
+    locationLabel: 'folders.locationLocal',
     placeholder: '/data/photos/family',
-    hint: 'An absolute path the server can read, inside an allowed folder. Mount a network share on the server first, then add it here.',
+    hint: 'folders.hintLocal',
   },
   {
     id: 'webdav',
-    label: 'WebDAV',
-    locationLabel: 'URL',
+    label: 'folders.typeWebdav',
+    locationLabel: 'folders.locationWebdav',
     placeholder: 'https://cloud.example.com/remote.php/dav/files/me/Photos',
-    hint: 'Nextcloud, ownCloud, Synology, or any WebDAV server.',
+    hint: 'folders.hintWebdav',
   },
 ];
 
 const TYPE_LABEL: Record<SourceType, string> = {
-  local: 'Server folder',
-  webdav: 'WebDAV',
+  local: 'folders.labelLocal',
+  webdav: 'folders.labelWebdav',
 };
 
 const inputClass =
@@ -53,8 +54,10 @@ function draftFrom(source: Source): Draft {
 }
 
 function errorText(error: unknown): string {
+  // The server's own words where it gave any; the caller supplies a fallback
+  // in the reader's language when it did not.
   const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/^invalid source:\s*/i, '').trim() || 'Something went wrong.';
+  return message.replace(/^invalid source:\s*/i, '').trim() || '';
 }
 
 export function SourcesView({
@@ -74,12 +77,13 @@ export function SourcesView({
   onDelete: (id: string) => Promise<unknown>;
   onScan: (id: string) => Promise<unknown>;
 }) {
+  const { t: tr } = useI18n();
   const [editing, setEditing] = useState<string | 'new' | null>(null);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Folders"
+        title={tr('folders.heading')}
         meta={sources.length > 0 ? `${sources.length} connected` : undefined}
         actions={
           <button
@@ -169,6 +173,7 @@ function SourceCard({
   onDelete: () => Promise<unknown>;
   onScan: () => Promise<unknown>;
 }) {
+  const { t: tr } = useI18n();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState<'scan' | 'delete' | null>(null);
   const [scanned, setScanned] = useState(false);
@@ -200,7 +205,7 @@ function SourceCard({
         <div className="min-w-0 flex-1">
           <h2 className="truncate font-medium text-plum">{source.name}</h2>
           <p className="truncate text-xs text-ink" title={source.location}>
-            {TYPE_LABEL[source.type]} · <span className="font-mono">{source.location}</span>
+            {tr(TYPE_LABEL[source.type])} · <span className="font-mono">{source.location}</span>
           </p>
           {source.username && (
             <p className="mt-0.5 truncate text-xs text-ink">Signed in as {source.username}</p>
@@ -225,7 +230,7 @@ function SourceCard({
           className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-cream px-4 text-sm font-medium text-plum disabled:opacity-50"
         >
           <SyncIcon className="h-4 w-4" />
-          {busy === 'scan' ? 'Scanning…' : 'Scan now'}
+          {busy === 'scan' ? tr('folders.scanning') : tr('folders.scanNow')}
         </button>
         <button
           type="button"
@@ -243,7 +248,7 @@ function SourceCard({
               disabled={busy !== null}
               className="min-h-10 rounded-full bg-plum px-4 text-sm font-medium text-cream disabled:opacity-50"
             >
-              {busy === 'delete' ? 'Removing…' : 'Remove and hide its photos'}
+              {busy === 'delete' ? tr('folders.removing') : tr('folders.removeConfirm')}
             </button>
             <button
               type="button"
@@ -280,6 +285,7 @@ function SourceForm({
   onSubmit: (input: SourceInput) => Promise<void>;
   onCancel: () => void;
 }) {
+  const { t: tr } = useI18n();
   const [draft, setDraft] = useState<Draft>(initial);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -315,7 +321,7 @@ function SourceForm({
     <form
       data-source-form
       className="animate-form-in mb-3 flex max-w-2xl flex-col gap-4 rounded-xl bg-surface/70 p-4"
-      aria-label={existing ? `Edit ${existing.name}` : 'Add folder'}
+      aria-label={existing ? tr('folders.editNamed', { name: existing.name }) : tr('folders.add')}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -341,14 +347,14 @@ function SourceForm({
                 onChange={() => set({ type: t.id })}
                 className="sr-only"
               />
-              {t.label}
+              {tr(t.label)}
             </label>
           ))}
         </div>
       </fieldset>
 
       <label className="text-sm font-medium text-plum">
-        {type.locationLabel}
+        {tr(type.locationLabel)}
         <input
           ref={locationRef}
           type="text"
@@ -363,7 +369,7 @@ function SourceForm({
           className={`${inputClass} font-mono`}
         />
         <span id={hintId} className="mt-1.5 block text-xs font-normal text-ink">
-          {type.hint}
+          {tr(type.hint)}
         </span>
       </label>
 
@@ -387,7 +393,7 @@ function SourceForm({
               type="password"
               value={draft.password}
               onChange={(event) => set({ password: event.target.value })}
-              placeholder={existing?.hasPassword ? 'Leave blank to keep' : ''}
+              placeholder={existing?.hasPassword ? tr('folders.passwordKeep') : ''}
               autoComplete="new-password"
               className={inputClass}
             />
@@ -404,7 +410,7 @@ function SourceForm({
             type="text"
             value={draft.name}
             onChange={(event) => set({ name: event.target.value })}
-            placeholder="Family photos"
+            placeholder={tr('folders.namePlaceholder')}
             maxLength={80}
             className={inputClass}
           />
@@ -423,7 +429,7 @@ function SourceForm({
           disabled={!draft.location.trim() || pending}
           className="min-h-10 rounded-full bg-plum px-4 text-sm font-medium text-cream disabled:opacity-40"
         >
-          {pending ? 'Checking connection…' : existing ? 'Save' : 'Connect folder'}
+          {pending ? tr('folders.checking') : existing ? tr('folders.save') : tr('folders.connect')}
         </button>
         <button
           type="button"

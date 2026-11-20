@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n/I18nProvider';
 import type { Photo } from '../models/photo';
 import { HeartIcon } from './icons';
 import { PageHeader } from './PageHeader';
@@ -12,17 +13,14 @@ export function FavoritesView({
   onOpen: (photo: Photo, origin: HTMLElement, list: Photo[]) => void;
   onActions?: (photo: Photo, origin: HTMLElement) => void;
 }) {
+  const { t } = useI18n();
   const favorites = photos.filter((photo) => photo.favorite);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Favorites"
-        meta={
-          favorites.length > 0
-            ? `${favorites.length} ${favorites.length === 1 ? 'memory' : 'memories'}`
-            : undefined
-        }
+        title={t('favorites.heading')}
+        meta={favorites.length > 0 ? t('favorites.count', { count: favorites.length }) : undefined}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-8 min-[640px]:px-5">
         {favorites.length === 0 ? (
@@ -31,11 +29,10 @@ export function FavoritesView({
               <HeartIcon className="h-7 w-7" />
             </span>
             <h3 className="mt-4 font-display text-2xl font-semibold tracking-tight text-plum">
-              Nothing favorited yet
+              {t('favorites.emptyTitle')}
             </h3>
             <p className="mt-2 max-w-xs text-sm leading-relaxed text-ink/65">
-              Tap the heart on a photo you love and it will gather here, like a little private
-              album.
+              {t('favorites.emptyBody')}
             </p>
           </div>
         ) : (

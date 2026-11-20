@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { formatCompactDate, formatDayLabel, formatTime } from '../lib/formatDate';
 import { photoViewerAlt } from '../lib/photoName';
@@ -30,6 +31,7 @@ export function PhotoViewer({
   onAddToAlbum: (albumId: string, photoId: string) => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
+  const { t, intl } = useI18n();
   const index = Math.max(
     0,
     photos.findIndex((photo) => photo.id === activeId),
@@ -217,7 +219,7 @@ export function PhotoViewer({
               type="button"
               onClick={close}
               className="grid h-11 w-11 min-h-11 min-w-11 place-items-center rounded-full bg-white/10 transition duration-200 hover:bg-white/20 active:scale-95"
-              aria-label="Close photo"
+              aria-label={t('photo.close')}
             >
               <CloseIcon className="h-5 w-5" />
             </button>
@@ -226,7 +228,7 @@ export function PhotoViewer({
                 type="button"
                 onClick={() => setAlbumPickerOpen(true)}
                 className="grid h-11 w-11 min-h-11 min-w-11 place-items-center rounded-full bg-white/10 transition duration-200 hover:bg-white/20 active:scale-95"
-                aria-label="Add to album"
+                aria-label={t('selection.addToAlbum')}
               >
                 <AlbumIcon className="h-5 w-5" />
               </button>
@@ -258,7 +260,7 @@ export function PhotoViewer({
               onClick={() => go(-1)}
               disabled={!canPrev}
               className="grid h-11 w-11 min-h-11 min-w-11 shrink-0 self-center place-items-center rounded-full bg-white/10 text-white transition duration-200 hover:bg-white/20 disabled:opacity-30"
-              aria-label="Previous photo"
+              aria-label={t('photo.previous')}
             >
               <ChevronLeftIcon className="h-5 w-5" />
             </button>
@@ -298,7 +300,7 @@ export function PhotoViewer({
                 key={photo.id}
                 ref={imgRef}
                 src={src}
-                alt={photoViewerAlt(photo)}
+                alt={photoViewerAlt(photo, t, intl)}
                 draggable={false}
                 className={`max-h-[min(100%,calc(100dvh-12rem))] max-w-full rounded-2xl object-contain shadow-lift ${
                   !reducedMotion && motion === 'navigating' ? 'photo-crossfade' : ''
@@ -315,7 +317,7 @@ export function PhotoViewer({
               onClick={() => go(1)}
               disabled={!canNext}
               className="grid h-11 w-11 min-h-11 min-w-11 shrink-0 self-center place-items-center rounded-full bg-white/10 text-white transition duration-200 hover:bg-white/20 disabled:opacity-30"
-              aria-label="Next photo"
+              aria-label={t('photo.next')}
             >
               <ChevronRightIcon className="h-5 w-5" />
             </button>

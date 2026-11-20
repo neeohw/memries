@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 
 /**
  * Sign-in form for local password auth (ADR 0016).
@@ -12,6 +13,7 @@ export function LoginScreen({
 }: {
   onSignIn: (login: string, password: string) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +30,7 @@ export function LoginScreen({
     try {
       await onSignIn(login, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed.');
+      setError(err instanceof Error ? err.message : t('signIn.failed'));
       setPassword('');
     } finally {
       setSubmitting(false);
@@ -109,7 +111,7 @@ export function LoginScreen({
             disabled={submitting}
             className="min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream disabled:opacity-60"
           >
-            {submitting ? 'Signing in…' : 'Sign in'}
+            {submitting ? t('signIn.submitting') : t('signIn.submit')}
           </button>
         </form>
       </div>

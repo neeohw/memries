@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 import type { Album, Photo } from '../models/photo';
 import { AlbumIcon, ChevronRightIcon } from './icons';
 
@@ -19,6 +20,7 @@ export function PhotoActionsMenu({
   onAddToAlbum: (albumId: string, photoId: string) => void;
   onRemoveFromAlbum?: () => void;
 }) {
+  const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement>(null);
   const firstItemRef = useRef<HTMLButtonElement>(null);
 
@@ -83,13 +85,13 @@ export function PhotoActionsMenu({
         }}
         className="flex min-h-12 w-full items-center rounded-2xl px-3 text-left text-sm font-medium text-plum transition hover:bg-cream/80"
       >
-        {nextFavorite ? 'Add to favorites' : 'Remove from favorites'}
+        {nextFavorite ? t('selection.addToFavorites') : t('selection.removeFromFavorites')}
       </button>
 
       {mode === 'album' ? (
         <div
           role="group"
-          aria-label="Remove from album"
+          aria-label={t('albums.removeFromAlbum')}
           className="mt-1 border-t border-plum/10 pt-1"
         >
           <button
@@ -104,7 +106,11 @@ export function PhotoActionsMenu({
           </button>
         </div>
       ) : (
-        <div role="group" aria-label="Add to album" className="mt-1 border-t border-plum/10 pt-1">
+        <div
+          role="group"
+          aria-label={t('selection.addToAlbum')}
+          className="mt-1 border-t border-plum/10 pt-1"
+        >
           <p className="px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-ink">
             Add to album
           </p>

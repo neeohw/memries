@@ -64,8 +64,10 @@ type User struct {
 	// PasswordHash is an encoded argon2id hash (ADR 0016), empty when the user
 	// has no password yet. It is never serialised: no handler returns it, and
 	// `json:"-"` keeps it out of a response if one ever marshals a User.
-	PasswordHash string    `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
+	PasswordHash string `json:"-"`
+	// Locale is 'en', 'nl', or empty to follow the browser (ADR 0021).
+	Locale    string    `json:"locale"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Source is an admin-managed folder (a local path on the server, or a WebDAV

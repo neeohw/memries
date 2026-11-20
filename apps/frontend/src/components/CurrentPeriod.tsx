@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 
 export const PERIOD_SWAP_MS = 380;
 
@@ -13,6 +14,7 @@ export function CurrentPeriod({
   direction: 'older' | 'newer';
   reducedMotion: boolean;
 }) {
+  const { t } = useI18n();
   const [displayed, setDisplayed] = useState(label);
   const [outgoing, setOutgoing] = useState<string | null>(null);
 
@@ -52,7 +54,7 @@ export function CurrentPeriod({
         <p
           className={`period-layer period-label${swapping ? ` period-in-${direction}` : ''}`}
           aria-live="polite"
-          aria-label="Current period"
+          aria-label={t('timeline.currentPeriod')}
           data-current-period
           data-period-motion={motion}
         >
