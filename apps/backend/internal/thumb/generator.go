@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // Sizes is the thumb ladder, ascending. Each entry becomes one JPEG per Photo.
@@ -19,7 +20,11 @@ var Sizes = []int{256, 512, 1024}
 
 const jpegQuality = 88
 
+// Generator holds the cache root behind a mutex because an admin can move it
+// while the server is serving (ADR 0022). Thumb paths on a Photo are relative,
+// so a move changes only this field — no catalog row is rewritten.
 type Generator struct {
+	mu        sync.RWMutex
 	cacheRoot string
 }
 
@@ -28,6 +33,35 @@ func NewGenerator(cacheRoot string) (*Generator, error) {
 		return nil, err
 	}
 	return &Generator{cacheRoot: cacheRoot}, nil
+}
+
+// Root reports the directory thumbs are read from and written to.
+func (g *Generator) Root() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.cacheRoot
+}
+
+// SetRoot points the generator at a different directory, creating it if
+// needed. Thumbs already written under the old root stay there: this changes
+// where thumbs are found, not where they are, so the caller tells the admin
+// that a reindex is what repopulates the new location.
+func (g *Generator) SetRoot(root string) error {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	g.mu.Lock()
+	g.cacheRoot = root
+	g.mu.Unlock()
+	return nil
+}
+
+// path resolves rel under the current root in one read-lock, so a concurrent
+// SetRoot cannot split a single operation across two roots.
+func (g *Generator) path(rel string) string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return filepath.Join(g.cacheRoot, rel)
 }
 
 type Result struct {
@@ -68,7 +102,7 @@ func (g *Generator) Generate(photoKey string, data []byte, orientation int) (Res
 // satisfy HasAll, so a power cut mid-index would leave a Photo permanently
 // holding a truncated thumb; the rename makes the file either absent or whole.
 func (g *Generator) write(rel string, jpg []byte) error {
-	abs := filepath.Join(g.cacheRoot, rel)
+	abs := g.path(rel)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return err
 	}
@@ -91,7 +125,7 @@ func (g *Generator) Open(rel string) (*os.File, error) {
 	if rel == "" {
 		return nil, errors.New("empty thumb path")
 	}
-	return os.Open(filepath.Join(g.cacheRoot, rel))
+	return os.Open(g.path(rel))
 }
 
 func (g *Generator) HasAll(rels ...string) bool {
@@ -99,7 +133,7 @@ func (g *Generator) HasAll(rels ...string) bool {
 		if rel == "" {
 			return false
 		}
-		if _, err := os.Stat(filepath.Join(g.cacheRoot, rel)); err != nil {
+		if _, err := os.Stat(g.path(rel)); err != nil {
 			return false
 		}
 	}

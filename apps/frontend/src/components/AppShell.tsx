@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { NavTab } from '../models/photo';
 import { BottomNavigation, NavButtons } from './BottomNavigation';
 import { AccountButton } from './AccountButton';
+import { SettingsButton } from './SettingsButton';
 import { ThemeToggle } from './ThemeToggle';
 import { TopHeader } from './TopHeader';
 import { useI18n } from '../i18n/I18nProvider';
@@ -48,12 +49,20 @@ export function AppShell({
         </div>
         <div className="flex w-full flex-col items-center">
           <ThemeToggle />
+          {admin && (
+            <SettingsButton selected={tab === 'settings'} onOpen={() => onTabChange('settings')} />
+          )}
           <AccountButton selected={tab === 'account'} onOpen={() => onTabChange('account')} />
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopHeader selected={tab === 'account'} onOpenAccount={() => onTabChange('account')} />
+        <TopHeader
+          tab={tab}
+          admin={admin}
+          onOpenAccount={() => onTabChange('account')}
+          onOpenSettings={() => onTabChange('settings')}
+        />
         <main id="main-content" tabIndex={-1} className="flex min-h-0 flex-1 flex-col outline-none">
           {children}
         </main>

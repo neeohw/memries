@@ -178,6 +178,24 @@ export const nl: Messages = {
     excludeInvalid: 'Dat is geen geldige expressie.',
     excludeDuplicate: 'Dat patroon staat al in de lijst.',
   },
+  settings: {
+    heading: 'Serverinstellingen',
+    open: 'Serverinstellingen',
+    thumbnailsTitle: 'Miniaturenmap',
+    thumbnailsHelp:
+      'Waar de gegenereerde miniaturen worden opgeslagen. Zet dit op externe opslag om ze van de systeemkaart te houden.',
+    thumbnailsLabel: 'Map op de server',
+    current: 'Nu in gebruik',
+    usingDefault: 'de standaardmap',
+    allowedRoots: 'Moet binnen staan: {roots}',
+    freeSpace: '{size} vrij',
+    save: 'Map opslaan',
+    saving: 'Opslaan…',
+    reset: 'Terug naar standaard',
+    movedTitle: 'Miniaturen verplaatst',
+    movedBody:
+      'Bestaande miniaturen zijn in de oude map gebleven. Scan een map om ze opnieuw te genereren in de nieuwe.',
+  },
   account: {
     heading: 'Account',
     open: 'Accountinstellingen',

@@ -35,6 +35,8 @@ func (a *API) adminRoutes(r chi.Router) {
 	r.Put("/sources/{id}", a.updateSource)
 	r.Delete("/sources/{id}", a.deleteSource)
 	r.Post("/sources/{id}/scan", a.scanSource)
+	r.Get("/settings", a.settings)
+	r.Put("/settings/thumbnails", a.setThumbnailRoot)
 }
 
 func (a *API) requireAdmin(next http.Handler) http.Handler {

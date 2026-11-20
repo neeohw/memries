@@ -23,6 +23,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0018](docs/adr/0018-multi-select-and-batch-actions.md) | Hover multi-select + selection toolbar; batch favorite and batch album-add, all-or-nothing |
 | [0020](docs/adr/0020-server-wide-library.md) | One server-wide library: photos have no owner, favorites are a per-user table, albums stay owned; SMB and browsing removed; per-Source exclude regexes |
 | [0021](docs/adr/0021-interface-languages.md) | English and Dutch from typed dictionaries; `users.locale` per reader, empty follows the browser; dates render en-GB/nl-NL; chosen on the Account page |
+| [0022](docs/adr/0022-admin-settings-thumbnail-location.md) | `settings` key/value table; admins move the thumbnail folder at runtime, confined to `MEMRIES_CACHE_ROOTS` and never inside a Source |
 | [0019](docs/adr/0019-pointer-driven-timeline-zoom.md) | Granularity is a 3-step zoom ladder (year/month/week, no day); Ctrl+wheel and pinch, − level + control replaces the radiogroup, period headings drill in, level kept in `sessionStorage` |
 
 ## Contexts

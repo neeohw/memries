@@ -179,6 +179,24 @@ export const en = {
     excludeInvalid: 'That is not a valid expression.',
     excludeDuplicate: 'That pattern is already in the list.',
   },
+  settings: {
+    heading: 'Server settings',
+    open: 'Server settings',
+    thumbnailsTitle: 'Thumbnail folder',
+    thumbnailsHelp:
+      'Where the generated thumbnails are written. Point this at external storage to keep them off the system card.',
+    thumbnailsLabel: 'Folder on the server',
+    current: 'Now using',
+    usingDefault: 'the install default',
+    allowedRoots: 'Must sit under: {roots}',
+    freeSpace: '{size} free',
+    save: 'Save folder',
+    saving: 'Saving…',
+    reset: 'Back to the default',
+    movedTitle: 'Thumbnails moved',
+    movedBody:
+      'Existing thumbnails stayed in the old folder. Scan a folder to generate them again in the new one.',
+  },
   account: {
     heading: 'Account',
     open: 'Account settings',

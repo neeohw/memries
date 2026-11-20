@@ -56,6 +56,11 @@ func normalizeLocal(loc string, roots []string) (string, error) {
 	return clean, nil
 }
 
+// IsWithin reports whether p is root or sits below it.
+func IsWithin(p, root string) bool {
+	return isWithin(p, root)
+}
+
 // withinRoots compares both the literal and the symlink-resolved path so a
 // link inside an allowed root cannot point the indexer elsewhere.
 func withinRoots(p string, roots []string) bool {

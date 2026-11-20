@@ -44,6 +44,21 @@ func main() {
 		log.Error("thumb gen", "err", err)
 		os.Exit(1)
 	}
+	// A stored thumbnail location overrides MEMRIES_CACHE_ROOT, so a move an
+	// admin made in the UI survives a restart and the indexer writes where
+	// the server reads (ADR 0022).
+	if stored, err := dbc.Setting(ctx, db.SettingThumbnailRoot); err != nil {
+		log.Error("thumb setting", "err", err)
+		os.Exit(1)
+	} else if stored != "" && stored != cfg.CacheRoot {
+		if err := tg.SetRoot(stored); err != nil {
+			// Falling back to the env default would serve an empty cache and
+			// look like data loss, so this stops instead.
+			log.Error("stored thumbnail folder unusable", "path", stored, "err", err)
+			os.Exit(1)
+		}
+		log.Info("thumbnail folder from settings", "path", stored)
+	}
 	sealer, err := sources.NewSealer(cfg.SessionKey)
 	if err != nil {
 		log.Error("sources", "err", err)

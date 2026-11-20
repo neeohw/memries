@@ -49,6 +49,21 @@ func main() {
 		log.Error("thumb", "err", err)
 		os.Exit(1)
 	}
+	// A stored thumbnail location overrides MEMRIES_CACHE_ROOT, so a move an
+	// admin made in the UI survives a restart and the indexer writes where
+	// the server reads (ADR 0022).
+	if stored, err := dbc.Setting(ctx, db.SettingThumbnailRoot); err != nil {
+		log.Error("thumb setting", "err", err)
+		os.Exit(1)
+	} else if stored != "" && stored != cfg.CacheRoot {
+		if err := tg.SetRoot(stored); err != nil {
+			// Falling back to the env default would serve an empty cache and
+			// look like data loss, so this stops instead.
+			log.Error("stored thumbnail folder unusable", "path", stored, "err", err)
+			os.Exit(1)
+		}
+		log.Info("thumbnail folder from settings", "path", stored)
+	}
 	a, err := auth.New(cfg, dbc, log)
 	if err != nil {
 		log.Error("auth", "err", err)
@@ -72,15 +87,19 @@ func main() {
 		os.Exit(1)
 	}
 	apiH := &api.API{
-		DB:          dbc,
-		Store:       store,
-		SourceStore: reg,
-		Thumb:       tg,
-		Index:       coord,
-		Sources:     reg,
-		Rescan:      coord,
-		IsAdmin:     cfg.IsAdmin,
-		E2E:         os.Getenv("MEMRIES_E2E") == "1",
+		DB:         dbc,
+		Settings:   dbc,
+		CacheRoots: cfg.CacheRoots,
+
+		DefaultThumbnailRoot: cfg.CacheRoot,
+		Store:                store,
+		SourceStore:          reg,
+		Thumb:                tg,
+		Index:                coord,
+		Sources:              reg,
+		Rescan:               coord,
+		IsAdmin:              cfg.IsAdmin,
+		E2E:                  os.Getenv("MEMRIES_E2E") == "1",
 	}
 
 	r := chi.NewRouter()

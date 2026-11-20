@@ -52,14 +52,30 @@ docker compose up -d
 
 Open http://localhost and sign in as `admin@example.com` with the `BOOTSTRAP_PASSWORD` you just generated. That variable gives every `ADMIN_EMAILS` account a password on a fresh install, and only ever fills an *empty* one, so it is safe to leave in `.env` ([ADR 0016](docs/adr/0016-local-password-auth.md)). After login the splash indexes the configured **folders** and then loads photos from `/api/photos`.
 
-Admins (`MEMRIES_ADMIN_EMAILS`) get a **Folders** tab to add folders. They feed the one shared library:
+Admins (`MEMRIES_ADMIN_EMAILS`) get a **Folders** tab to add folders, and a gear icon for **Server settings**. They feed the one shared library:
 
 | Kind | Location example | Notes |
 |------|------------------|-------|
 | On this server | `/data/photos/family` | Must sit under `MEMRIES_LOCAL_ROOT` or a `MEMRIES_SOURCE_ROOTS` entry; mount host dirs into the backend container. NFS: mount on the host, add as a server folder. |
 | WebDAV | `https://cloud.example.com/remote.php/dav/files/me/Photos` | Nextcloud, ownCloud, Synology, … |
 
-Originals stay where they are and are streamed through the backend; thumbs are always generated into the local `MEMRIES_CACHE_ROOT`. The connection is checked before a folder is saved. Folder passwords are AES-GCM sealed in the catalog with a key derived from `MEMRIES_SESSION_KEY` (rotating it means re-entering folder passwords).
+Originals stay where they are and are streamed through the backend; thumbs are always generated into the local thumbnail folder. The connection is checked before a folder is saved. Folder passwords are AES-GCM sealed in the catalog with a key derived from `MEMRIES_SESSION_KEY` (rotating it means re-entering folder passwords).
+
+### Thumbnail folder
+
+The gear icon moves the thumbnail cache without editing env or restarting
+([0022](docs/adr/0022-admin-settings-thumbnail-location.md)) — the point of
+it on a Pi, where 8GB of eMMC does not hold a 12k-photo ladder. The page shows
+the free space on the holding filesystem.
+
+A folder must be absolute, writable by the server, inside
+`MEMRIES_CACHE_ROOTS` (the default root's parent is always allowed), and
+neither inside nor containing a photo folder — a cache under a Source would be
+indexed as photos by the next scan.
+
+Moving does not carry the existing thumbnails: they stay in the old folder and
+a scan regenerates them in the new one. Clearing the field restores
+`MEMRIES_CACHE_ROOT`.
 
 The CLI remains an idempotent fallback (hash skip unless `-force`):
 
@@ -257,6 +273,8 @@ export MEMRIES_ADMIN_EMAILS=admin@example.com
 export MEMRIES_DB_DSN=../../data/db/memries.db
 export MEMRIES_LOCAL_ROOT=../../data/photos
 export MEMRIES_CACHE_ROOT=../../data/cache
+# Optional: extra folders an admin may move the thumbnail cache to.
+# export MEMRIES_CACHE_ROOTS=/mnt/photos-cache
 go mod tidy
 go run ./cmd/server
 

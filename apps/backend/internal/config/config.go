@@ -31,6 +31,10 @@ type Config struct {
 	AdminEmails []string
 	// SourceRoots are directories local Sources must live under. LocalRoot is always allowed.
 	SourceRoots []string
+	// CacheRoots are directories the thumbnail cache may be moved to by an
+	// admin (ADR 0022). CacheRoot's own parent is always allowed, so the
+	// default install can move the cache beside itself without configuration.
+	CacheRoots []string
 }
 
 // IsAdmin reports whether email may manage Sources.
@@ -66,6 +70,8 @@ func FromEnv() (*Config, error) {
 	}
 	c.AdminEmails = splitList(os.Getenv("MEMRIES_ADMIN_EMAILS"), strings.ToLower)
 	c.SourceRoots = append([]string{c.LocalRoot}, splitList(os.Getenv("MEMRIES_SOURCE_ROOTS"), filepath.Clean)...)
+	cacheParent := filepath.Dir(filepath.Clean(c.CacheRoot))
+	c.CacheRoots = append([]string{cacheParent}, splitList(os.Getenv("MEMRIES_CACHE_ROOTS"), filepath.Clean)...)
 	if c.DBDSN == "" {
 		return nil, fmt.Errorf("MEMRIES_DB_DSN required")
 	}

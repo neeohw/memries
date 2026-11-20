@@ -30,7 +30,14 @@ type API struct {
 	Sources     SourceAdmin
 	Rescan      Rescanner
 	IsAdmin     func(email string) bool
-	E2E         bool
+	// Settings holds the server-wide settings an admin can change (ADR 0022).
+	Settings SettingsStore
+	// CacheRoots are the directories the thumbnail cache may be moved under.
+	CacheRoots []string
+	// DefaultThumbnailRoot is MEMRIES_CACHE_ROOT, the install default a
+	// stored choice overrides.
+	DefaultThumbnailRoot string
+	E2E                  bool
 }
 
 func (a *API) Routes(r chi.Router) {

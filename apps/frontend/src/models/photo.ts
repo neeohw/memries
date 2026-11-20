@@ -1,6 +1,6 @@
 export type Granularity = 'year' | 'month' | 'week';
 
-export type NavTab = 'memories' | 'albums' | 'favorites' | 'folders' | 'account';
+export type NavTab = 'memories' | 'albums' | 'favorites' | 'folders' | 'account' | 'settings';
 
 export interface Album {
   id: string;

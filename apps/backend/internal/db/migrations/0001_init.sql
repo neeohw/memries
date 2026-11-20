@@ -138,3 +138,13 @@ CREATE TABLE IF NOT EXISTS sources (
   created_at  BIGINT NOT NULL,
   updated_at  BIGINT NOT NULL
 );
+
+-- Server-wide settings an admin can change at runtime, so the Pi's thumbnail
+-- cache can be moved to external storage without editing a unit file and
+-- restarting (ADR 0022). Key/value because there are a handful of these and
+-- they are read individually by name, never queried together.
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at BIGINT NOT NULL
+);

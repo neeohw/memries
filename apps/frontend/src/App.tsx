@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlbumPage } from './components/AlbumPage';
 import { LoginScreen } from './components/LoginScreen';
 import { AccountView } from './components/AccountView';
+import { SettingsView } from './components/SettingsView';
 import { AlbumsView } from './components/AlbumsView';
 import { AppShell } from './components/AppShell';
 import { FavoritesView } from './components/FavoritesView';
@@ -31,6 +32,7 @@ import {
   useSources,
   useUpdateSource,
 } from './hooks/useSources';
+import { useSetThumbnailRoot, useSettings } from './hooks/useSettings';
 import { I18nProvider, useT } from './i18n/I18nProvider';
 import { useLocale } from './hooks/useLocale';
 import { isUnauthorized, signIn, signOut } from './lib/api';
@@ -158,6 +160,8 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
     saving: savingLocale,
   } = useLocale(meQuery.data);
   const sourcesQuery = useSources(admin && tab === 'folders');
+  const settingsQuery = useSettings(admin && tab === 'settings');
+  const thumbnailRootMutation = useSetThumbnailRoot();
   const createSourceMutation = useCreateSource();
   const updateSourceMutation = useUpdateSource();
   const deleteSourceMutation = useDeleteSource();
@@ -289,6 +293,21 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
               onSelectionAddToAlbum={(ids, albumId) =>
                 addPhotosMutation.mutate({ albumId, photoIds: ids })
               }
+            />
+          )}
+          {tab === 'settings' && admin && (
+            <SettingsView
+              settings={settingsQuery.data}
+              loading={settingsQuery.isLoading}
+              loadError={settingsQuery.isError}
+              onSave={(path) => thumbnailRootMutation.mutate(path)}
+              saving={thumbnailRootMutation.isPending}
+              saveError={
+                thumbnailRootMutation.isError
+                  ? (thumbnailRootMutation.error as Error).message
+                  : undefined
+              }
+              moved={thumbnailRootMutation.data?.needsReindex === true}
             />
           )}
           {tab === 'account' && (

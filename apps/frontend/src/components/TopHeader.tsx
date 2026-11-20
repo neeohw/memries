@@ -1,12 +1,18 @@
+import type { NavTab } from '../models/photo';
 import { AccountButton } from './AccountButton';
+import { SettingsButton } from './SettingsButton';
 import { ThemeToggle } from './ThemeToggle';
 
 export function TopHeader({
-  selected = false,
+  tab,
+  admin = false,
   onOpenAccount,
+  onOpenSettings,
 }: {
-  selected?: boolean;
+  tab: NavTab;
+  admin?: boolean;
   onOpenAccount?: () => void;
+  onOpenSettings?: () => void;
 }) {
   return (
     <header className="flex items-center justify-between gap-3 px-3 py-1.5 min-[800px]:hidden">
@@ -19,7 +25,10 @@ export function TopHeader({
       </div>
       <div className="flex items-center">
         <ThemeToggle />
-        {onOpenAccount && <AccountButton selected={selected} onOpen={onOpenAccount} />}
+        {admin && onOpenSettings && (
+          <SettingsButton selected={tab === 'settings'} onOpen={onOpenSettings} />
+        )}
+        {onOpenAccount && <AccountButton selected={tab === 'account'} onOpen={onOpenAccount} />}
       </div>
     </header>
   );

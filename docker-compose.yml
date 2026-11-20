@@ -11,6 +11,10 @@ services:
       MEMRIES_STORAGE_BACKEND: local
       MEMRIES_LOCAL_ROOT: /data/photos
       MEMRIES_CACHE_ROOT: /data/cache
+      # Folders an admin may move the thumbnail cache to (ADR 0022). Mount the
+      # host directory into this container as well, or the server cannot
+      # write there.
+      MEMRIES_CACHE_ROOTS: ${CACHE_ROOTS:-}
       # Soft heap ceiling for the Go runtime (ADR 0015). Peak RSS measured at
       # 230MiB with 4 index workers on 12MP frames, so this caps runaway GC
       # growth with room to spare instead of letting the heap double freely.
