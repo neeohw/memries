@@ -84,7 +84,7 @@ func thumbBounds(t *testing.T, root, rel string) (int, int) {
 func TestGenerateWritesLadderAtShardedPaths(t *testing.T) {
 	g, root := newGen(t)
 
-	res, err := g.Generate(testKey, photoJPEG(t, 1600, 1200), 1)
+	res, err := g.Generate(testKey, photoJPEG(t, 1600, 1200), 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestGenerateReportsOrientedDimensions(t *testing.T) {
 
 	// Orientation 6 is a quarter turn, so the stored frame is portrait even
 	// though the JPEG's own raster is landscape.
-	res, err := g.Generate(testKey, photoJPEG(t, 1600, 1200), 6)
+	res, err := g.Generate(testKey, photoJPEG(t, 1600, 1200), 6, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestGenerateReportsOrientedDimensions(t *testing.T) {
 func TestGenerateDoesNotUpscaleSmallOriginals(t *testing.T) {
 	g, root := newGen(t)
 
-	res, err := g.Generate(testKey, photoJPEG(t, 300, 200), 1)
+	res, err := g.Generate(testKey, photoJPEG(t, 300, 200), 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestGenerateAcceptsPNG(t *testing.T) {
 	if err := png.Encode(&buf, src); err != nil {
 		t.Fatal(err)
 	}
-	res, err := g.Generate(testKey, buf.Bytes(), 1)
+	res, err := g.Generate(testKey, buf.Bytes(), 1, nil)
 	if err != nil {
 		t.Fatalf("png: %v", err)
 	}
@@ -187,11 +187,11 @@ func TestGenerateIsIdempotent(t *testing.T) {
 	g, root := newGen(t)
 	data := photoJPEG(t, 800, 600)
 
-	first, err := g.Generate(testKey, data, 1)
+	first, err := g.Generate(testKey, data, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := g.Generate(testKey, data, 1)
+	second, err := g.Generate(testKey, data, 1, nil)
 	if err != nil {
 		t.Fatalf("second pass: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestGenerateRejectsBadInput(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := g.Generate(tc.key, tc.data, 1)
+			_, err := g.Generate(tc.key, tc.data, 1, nil)
 			if err == nil {
 				t.Fatal("want error, got nil")
 			}
@@ -256,7 +256,7 @@ func TestGenerateRejectsBadInput(t *testing.T) {
 
 func TestOpenAndHasAll(t *testing.T) {
 	g, _ := newGen(t)
-	res, err := g.Generate(testKey, photoJPEG(t, 400, 300), 1)
+	res, err := g.Generate(testKey, photoJPEG(t, 400, 300), 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func BenchmarkGenerateParallel(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if _, err := g.Generate(testKey, data, 1); err != nil {
+			if _, err := g.Generate(testKey, data, 1, nil); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -303,7 +303,7 @@ func BenchmarkGenerate12MP(b *testing.B) {
 	data := photoJPEG(b, 4000, 3000)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := g.Generate(testKey, data, 1); err != nil {
+		if _, err := g.Generate(testKey, data, 1, nil); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -386,7 +386,7 @@ func TestGenerateAppliesEveryEXIFOrientation(t *testing.T) {
 	for o := 1; o <= 8; o++ {
 		t.Run(fmt.Sprintf("orientation_%d", o), func(t *testing.T) {
 			g, root := newGen(t)
-			res, err := g.Generate(testKey, src.Bytes(), o)
+			res, err := g.Generate(testKey, src.Bytes(), o, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -413,5 +413,70 @@ func TestGenerateAppliesEveryEXIFOrientation(t *testing.T) {
 					corners[o][0], corners[o][1], corners[o][2], corners[o][3])
 			}
 		})
+	}
+}
+
+// An original a browser cannot display gets a fourth, larger rendition for
+// the viewer to open (ADR 0025).
+func TestGenerateWritesTheDisplayRenditionWhenAsked(t *testing.T) {
+	g, root := newGen(t)
+
+	res, err := g.Generate(testKey, photoJPEG(t, 3000, 2250), 1, SizesWithDisplay)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rel, ok := res.Paths[DisplaySize]
+	if !ok {
+		t.Fatalf("no %d rendition in %+v", DisplaySize, res.Paths)
+	}
+	// Named, not left to the unknown-size fallback, so a future rung cannot
+	// overwrite it.
+	if want := filepath.Join("ab", testKey, "d.jpg"); rel != want {
+		t.Errorf("rel = %q, want %q", rel, want)
+	}
+	w, _ := thumbBounds(t, root, rel)
+	if w != DisplaySize {
+		t.Errorf("width = %d, want %d", w, DisplaySize)
+	}
+	// The smaller rungs are still written, and derived from this one.
+	for _, size := range Sizes {
+		if _, ok := res.Paths[size]; !ok {
+			t.Errorf("missing %d rendition", size)
+		}
+	}
+}
+
+// The default ladder must not grow a display rendition by accident: most
+// photos are JPEG and would be paying for a rung nothing reads.
+func TestGenerateOmitsTheDisplayRenditionByDefault(t *testing.T) {
+	g, _ := newGen(t)
+
+	for _, sizes := range [][]int{nil, Sizes} {
+		res, err := g.Generate(testKey, photoJPEG(t, 3000, 2250), 1, sizes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rel, ok := res.Paths[DisplaySize]; ok {
+			t.Errorf("sizes %v wrote a display rendition at %q", sizes, rel)
+		}
+		if len(res.Paths) != len(Sizes) {
+			t.Errorf("sizes %v wrote %d renditions, want %d", sizes, len(res.Paths), len(Sizes))
+		}
+	}
+}
+
+// VIPS_SIZE_DOWN and imaging.Fit both refuse to upscale, so a small original
+// yields a display rendition no larger than itself rather than a blurred one.
+func TestGenerateDoesNotUpscaleTheDisplayRendition(t *testing.T) {
+	g, root := newGen(t)
+
+	res, err := g.Generate(testKey, photoJPEG(t, 800, 600), 1, SizesWithDisplay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, h := thumbBounds(t, root, res.Paths[DisplaySize])
+	if w != 800 || h != 600 {
+		t.Errorf("display rendition = %dx%d, want the original 800x600", w, h)
 	}
 }

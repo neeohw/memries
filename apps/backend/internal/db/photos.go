@@ -273,7 +273,7 @@ func (s *Store) UpdateIndexedPhoto(ctx context.Context, p *Photo) error {
 		  hash = ?, size_bytes = ?, mime = ?, width = ?, height = ?, orientation = ?,
 		  exif_camera = ?, exif_lens = ?, exif_iso = ?, exif_f_number = ?,
 		  exif_shutter = ?, exif_gps_lat = ?, exif_gps_lon = ?,
-		  thumb_256 = ?, thumb_512 = ?, thumb_1024 = ?,
+		  thumb_256 = ?, thumb_512 = ?, thumb_1024 = ?, thumb_2048 = ?,
 		  deleted_at = NULL
 		WHERE key = ?`,
 		micros(p.TakenAt), p.TakenAtLocal, p.TakenAtSource, p.TZOffset,
@@ -281,7 +281,7 @@ func (s *Store) UpdateIndexedPhoto(ctx context.Context, p *Photo) error {
 		p.Hash, p.SizeBytes, p.MIME, p.Dims.W, p.Dims.H, p.Orientation,
 		p.EXIF.Camera, p.EXIF.Lens, p.EXIF.ISO, p.EXIF.FNum,
 		p.EXIF.Shutter, lat, lon,
-		p.Thumbs.S256, p.Thumbs.S512, p.Thumbs.S1024,
+		p.Thumbs.S256, p.Thumbs.S512, p.Thumbs.S1024, p.Thumbs.S2048,
 		p.Key)
 	return err
 }

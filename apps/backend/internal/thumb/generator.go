@@ -18,6 +18,17 @@ import (
 // Sizes is the thumb ladder, ascending. Each entry becomes one JPEG per Photo.
 var Sizes = []int{256, 512, 1024}
 
+// DisplaySize is the rendition the viewer opens when a browser cannot show
+// the original bytes — a HEIC, today (ADR 0025). It is not part of Sizes
+// because most photos are JPEG and do not need it.
+const DisplaySize = 2048
+
+// SizesWithDisplay is the ladder for an original the browser cannot display.
+// render works from the largest down, deriving each size from the previous
+// one, so the extra rung costs one JPEG encode and makes the 1024 cheaper
+// than it would have been from the full frame.
+var SizesWithDisplay = []int{256, 512, 1024, DisplaySize}
+
 const jpegQuality = 88
 
 // Generator holds the cache root behind a mutex because an admin can move it
@@ -75,15 +86,20 @@ type Result struct {
 // data is the original file's bytes. The indexer already holds them to compute
 // the sha256, so taking the slice rather than an io.Reader keeps one copy of a
 // multi-megabyte frame in memory instead of two.
-func (g *Generator) Generate(photoKey string, data []byte, orientation int) (Result, error) {
+// sizes is the ladder to write; pass Sizes, or SizesWithDisplay for an
+// original a browser cannot show.
+func (g *Generator) Generate(photoKey string, data []byte, orientation int, sizes []int) (Result, error) {
 	if len(photoKey) < 2 {
 		return Result{}, fmt.Errorf("photo key %q too short to shard", photoKey)
 	}
 	if len(data) == 0 {
 		return Result{}, errors.New("empty image data")
 	}
-	res := Result{Paths: make(map[int]string, len(Sizes))}
-	w, h, err := render(data, orientation, Sizes, func(size int, jpg []byte) error {
+	if len(sizes) == 0 {
+		sizes = Sizes
+	}
+	res := Result{Paths: make(map[int]string, len(sizes))}
+	w, h, err := render(data, orientation, sizes, func(size int, jpg []byte) error {
 		rel := filepath.Join(photoKey[:2], photoKey, sizeName(size))
 		if err := g.write(rel, jpg); err != nil {
 			return err
@@ -148,6 +164,10 @@ func sizeName(s int) string {
 		return "m.jpg"
 	case 1024:
 		return "l.jpg"
+	case DisplaySize:
+		// Named rather than left to the fallback below, which would give any
+		// future rung the same filename and have the two overwrite each other.
+		return "d.jpg"
 	}
 	return "x.jpg"
 }

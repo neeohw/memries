@@ -32,6 +32,10 @@ type Thumbs struct {
 	S256  string `json:"256,omitempty"`
 	S512  string `json:"512,omitempty"`
 	S1024 string `json:"1024,omitempty"`
+	// S2048 is written only for originals a browser cannot display, so its
+	// presence is what tells the server to serve it instead of the original
+	// (ADR 0025).
+	S2048 string `json:"2048,omitempty"`
 }
 
 type Photo struct {

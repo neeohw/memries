@@ -157,7 +157,7 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, force b
 	}
 	// Remote Sources make every byte expensive: trust size + mtime like rsync.
 	if !force && byPath != nil && byPath.DeletedAt == nil && unchangedOnDisk(byPath, info) &&
-		i.Thumb.HasAll(byPath.Thumbs.S256, byPath.Thumbs.S512, byPath.Thumbs.S1024) {
+		i.Thumb.HasAll(expectedThumbs(key, byPath.Thumbs)...) {
 		return true, nil
 	}
 
@@ -183,10 +183,7 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, force b
 	// owner's Photo it could collide with (ADR 0020).
 	keepKey, action := ResolveIdentity(key, hash, byPath, byHash)
 
-	mimeType := mime.TypeByExtension(strings.ToLower(filepath.Ext(key)))
-	if mimeType == "" {
-		mimeType = "application/octet-stream"
-	}
+	mimeType := mediaMIME(key)
 
 	existing := byPath
 	if existing == nil {
@@ -194,7 +191,7 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, force b
 	}
 	ptr := i.storagePtr(info)
 
-	if !force && existing != nil && existing.Hash == hash && i.Thumb.HasAll(existing.Thumbs.S256, existing.Thumbs.S512, existing.Thumbs.S1024) {
+	if !force && existing != nil && existing.Hash == hash && i.Thumb.HasAll(expectedThumbs(key, existing.Thumbs)...) {
 		changed := CaptureChanged(*existing, cap)
 		if action == IdentityRelocate {
 			if err := i.touchRelocatedPath(ctx, existing, key, hash); err != nil {
@@ -216,7 +213,13 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, force b
 		return true, nil
 	}
 
-	thumbRes, err := i.Thumb.Generate(keepKey, data, exifRes.Orientation)
+	// A HEIC also needs the display rendition: the viewer cannot open the
+	// original in Chrome or Firefox (ADR 0025).
+	sizes := thumb.Sizes
+	if !IsWebSafe(key) {
+		sizes = thumb.SizesWithDisplay
+	}
+	thumbRes, err := i.Thumb.Generate(keepKey, data, exifRes.Orientation, sizes)
 	if err != nil {
 		return false, fmt.Errorf("thumb: %w", err)
 	}
@@ -235,6 +238,7 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, force b
 			S256:  thumbRes.Paths[256],
 			S512:  thumbRes.Paths[512],
 			S1024: thumbRes.Paths[1024],
+			S2048: thumbRes.Paths[thumb.DisplaySize],
 		},
 		ImportedAt: time.Now().UTC(),
 	}
@@ -307,10 +311,58 @@ func isMedia(key string) bool { return IsMedia(key) }
 // Exported so the folder picker can say how many photos a directory holds
 // using the one list of extensions the indexer actually honours, rather than
 // a second copy that drifts (ADR 0020).
+//
+// HEIC needs a libvips built with the HEIF loader, which the -tags vips
+// indexer has and the pure Go one does not (ADR 0025). The list is the same
+// in both builds deliberately: a build that accepted a file it could not
+// decode would fail per photo instead of once, loudly, at startup.
 func IsMedia(key string) bool {
 	switch strings.ToLower(path.Ext(key)) {
-	case ".jpg", ".jpeg", ".png", ".webp", ".gif":
+	case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif":
 		return true
 	}
 	return false
+}
+
+// expectedThumbs lists the renditions this photo should have on disk.
+//
+// HasAll treats an empty path as missing, so the display rendition is only
+// expected where one is written. Asking for it unconditionally would make
+// every JPEG look incomplete and regenerate its whole ladder on each scan.
+func expectedThumbs(key string, t db.Thumbs) []string {
+	rels := []string{t.S256, t.S512, t.S1024}
+	if !IsWebSafe(key) {
+		rels = append(rels, t.S2048)
+	}
+	return rels
+}
+
+// IsWebSafe reports whether a browser can display the original bytes.
+//
+// HEIC cannot be shown by Chrome or Firefox, so those photos need a
+// JPEG rendition for the viewer to open; /api/original serves that instead of
+// the original (ADR 0025). Safari would manage the original, but the library
+// is not browser-specific.
+func IsWebSafe(key string) bool {
+	switch strings.ToLower(path.Ext(key)) {
+	case ".heic", ".heif":
+		return false
+	}
+	return true
+}
+
+// mediaMIME names the stored content type. Go's table has no HEIC entry, so
+// without the override these rows would say application/octet-stream and the
+// viewer would offer a download rather than an image.
+func mediaMIME(key string) string {
+	switch strings.ToLower(path.Ext(key)) {
+	case ".heic":
+		return "image/heic"
+	case ".heif":
+		return "image/heif"
+	}
+	if t := mime.TypeByExtension(strings.ToLower(filepath.Ext(key))); t != "" {
+		return t
+	}
+	return "application/octet-stream"
 }

@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS photos (
   thumb_256        TEXT NOT NULL DEFAULT '',
   thumb_512        TEXT NOT NULL DEFAULT '',
   thumb_1024       TEXT NOT NULL DEFAULT '',
+  -- Written only for originals a browser cannot display, such as HEIC; the
+  -- viewer opens this instead of the original bytes (ADR 0025).
+  thumb_2048       TEXT NOT NULL DEFAULT '',
   imported_at      BIGINT NOT NULL,
   deleted_at       BIGINT
 );

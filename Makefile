@@ -40,7 +40,7 @@ else
   REQUIRE_ENV := test -f .env || { echo "Missing .env (see README quick start)" >&2; exit 1; }
 endif
 
-.PHONY: help up down down-wipe db-clear build e2e e2e-down e2e-docker e2e-docker-force e2e-last-runs install-requirements
+.PHONY: help up down down-wipe db-clear build build-pi e2e e2e-down e2e-docker e2e-docker-force e2e-last-runs install-requirements
 
 help:
 	$(info make up              Start the stack (docker compose up -d --build))
@@ -49,6 +49,7 @@ help:
 	$(info make down-wipe       Alias for make down WIPE=1)
 	$(info make db-clear        Delete the SQLite catalog; restart the API)
 	$(info make build           turbo run build (host Node/Go/pnpm required))
+	$(info make build-pi        server + indexer for the box into dist/pi (needs Docker))
 	$(info make install-requirements  Host Node 22, Go 1.26, corepack pnpm)
 	$(info make e2e             Playwright BDD against the isolated memries-e2e stack)
 	$(info make e2e-down        Stop the isolated e2e stack; keep volumes)
@@ -78,6 +79,9 @@ db-clear:
 	$(COMPOSE) stop backend
 	$(SCRIPT_RUN) ./apps/scripts/db-clear/db-clear.$(SCRIPT_EXT)
 	$(COMPOSE) start backend
+
+build-pi:
+	$(SCRIPT_RUN) ./apps/scripts/build-pi/build-pi.$(SCRIPT_EXT)
 
 install-requirements:
 	$(SCRIPT_RUN) ./apps/scripts/install-requirements/install-requirements.$(SCRIPT_EXT)

@@ -10,14 +10,28 @@ import (
 	"github.com/memries/memries/internal/storage"
 )
 
-func TestLargestThumbPrefersLongestEdge(t *testing.T) {
-	got := largestThumb(db.Thumbs{S256: "s.jpg", S512: "m.jpg", S1024: "l.jpg"})
-	if got != "l.jpg" {
-		t.Fatalf("got %q, want l.jpg", got)
+func TestThumbCandidatesRunLargestFirst(t *testing.T) {
+	got := thumbCandidates(db.Thumbs{S256: "s.jpg", S512: "m.jpg", S1024: "l.jpg"})
+	want := []string{"l.jpg", "m.jpg", "s.jpg"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
-	got = largestThumb(db.Thumbs{S256: "s.jpg"})
-	if got != "s.jpg" {
-		t.Fatalf("got %q, want s.jpg", got)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
+// Only written renditions are offered, so the caller never tries to open an
+// empty path.
+func TestThumbCandidatesSkipUnwrittenRenditions(t *testing.T) {
+	got := thumbCandidates(db.Thumbs{S256: "s.jpg"})
+	if len(got) != 1 || got[0] != "s.jpg" {
+		t.Fatalf("got %v, want [s.jpg]", got)
+	}
+	if len(thumbCandidates(db.Thumbs{})) != 0 {
+		t.Fatal("a photo with no renditions offers no candidates")
 	}
 }
 

@@ -71,6 +71,9 @@ Run these directly. There is no skill to invoke for them.
 # Go — from apps/backend
 gofmt -l . && go vet ./... && go test ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/...   # the Pi is the target
+# The -tags vips indexer is cgo and cannot be checked on the host without
+# libvips. `make build-pi` compiles it in a debian:trixie container, where the
+# vips-only tests also run ([0025](docs/adr/0025-heic-and-the-cgo-indexer.md)).
 
 # Frontend — from apps/frontend
 pnpm exec tsc --noEmit && pnpm exec vitest run

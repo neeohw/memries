@@ -61,7 +61,7 @@ const photoColumns = `key, kind, taken_at, taken_at_local, taken_at_source,
 	tz_offset, hash, size_bytes, mime, width, height, orientation,
 	storage_backend, storage_path, storage_bucket, storage_mtime,
 	exif_camera, exif_lens, exif_iso, exif_f_number, exif_shutter,
-	exif_gps_lat, exif_gps_lon, thumb_256, thumb_512, thumb_1024,
+	exif_gps_lat, exif_gps_lon, thumb_256, thumb_512, thumb_1024, thumb_2048,
 	imported_at, deleted_at`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
@@ -85,7 +85,7 @@ func scanPhoto(sc rowScanner) (*Photo, error) {
 		&p.Dims.W, &p.Dims.H, &p.Orientation,
 		&p.Storage.Backend, &p.Storage.Path, &p.Storage.Bucket, &mtime,
 		&p.EXIF.Camera, &p.EXIF.Lens, &p.EXIF.ISO, &p.EXIF.FNum, &p.EXIF.Shutter,
-		&lat, &lon, &p.Thumbs.S256, &p.Thumbs.S512, &p.Thumbs.S1024,
+		&lat, &lon, &p.Thumbs.S256, &p.Thumbs.S512, &p.Thumbs.S1024, &p.Thumbs.S2048,
 		&imported, &deletedAt, &favorite,
 	)
 	if err != nil {
@@ -118,7 +118,7 @@ func photoValues(p *Photo) []any {
 		p.Dims.W, p.Dims.H, p.Orientation,
 		p.Storage.Backend, p.Storage.Path, p.Storage.Bucket, nullMicros(p.Storage.ModTime),
 		p.EXIF.Camera, p.EXIF.Lens, p.EXIF.ISO, p.EXIF.FNum, p.EXIF.Shutter,
-		lat, lon, p.Thumbs.S256, p.Thumbs.S512, p.Thumbs.S1024,
+		lat, lon, p.Thumbs.S256, p.Thumbs.S512, p.Thumbs.S1024, p.Thumbs.S2048,
 		micros(p.ImportedAt), nullMicros(p.DeletedAt),
 	}
 }

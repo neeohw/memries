@@ -202,6 +202,23 @@ func (a *API) original(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	// An original a browser cannot display was given a JPEG rendition at
+	// index time, and its presence is the whole rule — the server never
+	// decodes an image, which is what keeps it a pure-Go build (ADR 0025).
+	if p.Thumbs.S2048 != "" {
+		f, err := a.Thumb.Open(p.Thumbs.S2048)
+		if err == nil {
+			defer f.Close()
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Cache-Control", "private, max-age=86400")
+			_, _ = io.Copy(w, f)
+			return
+		}
+		// Fall through to the original rather than 404: Safari can show it,
+		// and a missing rendition is a cache problem, not a missing photo.
+		slog.Warn("open display rendition", "id", id, "rel", p.Thumbs.S2048, "err", err)
+	}
+
 	store := a.Store
 	if p.Storage.Backend == sources.Backend && a.SourceStore != nil {
 		store = a.SourceStore
@@ -210,21 +227,24 @@ func (a *API) original(w http.ResponseWriter, r *http.Request) {
 	ctype := p.MIME
 	if err != nil {
 		slog.Warn("open original", "id", id, "path", p.Storage.Path, "err", err)
-		rel := largestThumb(p.Thumbs)
-		if rel == "" {
+		// Largest rendition that actually opens, rather than the largest one
+		// recorded: a catalog row can name a rendition the cache no longer
+		// holds, and a smaller image beats a 500.
+		for _, rel := range thumbCandidates(p.Thumbs) {
+			f, terr := a.Thumb.Open(rel)
+			if terr != nil {
+				slog.Warn("open original thumb fallback", "id", id, "rel", rel, "err", terr)
+				continue
+			}
+			rc = f
+			ctype = "image/jpeg"
+			break
+		}
+		if rc == nil {
 			status := mediaOpenStatus(err)
 			http.Error(w, originalErrorBody(status), status)
 			return
 		}
-		f, terr := a.Thumb.Open(rel)
-		if terr != nil {
-			slog.Error("open original thumb fallback", "id", id, "rel", rel, "err", terr)
-			status := mediaOpenStatus(err)
-			http.Error(w, originalErrorBody(status), status)
-			return
-		}
-		rc = f
-		ctype = "image/jpeg"
 	}
 	defer rc.Close()
 	if ctype != "" {

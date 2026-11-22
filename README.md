@@ -147,6 +147,7 @@ Playwright BDD against a real Compose stack — not the one on `:80`. All featur
 - ❌ **Photo viewer gestures** — Swipe past a threshold for next/previous. A short drag snaps back. Drag down dismisses.
 - ❌ **Photo viewer keyboard** — The viewer is a dialog: Escape closes, arrows move, F favorites, Tab stays inside. Close returns focus to the Photo.
 - ❌ **Photo viewer** — Opens from Memories. Favorite, album, next/previous, close.
+- ❌ **HEIC** — Indexed and browsable; the viewer opens a 2048px JPEG rendition, since Chrome and Firefox cannot display the original ([0025](docs/adr/0025-heic-and-the-cgo-indexer.md)).
 <!-- e2e-last-runs-catalog:end -->
 
 ```bash
@@ -289,6 +290,32 @@ go run ./cmd/server
 cd apps/frontend
 pnpm --filter @memries/frontend dev
 ```
+
+## Building for the box
+
+Compose is for development. The box runs the two binaries directly
+([0025](docs/adr/0025-heic-and-the-cgo-indexer.md)):
+
+```bash
+make build-pi            # -> dist/pi/server, dist/pi/indexer
+```
+
+| binary | build | needs on the box |
+| --- | --- | --- |
+| `server` | pure Go, `CGO_ENABLED=0`, static | nothing |
+| `indexer` | cgo, `-tags vips`, dynamic | `apt install libvips42t64` |
+
+The indexer is cgo because HEIC needs native decode — pure Go measured
+4.6–24.7s per 12MP frame on an A53 against ~0.8s native. It is built inside a
+`debian:trixie` container so glibc and the libvips soname match the box by
+construction; on an arm64 Mac that runs natively, with no emulation. **Use
+the same Debian release as the box**: building on a newer one links a newer
+glibc and fails there.
+
+Docker is needed for the indexer only — `build-pi --server-only` skips it.
+`build-pi --help` lists `--platform`, `--out`, `--go-version` and
+`--keep-debug`. The same recipe builds from source on the box itself:
+`apt install libvips-dev` and `go build -tags vips ./cmd/indexer`.
 
 ## Troubleshooting
 
