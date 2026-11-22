@@ -147,7 +147,7 @@ Playwright BDD against a real Compose stack — not the one on `:80`. All featur
 - ❌ **Photo viewer gestures** — Swipe past a threshold for next/previous. A short drag snaps back. Drag down dismisses.
 - ❌ **Photo viewer keyboard** — The viewer is a dialog: Escape closes, arrows move, F favorites, Tab stays inside. Close returns focus to the Photo.
 - ❌ **Photo viewer** — Opens from Memories. Favorite, album, next/previous, close.
-- ❌ **HEIC** — Indexed and browsable; the viewer opens a 2048px JPEG rendition, since Chrome and Firefox cannot display the original ([0025](docs/adr/0025-heic-and-the-cgo-indexer.md)).
+- ❌ **HEIC** — Indexed and browsable, with capture time and orientation read from the container ([0025](docs/adr/0025-heic-and-the-cgo-indexer.md), [0026](docs/adr/0026-heic-capture-time-and-orientation.md)). The viewer opens a 2048px JPEG rendition, since Chrome and Firefox cannot display the original.
 <!-- e2e-last-runs-catalog:end -->
 
 ```bash

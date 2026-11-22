@@ -8,6 +8,7 @@
 package thumb
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -170,4 +171,29 @@ func sizeName(s int) string {
 		return "d.jpg"
 	}
 	return "x.jpg"
+}
+
+// isHEIF reports whether data is a HEIF container, by its ftyp brand.
+//
+// Duplicated from internal/exif rather than imported: that package is about
+// reading metadata, and a renderer reaching into it for a four-byte sniff
+// would tie the two together for no gain.
+func isHEIF(data []byte) bool {
+	if len(data) < 12 || string(data[4:8]) != "ftyp" {
+		return false
+	}
+	size := int(binary.BigEndian.Uint32(data[:4]))
+	if size < 12 || size > len(data) {
+		size = len(data)
+	}
+	for off := 8; off+4 <= size; off += 4 {
+		switch string(data[off : off+4]) {
+		case "heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1", "avif":
+			return true
+		}
+		if off == 8 {
+			off += 4 // skip the minor version
+		}
+	}
+	return false
 }

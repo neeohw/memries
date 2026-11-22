@@ -67,6 +67,36 @@ container's own. (`Dockerfile.backend` still fetches `linux-amd64`, which is
 why *that* image cannot build on an arm64 Mac — a known W3 bug, untouched
 here.)
 
+### The Compose image builds the same indexer
+
+The dev stack built the pure Go indexer, so adding a HEIC to a folder failed
+per file with `render pure: image: unknown format`. Accepting HEIC in
+`IsMedia` for every build while only one build could decode it was a trap,
+and claiming it would "surface the misconfiguration" was wrong: what it
+surfaced was an error per photo in the stack most likely to be used.
+
+So `Dockerfile.backend` now builds the indexer the same way the box does.
+Three things had to move with it:
+
+- The final stage is `debian:trixie-slim`, not `alpine`. A cgo binary linked
+  against glibc does not run on musl, and `libvips42t64` brings `libheif1`.
+  The image grows from roughly 60MB to 275MB, which is a dev and e2e cost
+  only — the box runs no containers.
+- The builder is `node:22-trixie`, matching the runtime so the sonames agree,
+  and the Go toolchain now follows the image's architecture instead of
+  hardcoding `linux-amd64` — which is why that image could not build on an
+  arm64 Mac.
+- `build.mjs` turns cgo and `-tags vips` on for the **indexer alone** when
+  `MEMRIES_INDEXER_VIPS=1`. The server stays pure Go in every build. The flag
+  is declared in `turbo.json`'s `env` for the build task rather than
+  `passThroughEnv`: Turbo prunes task environments, so it would not otherwise
+  reach the script, and it has to be part of the cache key or Turbo hands back
+  a pure binary after the flag changes.
+
+A plain `go build` still produces the pure indexer with nothing installed. It
+will refuse a HEIC, but now says which build is needed rather than "unknown
+format".
+
 ### A display rendition, because the viewer cannot open a HEIC
 
 Chrome and Firefox will not render HEIC, and `/api/original` streams the
@@ -112,10 +142,11 @@ gets a smaller image rather than an error.
 - **Disk**: ~400KB per HEIC photo. 12k photos is roughly 5GB, which does not
   fit the 3.0GB free on the box's eMMC — the cache belongs on the 29GB card,
   via `MEMRIES_CACHE_ROOT` (ADR 0022).
-- **HEIC carries no capture time yet.** `goexif` reads JPEG and TIFF APP1
-  only, so a HEIC falls through `ResolveCaptureTime` to filesystem birth time
-  and will sort by file date, not by when it was taken. That is the next thing
-  worth fixing and is not fixed here.
+- **HEIC capture time** was listed here as a known limitation, which was the
+  wrong call — capture-date ordering is the product. Fixed in
+  [0026](0026-heic-capture-time-and-orientation.md), along with two bugs found
+  on the way: the offset-time tags were never read for any photo, and HEIF was
+  being rotated twice.
 - **`IsMedia` is the same list in both builds**, deliberately. A pure-Go
   indexer will now accept a HEIC and fail to decode it — once per file. The
   alternative, a format set that varies by build tag, hides the

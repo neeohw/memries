@@ -1,7 +1,6 @@
 package index
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -170,7 +169,10 @@ func (i *Indexer) indexOne(ctx context.Context, info storage.ObjectInfo, force b
 	size := int64(len(data))
 
 	var exifRes exif.Result
-	if r, err := exif.Parse(bytes.NewReader(data[:min(len(data), 1<<16)])); err == nil {
+	// ParseAny picks the reader by sniffing the bytes: a HEIC keeps its EXIF
+	// in an item that can sit past the JPEG window, so it needs the whole
+	// buffer (ADR 0026).
+	if r, err := exif.ParseAny(data); err == nil {
 		exifRes = r
 	}
 	cap := ResolveCaptureTime(exifRes, info)

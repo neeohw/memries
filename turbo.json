@@ -14,7 +14,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "bin/**"]
+      "outputs": ["dist/**", "bin/**"],
+      "env": ["MEMRIES_INDEXER_VIPS"]
     },
     "test": {},
     "lint": {},

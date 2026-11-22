@@ -7,16 +7,23 @@ COPY . .
 RUN pnpm dlx turbo@2.10.12 prune @memries/backend --docker \
     && node docker/fill-prune-output.mjs @memries/backend
 
-FROM node:22-bookworm AS builder
+FROM node:22-trixie AS builder
 WORKDIR /repo
 ARG GO_VERSION=1.26.11
+# libvips-dev is for the indexer, which is a cgo build so HEIC can be decoded
+# at all (ADR 0025/0026). The Go toolchain follows the image's architecture;
+# this used to hardcode linux-amd64 and so could not build on an arm64 host.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates git \
-    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xz \
+    && apt-get install -y --no-install-recommends \
+        curl ca-certificates git build-essential pkg-config libvips-dev \
+    && arch="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" | tar -C /usr/local -xz \
     && rm -rf /var/lib/apt/lists/*
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH=/go
+# The server stays pure Go; build.mjs turns cgo on for the indexer alone.
 ENV CGO_ENABLED=0
+ENV MEMRIES_INDEXER_VIPS=1
 ENV PNPM_HOME=/pnpm
 ENV PATH="${PNPM_HOME}:${PATH}"
 RUN corepack enable
@@ -32,8 +39,14 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     --mount=type=cache,id=gomod,target=/go/pkg/mod \
     pnpm exec turbo run build --filter=@memries/backend
 
-FROM alpine:3.20
-RUN apk add --no-cache ca-certificates
+# Debian rather than Alpine: the indexer is now dynamically linked against
+# libvips, and a glibc binary does not run on musl. libvips42t64 pulls
+# libheif1 itself, which is what decodes HEIC. The same release as the
+# builder, so the sonames match.
+FROM debian:trixie-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libvips42t64 \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /repo/apps/backend/bin/server /usr/local/bin/server
 COPY --from=builder /repo/apps/backend/bin/indexer /usr/local/bin/indexer
 USER 1000:1000

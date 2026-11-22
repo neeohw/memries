@@ -139,6 +139,20 @@ func render(data []byte, orientation int, sizes []int, emit func(size int, jpg [
 	}
 	vipsInit()
 
+	// HEIF carries its rotation twice: in the container's irot box and in the
+	// EXIF orientation tag, saying the same thing. libheif applies irot while
+	// decoding, so libvips hands over an image that is already upright — and
+	// applying the EXIF tag on top of that turns every portrait photo on its
+	// side. Measured on an iPhone HEIC: decoded 3024x4032, then rotated to
+	// 4032x3024 (ADR 0026).
+	//
+	// no_rotate below only suppresses libvips' own EXIF autorotation, not
+	// irot, so the fix is to stop applying the tag ourselves for HEIF. JPEG
+	// is untouched: it has no irot, and both backends still rotate it here.
+	if isHEIF(data) {
+		orientation = 1
+	}
+
 	// data is Go memory handed to C for the duration of each call below. The
 	// calls are synchronous and libvips copies what it keeps, but the slice
 	// still has to outlive them, so it is pinned rather than trusted to the

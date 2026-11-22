@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { goEnv, runGo } from './run-go.mjs';
 
@@ -26,6 +27,9 @@ describe('goEnv', () => {
       { platform: 'win32', home: 'C:\\Users\\dev', base: { USERPROFILE: 'C:\\Users\\dev' } },
     );
     assert.equal(env.CGO_ENABLED, '0');
-    assert.equal(env.LOCALAPPDATA, 'C:\\Users\\dev\\AppData\\Local');
+    // goEnv builds this with path.join, which uses the separator of the
+    // machine running the test, not of the platform being simulated. The
+    // expectation has to do the same or this only ever passed on Windows.
+    assert.equal(env.LOCALAPPDATA, join('C:\\Users\\dev', 'AppData', 'Local'));
   });
 });

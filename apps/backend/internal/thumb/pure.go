@@ -4,6 +4,7 @@ package thumb
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"sort"
@@ -33,6 +34,12 @@ const Backend = "pure"
 func render(data []byte, orientation int, sizes []int, emit func(size int, jpg []byte) error) (int, int, error) {
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
+		// IsMedia accepts HEIC in every build, but only libvips can decode
+		// it, so say which build is needed instead of leaving the caller with
+		// "unknown format" (ADR 0026).
+		if isHEIF(data) {
+			return 0, 0, fmt.Errorf("HEIC needs the libvips build of the indexer (-tags vips); this is the pure Go build: %w", err)
+		}
 		return 0, 0, err
 	}
 	img = applyOrientation(img, orientation)
