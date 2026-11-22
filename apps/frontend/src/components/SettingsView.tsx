@@ -85,6 +85,14 @@ export function SettingsView({
                 </p>
               )}
 
+              {/* Name the default even while it is overridden: "Back to the
+                  default" is not an answer if the default is invisible. */}
+              {settings && !isDefault && settings.defaultThumbnailRoot && (
+                <p className="text-xs text-ink">
+                  {t('settings.defaultIs', { path: settings.defaultThumbnailRoot })}
+                </p>
+              )}
+
               {settings && settings.allowedRoots.length > 0 && (
                 <p className="text-xs text-ink">
                   {t('settings.allowedRoots', { roots: settings.allowedRoots.join(', ') })}

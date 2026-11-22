@@ -68,6 +68,11 @@ The gear → **Storage** moves the thumbnail cache without editing env or restar
 it on a Pi, where 8GB of eMMC does not hold a 12k-photo ladder. The page shows
 the free space on the holding filesystem.
 
+Unset, the cache follows XDG: `$CACHE_DIRECTORY` when systemd provides it
+(`/var/cache/memries` for a system unit), else `$XDG_CACHE_HOME/memries`, else
+`~/.cache/memries`. The page names that default whenever something else is in
+use.
+
 A folder must be absolute, writable by the server, inside
 `MEMRIES_CACHE_ROOTS` (the default root's parent is always allowed), and
 neither inside nor containing a photo folder — a cache under a Source would be
@@ -272,9 +277,11 @@ export MEMRIES_BOOTSTRAP_PASSWORD=$BOOTSTRAP_PASSWORD
 export MEMRIES_ADMIN_EMAILS=admin@example.com
 export MEMRIES_DB_DSN=../../data/db/memries.db
 export MEMRIES_LOCAL_ROOT=../../data/photos
+# Optional. Unset, thumbnails follow XDG: $CACHE_DIRECTORY (set by systemd's
+# CacheDirectory=), else $XDG_CACHE_HOME/memries, else ~/.cache/memries.
 export MEMRIES_CACHE_ROOT=../../data/cache
 # Optional: extra folders an admin may move the thumbnail cache to.
-# export MEMRIES_CACHE_ROOTS=/mnt/photos-cache
+# export MEMRIES_CACHE_ROOTS=/media/sdhc
 go mod tidy
 go run ./cmd/server
 

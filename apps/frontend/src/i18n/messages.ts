@@ -215,6 +215,7 @@ export const en = {
       'Where the generated thumbnails are written. Point this at external storage to keep them off the system card.',
     thumbnailsLabel: 'Folder on the server',
     current: 'Now using',
+    defaultIs: 'Default: {path}',
     usingDefault: 'the install default',
     allowedRoots: 'Must sit under: {roots}',
     freeSpace: '{size} free',

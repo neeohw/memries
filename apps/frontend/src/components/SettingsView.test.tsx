@@ -61,6 +61,17 @@ describe('SettingsView', () => {
     expect(props.onSave).toHaveBeenCalledWith('');
   });
 
+  // "Back to the default" is not an answer if the default is invisible.
+  it('names the default once the folder has been moved away from it', () => {
+    renderPage({ settings: { ...settings, thumbnailRoot: '/media/sdhc/thumbs' } });
+    expect(screen.getByText('Default: /data/cache')).toBeTruthy();
+  });
+
+  it('does not repeat the default while it is in use', () => {
+    renderPage();
+    expect(screen.queryByText(/^Default: /)).toBeNull();
+  });
+
   it('hides the reset button while the default is in use', () => {
     renderPage();
     expect(screen.queryByRole('button', { name: 'Back to the default' })).toBeNull();

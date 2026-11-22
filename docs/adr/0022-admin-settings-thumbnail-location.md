@@ -85,6 +85,29 @@ since getting off a full disk is the reason to open this page. `Bavail`, not
 `Bfree`: blocks reserved for root are not space the server can write into. A
 `0` means unknown and the figure is left out rather than shown as a full disk.
 
+### The default follows XDG, not the working directory
+
+The default was `./data/cache` — relative, so a service started from `/`
+would scatter a `data/cache` wherever it happened to be. Thumbnails are a
+regenerable cache (reindexing rebuilds them), so they belong under the XDG
+cache directory rather than in a data directory a reader would miss.
+
+`defaultCacheRoot()` resolves, in order:
+
+1. `$CACHE_DIRECTORY`, which systemd sets from `CacheDirectory=memries`. That
+   gives `/var/cache/memries` for a system unit and `~/.cache/memries` under
+   `systemd --user` — the FHS answer in both cases, and it matters because a
+   system account often has no usable home at all.
+2. `$XDG_CACHE_HOME/memries`, when the spec is honoured and the value is
+   absolute (a relative one is invalid per the spec and ignored).
+3. `~/.cache/memries`, the spec's own default.
+
+`MEMRIES_CACHE_ROOT` overrides all of it, which is what the dev Compose file
+relies on. Whatever the source, the result is made absolute.
+
+The page names the default path whenever it is **not** in use: "Back to the
+default" is not an answer if the default is invisible.
+
 ## Consequences
 
 - `settings` is a new table, so an existing catalog needs `make db-clear`.

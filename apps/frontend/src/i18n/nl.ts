@@ -214,6 +214,7 @@ export const nl: Messages = {
       'Waar de gegenereerde miniaturen worden opgeslagen. Zet dit op externe opslag om ze van de systeemkaart te houden.',
     thumbnailsLabel: 'Map op de server',
     current: 'Nu in gebruik',
+    defaultIs: 'Standaard: {path}',
     usingDefault: 'de standaardmap',
     allowedRoots: 'Moet binnen staan: {roots}',
     freeSpace: '{size} vrij',
