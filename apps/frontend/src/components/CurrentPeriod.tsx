@@ -17,10 +17,14 @@ export function CurrentPeriod({
   const { t } = useI18n();
   const [displayed, setDisplayed] = useState(label);
   const [outgoing, setOutgoing] = useState<string | null>(null);
-
   if (label && label !== displayed) {
     setDisplayed(label);
-    setOutgoing(reducedMotion ? null : displayed);
+    // The slide means the list is moving, so it is only for a change that
+    // arrives while it is. A zoom change is not a scroll: this component is
+    // remounted on one, mounts holding the label from the old grouping, and
+    // is handed the new one once the list has settled — animating that played
+    // "April 2026" against "2026", both on screen at once (ADR 0019).
+    setOutgoing(reducedMotion || !scrolling ? null : displayed);
   }
 
   useEffect(() => {

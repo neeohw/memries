@@ -156,11 +156,59 @@ describe('Scrubber', () => {
     expect(screen.getByRole('slider').getAttribute('aria-busy')).toBe('true');
   });
 
-  it('drops the reveal transition under reduced motion', () => {
+  it('drops the emphasis transition under reduced motion', () => {
     const { container } = render(
       <Scrubber scale={scale} value={0} onSeek={() => {}} reducedMotion />,
     );
+    // The thumb is the element the emphasis animates, so it is the one worth
+    // checking; the root no longer fades in at all.
+    const thumb = container.querySelector('[data-scrubber-thumb]');
+    expect(thumb?.className).not.toContain('transition');
+
+    const { container: moving } = render(<Scrubber scale={scale} value={0} onSeek={() => {}} />);
+    expect(moving.querySelector('[data-scrubber-thumb]')?.className).toContain('transition');
+  });
+
+  // The scrubber is how you move through years. It used to be invisible until
+  // hovered or scrolled, so there was nothing to tell you it was there.
+  it('is visible before it is touched', () => {
+    const { container } = render(<Scrubber scale={scale} value={0} onSeek={() => {}} />);
     const root = container.querySelector('[data-scrubber]');
-    expect(root?.className).not.toContain('transition-opacity');
+    expect(root).not.toBeNull();
+    expect(root?.className).not.toContain('opacity-0');
+    expect(root?.getAttribute('data-scrubber-emphasised')).toBeNull();
+    // The years are on screen at rest, which is the point: they are the only
+    // thing saying what the track is for. The colour they use is not pinned.
+    expect(container.querySelectorAll('[data-scrubber-year]').length).toBeGreaterThan(0);
+  });
+
+  it('deepens while the list is scrolling', () => {
+    const { container } = render(<Scrubber scale={scale} value={0} onSeek={() => {}} revealed />);
+    expect(
+      container.querySelector('[data-scrubber]')?.getAttribute('data-scrubber-emphasised'),
+    ).toBe('true');
+  });
+
+  // Everything on the track is centred on its position, so the newest year
+  // sat half above the top edge and was cut off.
+  it('insets the ends of the track so the first and last years are whole', () => {
+    const { container } = render(<Scrubber scale={scale} value={0} onSeek={() => {}} />);
+    const labels = Array.from(container.querySelectorAll('[data-scrubber-year]'));
+    expect(labels.length).toBeGreaterThan(0);
+    for (const el of labels) {
+      const top = (el as HTMLElement).style.top;
+      // calc() keeps the inset in the value rather than resolving to 0%.
+      expect(top).toMatch(/^calc\(/);
+      expect(top).not.toBe('0%');
+      expect(top).not.toBe('100%');
+    }
+  });
+
+  it('keeps the thumb and the labels on one mapping', () => {
+    const { container } = render(<Scrubber scale={scale} value={0} onSeek={() => {}} />);
+    const thumb = container.querySelector('[data-scrubber-thumb]') as HTMLElement;
+    // value 0 is the newest month, which is the top of the track: the same
+    // inset the first year label uses.
+    expect(thumb.style.top).toMatch(/^calc\(12px/);
   });
 });

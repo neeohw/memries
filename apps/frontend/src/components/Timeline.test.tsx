@@ -88,6 +88,62 @@ describe('Timeline', () => {
   });
 });
 
+describe('Timeline period header on a zoom change', () => {
+  const photos = [
+    testPhoto({ id: 'a', takenAt: '2026-04-09T19:48:18' }),
+    testPhoto({ id: 'b', takenAt: '2023-03-02T10:00:00' }),
+  ];
+
+  function renderAt(granularity: 'year' | 'month' | 'week') {
+    return render(
+      <Timeline
+        photos={photos}
+        granularity={granularity}
+        onGranularityChange={() => {}}
+        onOpen={() => {}}
+      />,
+    );
+  }
+
+  // The header swaps labels with a slide, which reads well while scrolling.
+  // A zoom change is not a scroll, and the header was remounted holding the
+  // old label and handed the new one a layout effect later — so the slide
+  // played "April 2026" against "2026", both on screen at once.
+  it('names the new period without sliding the old one out', () => {
+    const { container, rerender } = renderAt('month');
+    expect(screen.getByLabelText('Current period')).toHaveTextContent('April 2026');
+
+    rerender(
+      <Timeline
+        photos={photos}
+        granularity="year"
+        onGranularityChange={() => {}}
+        onOpen={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText('Current period')).toHaveTextContent('2026');
+    // One layer: the outgoing label is what put two periods on screen.
+    expect(container.querySelectorAll('.period-layer').length).toBe(1);
+    expect(container.querySelector('[class*="period-out-"]')).toBeNull();
+  });
+
+  it('holds to one label in both zoom directions', () => {
+    const { container, rerender } = renderAt('year');
+    for (const granularity of ['month', 'week', 'month', 'year'] as const) {
+      rerender(
+        <Timeline
+          photos={photos}
+          granularity={granularity}
+          onGranularityChange={() => {}}
+          onOpen={() => {}}
+        />,
+      );
+      expect(container.querySelectorAll('.period-layer').length).toBe(1);
+    }
+  });
+});
+
 describe('Timeline date scrubber', () => {
   const HISTOGRAM = [
     { key: '2026-03', count: 20 },

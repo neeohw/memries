@@ -106,9 +106,15 @@ heights that `justifyRows` makes unavailable.
   fetch-forward for every month the pointer crossed. This is the one place the
   behaviour is deliberately less fluid than Google Photos, and it is reversible
   once jumps are cheap.
-- The track is revealed while scrolling. Under `prefers-reduced-motion` it is
-  shown permanently instead, because `scrolling` is deliberately never set for
-  those readers and the track would otherwise only ever appear on hover.
+- The track is **always visible**, and scrolling, hovering, focus and dragging
+  only deepen it. It used to fade in on hover or scroll, which left the one
+  control for moving through years invisible until you happened to find it —
+  and meant `prefers-reduced-motion` readers needed a special case to see it
+  at all. They no longer do.
+- Both ends of the track are inset by half a label. Everything on it is
+  centred on its position, so the newest year sat half above the top edge and
+  was cut off. The pointer mapping uses the same inset, so a drag still lands
+  where the labels say.
 - Nothing renders at all for a library spanning fewer than two months.
 
 ## Consequences

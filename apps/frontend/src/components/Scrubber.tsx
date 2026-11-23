@@ -12,6 +12,21 @@ import {
 /** Months per PageUp / PageDown step. */
 const YEAR_STEP = 12;
 
+/**
+ * Pixels kept clear at each end of the track.
+ *
+ * Everything on the track is centred on its position, so the newest year sat
+ * half above the top edge and was cut off. The usable range is inset by half
+ * a label's height instead, and the pointer mapping uses the same inset so
+ * dragging still lands where the labels say.
+ */
+const TRACK_INSET = 12;
+
+/** CSS position for a fraction of the track, within the inset range. */
+function trackTop(fraction: number): string {
+  return `calc(${TRACK_INSET}px + ${fraction} * (100% - ${TRACK_INSET * 2}px))`;
+}
+
 export function Scrubber({
   scale,
   value,
@@ -39,8 +54,9 @@ export function Scrubber({
     const track = trackRef.current;
     if (!track) return 0;
     const rect = track.getBoundingClientRect();
-    if (rect.height <= 0) return 0;
-    return Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+    const usable = rect.height - TRACK_INSET * 2;
+    if (usable <= 0) return 0;
+    return Math.min(1, Math.max(0, (clientY - rect.top - TRACK_INSET) / usable));
   }, []);
 
   const segments = scale.segments;
@@ -99,15 +115,17 @@ export function Scrubber({
     if (key) onSeek(key);
   };
 
-  const show = revealed || active || dragFraction !== null;
-  const motion = reducedMotion ? '' : 'transition-opacity duration-200';
+  // The scrubber is how you move through years, so it is legible before it is
+  // touched rather than appearing on hover. Emphasis is the hover state, not
+  // existence: scrolling, hovering, focus and dragging all deepen it.
+  const emphasised = revealed || active || dragFraction !== null;
+  const motion = reducedMotion ? '' : 'transition-colors duration-200';
 
   return (
     <div
       data-scrubber
-      className={`absolute right-0 top-0 z-30 flex h-full w-12 justify-end ${motion} ${
-        show ? 'opacity-100' : 'opacity-0'
-      }`}
+      data-scrubber-emphasised={emphasised || undefined}
+      className="absolute right-0 top-0 z-30 flex h-full w-12 justify-end"
       onPointerEnter={() => setActive(true)}
       onPointerLeave={() => dragFraction === null && setActive(false)}
     >
@@ -133,15 +151,34 @@ export function Scrubber({
       >
         {/* Year labels. aria-hidden because the slider already announces the
             month through aria-valuetext. */}
+        {/* A rail, so the column reads as something you can drag before it
+            is touched. Inset to match the labels it runs between. */}
+        <div
+          aria-hidden
+          className={`absolute right-[0.4rem] w-px rounded-full ${motion} ${
+            emphasised ? 'bg-plum/30' : 'bg-plum/15'
+          }`}
+          style={{ top: TRACK_INSET, bottom: TRACK_INSET }}
+        />
+
         <div aria-hidden className="absolute inset-y-0 right-0 w-8">
           {yearTicks(scale).map((tick) => (
             <div
               key={tick.year}
+              data-scrubber-year={tick.year}
               className="absolute right-1 flex translate-y-[-50%] items-center gap-1"
-              style={{ top: `${tick.fraction * 100}%` }}
+              style={{ top: trackTop(tick.fraction) }}
             >
-              <span className="text-[10px] font-medium tabular-nums text-ink/70">{tick.year}</span>
-              <span className="h-px w-2 bg-plum/30" />
+              <span
+                className={`text-[11px] font-semibold tabular-nums ${motion} ${
+                  emphasised ? 'text-plum' : 'text-plum/70'
+                }`}
+              >
+                {tick.year}
+              </span>
+              <span
+                className={`h-px w-2.5 ${motion} ${emphasised ? 'bg-plum/60' : 'bg-plum/40'}`}
+              />
             </div>
           ))}
         </div>
@@ -150,8 +187,10 @@ export function Scrubber({
         <div
           aria-hidden
           data-scrubber-thumb
-          className="absolute right-1 h-1 w-5 translate-y-[-50%] rounded-full bg-plum"
-          style={{ top: `${fractionForKey(scale, currentKey) * 100}%` }}
+          className={`absolute right-1 translate-y-[-50%] rounded-full bg-plum ${motion} ${
+            emphasised ? 'h-1.5 w-6' : 'h-1 w-5'
+          }`}
+          style={{ top: trackTop(fractionForKey(scale, currentKey)) }}
         />
 
         {(active || dragFraction !== null) && previewKey && (
@@ -159,7 +198,7 @@ export function Scrubber({
             aria-hidden
             data-scrubber-bubble
             className="absolute right-9 translate-y-[-50%] whitespace-nowrap rounded-full bg-plum px-3 py-1 text-xs font-medium text-cream shadow-lift"
-            style={{ top: `${previewFraction * 100}%` }}
+            style={{ top: trackTop(previewFraction) }}
           >
             {formatMonthLabel(previewKey)}
             {seeking && <span className="ml-1 opacity-70">…</span>}

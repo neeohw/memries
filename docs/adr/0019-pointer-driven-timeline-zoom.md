@@ -87,6 +87,26 @@ is absolutely positioned under the header at that width, so this control and
 the two icon buttons are the whole row; a shrink-to-fit control left the row
 left-aligned with dead space and pulled filter and sync off the right edge.
 
+### The period header slides only while the list is moving
+
+The header swaps labels with a slide, which makes the period feel attached to
+the list while scrolling. A zoom change was being animated the same way: the
+header is remounted on a granularity change, so it mounts holding the label
+from the old grouping and is handed the new one once the list has settled.
+The slide then played "April 2026" against "2026", both on screen at once.
+
+The slide now happens only when the change arrives while `scrolling` is set —
+which is what the animation has always meant. A zoom correction arrives with
+the list still, so the label is simply replaced.
+
+The tempting fix was to compute the new label during the render that changes
+the granularity, from the group the reader is about to be scrolled to. That
+removed the overlap and introduced something worse: when the whole library
+fits on screen there is nothing to scroll, so the header named the anchored
+period while the list showed the newest one. A header that disagrees with the
+list under it is a worse bug than a 380ms overlap, and predicting where the
+list will land is not the header's job.
+
 ### A period heading drills into itself
 
 Clicking "2026" in year view shows that year by month; clicking "August 2026"
