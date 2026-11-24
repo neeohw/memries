@@ -191,10 +191,12 @@ func (r *Registry) openSource(src db.Source) (storage.Storage, error) {
 
 // OpenStore builds the storage backend for one Source.
 //
-// The Source's exclude patterns are compiled here and handed to the backend,
-// so the indexer needs no knowledge of them: a tree the walk never visits is
-// a tree it never indexes, and the scan's existing prune pass removes what an
-// earlier run put in the catalog (ADR 0020).
+// The Source's exclude patterns are compiled here, from this Source's own
+// list, and handed to this Source's backend — so one folder's patterns never
+// reach another's tree. The indexer needs no knowledge of them: a tree the
+// walk never visits is a tree it never indexes, and because the backend also
+// hides it from Stat, the scan's prune pass removes what an earlier run put
+// in the catalog (ADR 0020).
 func OpenStore(src db.Source, password string, roots []string) (storage.Storage, error) {
 	skip, err := CompileExcludes(src.Excludes)
 	if err != nil {

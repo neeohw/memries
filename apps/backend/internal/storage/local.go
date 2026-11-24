@@ -83,6 +83,9 @@ func (l *Local) Put(ctx context.Context, key string, r io.Reader) error {
 }
 
 func (l *Local) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	if hidden(l.SkipDir, key) {
+		return nil, fmt.Errorf("%w: %s is excluded", fs.ErrNotExist, key)
+	}
 	p, err := l.resolve(key)
 	if err != nil {
 		return nil, err
@@ -91,6 +94,12 @@ func (l *Local) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 }
 
 func (l *Local) Stat(ctx context.Context, key string) (ObjectInfo, error) {
+	// Excluded trees do not exist as far as this Source is concerned, so a
+	// Photo left behind by an earlier scan is pruned rather than kept alive
+	// by a Stat that looked straight past the exclude.
+	if hidden(l.SkipDir, key) {
+		return ObjectInfo{}, fmt.Errorf("%w: %s is excluded", fs.ErrNotExist, key)
+	}
 	p, err := l.resolve(key)
 	if err != nil {
 		return ObjectInfo{}, err

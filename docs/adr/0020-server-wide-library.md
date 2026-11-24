@@ -63,15 +63,24 @@ an oversight.
 ### Exclude patterns
 
 A Source carries regular expressions matched against each directory's path
-below its root. They are compiled in `OpenStore` and handed to the storage
-backend as a `SkipDirFunc`, so an excluded tree is never walked and the
-indexer needs no knowledge of them.
+below its root. They belong to that Source alone: they are compiled in
+`OpenStore` from `src.Excludes` and handed to **that Source's own** storage
+backend as a `SkipDirFunc`, so one folder's patterns can never reach
+another's tree.
 
-Removal then costs nothing: a tree that is not walked is absent from the
-scan's `seen` set, and the existing prune pass soft-deletes what an earlier
-run indexed. Patterns are validated when the Source is saved, so a pattern
-that will not compile is reported to the reader looking at the form rather
-than hours later in a log.
+An excluded tree is hidden from the whole backend, not only from `Walk`.
+`Stat` and `Get` report it as absent too, and that is load-bearing rather
+than tidiness: removal was supposed to cost nothing — a tree that is not
+walked is absent from the scan's `seen` set, so the prune pass soft-deletes
+what an earlier run indexed — but the prune first asks whether the path still
+exists, and a `Stat` that read straight through the exclude answered yes.
+Adding a pattern to a folder already indexed therefore took **nothing** out
+of the library, which is the one thing the feature promises. Hiding the tree
+from `Stat` is what makes the promise true.
+
+Patterns are validated when the Source is saved, so a pattern that will not
+compile is reported to the reader looking at the form rather than hours later
+in a log.
 
 The Source's own root is never skippable. A pattern like `.*` would otherwise
 make a Source silently index nothing.

@@ -47,6 +47,9 @@ func (w *WebDAV) URL(context.Context, string, time.Duration) (string, error) {
 }
 
 func (w *WebDAV) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	if hidden(w.SkipDir, key) {
+		return nil, fmt.Errorf("%w: %s is excluded", fs.ErrNotExist, key)
+	}
 	p, err := remotePath(key)
 	if err != nil {
 		return nil, err
@@ -56,6 +59,10 @@ func (w *WebDAV) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 }
 
 func (w *WebDAV) Stat(ctx context.Context, key string) (ObjectInfo, error) {
+	// As in Local: an excluded tree is gone, not merely unwalked.
+	if hidden(w.SkipDir, key) {
+		return ObjectInfo{}, fmt.Errorf("%w: %s is excluded", fs.ErrNotExist, key)
+	}
 	p, err := remotePath(key)
 	if err != nil {
 		return ObjectInfo{}, err
