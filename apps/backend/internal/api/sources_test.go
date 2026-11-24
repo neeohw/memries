@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -58,9 +59,10 @@ func (f *fakeRescan) Rescan(context.Context) (index.Status, error) {
 
 func sourcesRouter(src *fakeSources, rescan *fakeRescan) chi.Router {
 	a := &API{
-		Sources: src,
-		Rescan:  rescan,
-		IsAdmin: func(email string) bool { return email == "admin@example.com" },
+		Sources:     src,
+		Rescan:      rescan,
+		SourceRoots: []string{"/data/photos"},
+		IsAdmin:     func(email string) bool { return email == "admin@example.com" },
 	}
 	r := chi.NewRouter()
 	a.Routes(r)
@@ -179,5 +181,43 @@ func TestPreviewSourceNeedsAnAdmin(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403", w.Code)
+	}
+}
+
+// The folder form writes a path relative to one of these, so the list has to
+// say which roots exist rather than leaving a reader to discover the rule
+// from a rejection (ADR 0013).
+func TestListSourcesNamesTheAllowedRoots(t *testing.T) {
+	r := sourcesRouter(&fakeSources{}, &fakeRescan{})
+	req := withUser(httptest.NewRequest(http.MethodGet, "/admin/sources", nil), "owner")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var body struct {
+		Sources []sources.View `json:"sources"`
+		Roots   []string       `json:"roots"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Sources) != 1 {
+		t.Errorf("sources = %d", len(body.Sources))
+	}
+	if len(body.Roots) != 1 || body.Roots[0] != "/data/photos" {
+		t.Errorf("roots = %v", body.Roots)
+	}
+}
+
+// A server with no roots configured must still answer with a list the client
+// can map over, not a null.
+func TestListSourcesAnswersWithAnEmptyRootsList(t *testing.T) {
+	a := &API{Sources: &fakeSources{}, IsAdmin: func(string) bool { return true }}
+	r := chi.NewRouter()
+	a.Routes(r)
+	req := withUser(httptest.NewRequest(http.MethodGet, "/admin/sources", nil), "owner")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if !strings.Contains(w.Body.String(), `"roots":[]`) {
+		t.Errorf("body = %s", w.Body.String())
 	}
 }

@@ -87,9 +87,10 @@ func main() {
 		os.Exit(1)
 	}
 	apiH := &api.API{
-		DB:         dbc,
-		Settings:   dbc,
-		CacheRoots: cfg.CacheRoots,
+		DB:          dbc,
+		Settings:    dbc,
+		CacheRoots:  cfg.CacheRoots,
+		SourceRoots: cfg.SourceRoots,
 
 		DefaultThumbnailRoot: cfg.CacheRoot,
 		Store:                store,

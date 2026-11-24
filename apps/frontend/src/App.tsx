@@ -311,7 +311,8 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
             <AdminLayout tab={tab} onTabChange={changeTab}>
               {tab === 'folders' && (
                 <SourcesView
-                  sources={sourcesQuery.data ?? []}
+                  sources={sourcesQuery.data?.sources ?? []}
+                  roots={sourcesQuery.data?.roots ?? []}
                   loading={sourcesQuery.isLoading}
                   loadError={sourcesQuery.isError}
                   onCreate={(input) => createSourceMutation.mutateAsync(input)}

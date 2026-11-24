@@ -1,7 +1,7 @@
 # ADR 0013 — Admin-managed Sources
 
 - Status: accepted
-- Date: 2026-09-22 (revised 2026-11-18)
+- Date: 2026-09-22 (revised 2026-11-24)
 - Amends: [0004](0004-cursor-paginated-photos.md) (which folders an Index run walks)
 
 ## Context
@@ -27,6 +27,18 @@ so a slow or read-only Source never becomes the thumbnail store.
   `MEMRIES_SOURCE_ROOTS` entry, checked both literally and after resolving
   symlinks — a link inside an allowed root must not point the indexer
   elsewhere.
+- **The form shows the root rather than asking for it.** `GET /admin/sources`
+  returns the roots beside the list, and the folder field renders one as a
+  fixed prefix with only the part below it typed. The rule was previously
+  discoverable only by typing a path and being refused: the hint said "inside
+  an allowed folder" without naming one. An empty field means the root
+  itself, which is how "add the whole folder" is said, so Connect stays
+  available with nothing typed. A pasted absolute path that repeats the root
+  is absorbed rather than doubled. With several roots each is a button; with
+  none the field is a plain absolute path, as before. A stored path under no
+  root — the roots changed after it was saved — falls back to that same plain
+  field and says what is wrong, because an uneditable Source would be worse
+  than an invalid one.
 - **Credentials** go in the username and password fields; userinfo in the
   location is rejected. They are sealed with AES-256-GCM keyed from
   `MEMRIES_SESSION_KEY` and never returned, only `has_password`.

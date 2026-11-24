@@ -192,10 +192,13 @@ export const nl: Messages = {
     typeWebdav: 'WebDAV',
     labelLocal: 'Servermap',
     labelWebdav: 'WebDAV',
-    locationLocal: 'Mappad',
+    locationLocal: 'Map',
+    rootLabel: 'In:',
     locationWebdav: 'URL',
     hintLocal:
-      'Een absoluut pad dat de server kan lezen, binnen een toegestane map. Koppel een netwerkschijf eerst op de server en voeg die hier toe.',
+      'Deze server leest foto’s onder {root} en nergens anders. Laat dit leeg om de hele map toe te voegen, of noem een map daarbinnen. Koppel een netwerkschijf daar eerst om er een toe te voegen.',
+    hintLocalOutside:
+      'Deze map ligt buiten {roots}, de enige mappen die deze server mag lezen. Opslaan lukt pas als MEMRIES_SOURCE_ROOTS die map bevat.',
     hintWebdav: 'Nextcloud, ownCloud, Synology of een andere WebDAV-server.',
     excludeTitle: 'Mappen overslaan',
     excludeHelp:

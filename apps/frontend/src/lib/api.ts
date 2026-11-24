@@ -428,10 +428,21 @@ export async function signOut(): Promise<void> {
   }
 }
 
-export async function fetchSources(): Promise<Source[]> {
+/**
+ * The folders, and the server roots they must sit under (ADR 0013).
+ *
+ * The roots travel with the list because the form that needs them is on this
+ * page: a local folder is written relative to one of them.
+ */
+export type SourceLibrary = { sources: Source[]; roots: string[] };
+
+export async function fetchSources(): Promise<SourceLibrary> {
   const res = await apiFetch('/api/admin/sources');
-  const body = (await res.json()) as { sources?: ApiSource[] };
-  return (body.sources ?? []).map(mapSource);
+  const body = (await res.json()) as { sources?: ApiSource[]; roots?: string[] };
+  return {
+    sources: (body.sources ?? []).map(mapSource),
+    roots: (body.roots ?? []).filter((root) => root.trim() !== ''),
+  };
 }
 
 export async function createSource(input: SourceInput): Promise<Source> {

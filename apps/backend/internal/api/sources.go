@@ -71,7 +71,13 @@ func (a *API) listSources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]interface{}{"sources": list})
+	// The roots travel with the list because the form that needs them lives
+	// on this page: the folder field is relative to one of these.
+	roots := a.SourceRoots
+	if roots == nil {
+		roots = []string{}
+	}
+	writeJSON(w, map[string]interface{}{"sources": list, "roots": roots})
 }
 
 func (a *API) createSource(w http.ResponseWriter, r *http.Request) {

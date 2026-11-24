@@ -3,6 +3,7 @@ import { useI18n } from '../i18n/I18nProvider';
 import type { FolderPreview as Preview, Source, SourceInput, SourceType } from '../models/source';
 import { ExcludeEditor } from './ExcludeEditor';
 import { FolderPreview } from './FolderPreview';
+import { joinLocation, splitLocation, trimRoot } from '../lib/sourcePath';
 import { DriveIcon, FoldersIcon, PlusIcon, SyncIcon } from './icons';
 import { PageHeader } from './PageHeader';
 import { ScanProgress } from './ScanProgress';
@@ -19,7 +20,7 @@ const TYPES: Array<{
     id: 'local',
     label: 'folders.typeLocal',
     locationLabel: 'folders.locationLocal',
-    placeholder: '/data/photos/family',
+    placeholder: 'holidays/2019',
     hint: 'folders.hintLocal',
   },
   {
@@ -65,6 +66,7 @@ function errorText(error: unknown): string {
 
 export function SourcesView({
   sources,
+  roots,
   loading,
   loadError,
   onCreate,
@@ -75,6 +77,8 @@ export function SourcesView({
   indexStatus,
 }: {
   sources: Source[];
+  /** Server folders a local Source may sit under (ADR 0013). */
+  roots: string[];
   loading: boolean;
   loadError: boolean;
   onCreate: (input: SourceInput) => Promise<unknown>;
@@ -115,6 +119,7 @@ export function SourcesView({
         {editing === 'new' && (
           <SourceForm
             initial={emptyDraft()}
+            roots={roots}
             onSubmit={async (input) => {
               await onCreate(input);
               setEditing(null);
@@ -146,6 +151,7 @@ export function SourcesView({
               <li key={source.id}>
                 <SourceForm
                   initial={draftFrom(source)}
+                  roots={roots}
                   existing={source}
                   onSubmit={async (input) => {
                     await onUpdate(source.id, input);
@@ -281,12 +287,14 @@ function SourceCard({
 
 function SourceForm({
   initial,
+  roots: configuredRoots,
   existing,
   onSubmit,
   onPreview,
   onCancel,
 }: {
   initial: Draft;
+  roots: string[];
   existing?: Source;
   onSubmit: (input: SourceInput) => Promise<void>;
   onPreview: (input: SourceInput) => Promise<Preview>;
@@ -303,6 +311,20 @@ function SourceForm({
   const errorId = useId();
   const type = TYPES.find((t) => t.id === draft.type) ?? TYPES[0];
   const remote = draft.type !== 'local';
+  // Normalised once, so a trailing slash in the server's configuration does
+  // not show up as `/data/photos//holidays` in the field.
+  const roots = configuredRoots.map(trimRoot);
+
+  // A local folder is written relative to a server root. An empty field on a
+  // new folder means the first root itself, which is how "the whole folder"
+  // is said; a stored path under no root (the roots changed since it was
+  // saved) falls back to a plain absolute field, which is what root === null
+  // renders.
+  const rooted = !remote ? splitLocation(draft.location, roots) : { root: null, rel: '' };
+  const root = rooted.root ?? (!remote && draft.location.trim() === '' ? (roots[0] ?? null) : null);
+  const rel = rooted.root !== null ? rooted.rel : '';
+  // With a root in hand the field may be empty: the root is the folder.
+  const complete = root !== null || draft.location.trim() !== '';
 
   useEffect(() => {
     locationRef.current?.focus();
@@ -310,13 +332,25 @@ function SourceForm({
 
   const set = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
 
+  // A server path and a WebDAV URL are not the same field. Carrying the value
+  // over left "/data/photos/holidays" sitting in the URL box, hiding the
+  // example placeholder that says what belongs there. The dry run goes with
+  // it: it described the folder that was just abandoned.
+  const chooseType = (next: SourceType) => {
+    if (next === draft.type) return;
+    set({ type: next, location: '' });
+    setPreview(null);
+  };
+
   const input = (): SourceInput => ({
     ...draft,
+    // A rooted field left empty means the root itself.
+    location: root !== null ? joinLocation(root, rel) : draft.location,
     password: remote && draft.password ? draft.password : undefined,
   });
 
   const submit = async () => {
-    if (!draft.location.trim() || pending) return;
+    if (!complete || pending) return;
     setPending(true);
     setError(null);
     try {
@@ -332,7 +366,7 @@ function SourceForm({
   // connected, so a wrong path or an over-eager exclude is a correction here
   // rather than a scan to undo (ADR 0027).
   const runPreview = async () => {
-    if (!draft.location.trim() || previewing) return;
+    if (!complete || previewing) return;
     setPreviewing(true);
     setError(null);
     try {
@@ -372,7 +406,7 @@ function SourceForm({
                 name="source-type"
                 value={t.id}
                 checked={draft.type === t.id}
-                onChange={() => set({ type: t.id })}
+                onChange={() => chooseType(t.id)}
                 className="sr-only"
               />
               {tr(t.label)}
@@ -383,21 +417,78 @@ function SourceForm({
 
       <label className="text-sm font-medium text-plum">
         {tr(type.locationLabel)}
-        <input
-          ref={locationRef}
-          type="text"
-          required
-          value={draft.location}
-          onChange={(event) => set({ location: event.target.value })}
-          placeholder={type.placeholder}
-          aria-describedby={error ? `${hintId} ${errorId}` : hintId}
-          aria-invalid={error ? true : undefined}
-          autoComplete="off"
-          spellCheck={false}
-          className={`${inputClass} font-mono`}
-        />
+
+        {root !== null ? (
+          // The root is shown rather than typed, so a folder outside the ones
+          // this server may read cannot be written in the first place — it
+          // used to be a rejection you only met after pressing Connect
+          // (ADR 0013).
+          <span
+            className={`${inputClass} flex items-center gap-0 overflow-hidden p-0 focus-within:ring-2 focus-within:ring-peach`}
+          >
+            <span
+              data-source-root
+              aria-hidden
+              className="shrink-0 self-stretch whitespace-nowrap border-r border-plum/10 bg-surface/70 px-3 py-[0.7rem] font-mono text-sm text-ink"
+            >
+              {root}/
+            </span>
+            <input
+              ref={locationRef}
+              type="text"
+              value={rel}
+              onChange={(event) => set({ location: joinLocation(root, event.target.value) })}
+              placeholder={type.placeholder}
+              aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+              aria-invalid={error ? true : undefined}
+              autoComplete="off"
+              spellCheck={false}
+              className="h-full min-w-0 flex-1 bg-transparent px-3 font-mono text-sm text-plum outline-none placeholder:text-ink/60"
+            />
+          </span>
+        ) : (
+          <input
+            ref={locationRef}
+            type="text"
+            required
+            value={draft.location}
+            onChange={(event) => set({ location: event.target.value })}
+            placeholder={remote ? type.placeholder : '/data/photos/holidays'}
+            aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+            aria-invalid={error ? true : undefined}
+            autoComplete="off"
+            spellCheck={false}
+            className={`${inputClass} font-mono`}
+          />
+        )}
+
+        {roots.length > 1 && !remote && (
+          <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-normal text-ink">
+            {tr('folders.rootLabel')}
+            {roots.map((candidate) => (
+              <button
+                key={candidate}
+                type="button"
+                onClick={() => set({ location: joinLocation(candidate, rel) })}
+                aria-pressed={candidate === root}
+                className={`min-h-8 rounded-full px-2.5 font-mono text-xs ring-1 transition ${
+                  candidate === root
+                    ? 'bg-plum text-cream ring-plum'
+                    : 'bg-cream text-ink ring-plum/10 hover:text-plum'
+                }`}
+              >
+                {candidate}
+              </button>
+            ))}
+          </span>
+        )}
+
         <span id={hintId} className="mt-1.5 block text-xs font-normal text-ink">
-          {tr(type.hint)}
+          {remote
+            ? tr('folders.hintWebdav')
+            : root !== null
+              ? tr('folders.hintLocal', { root })
+              : tr('folders.hintLocalOutside', { roots: roots.join(', ') })}
         </span>
       </label>
 
@@ -456,7 +547,7 @@ function SourceForm({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="submit"
-          disabled={!draft.location.trim() || pending}
+          disabled={!complete || pending}
           className="min-h-10 rounded-full bg-plum px-4 text-sm font-medium text-cream disabled:opacity-40"
         >
           {pending ? tr('folders.checking') : existing ? tr('folders.save') : tr('folders.connect')}
@@ -465,7 +556,7 @@ function SourceForm({
           type="button"
           data-dry-run
           onClick={() => void runPreview()}
-          disabled={!draft.location.trim() || previewing || pending}
+          disabled={!complete || previewing || pending}
           title={tr('folders.dryRunHint')}
           className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-cream px-4 text-sm font-medium text-plum disabled:opacity-40"
         >

@@ -193,10 +193,13 @@ export const en = {
     typeWebdav: 'WebDAV',
     labelLocal: 'Server folder',
     labelWebdav: 'WebDAV',
-    locationLocal: 'Folder path',
+    locationLocal: 'Folder',
+    rootLabel: 'Inside:',
     locationWebdav: 'URL',
     hintLocal:
-      'An absolute path the server can read, inside an allowed folder. Mount a network share on the server first, then add it here.',
+      'This server reads photos under {root} and nowhere else. Leave this empty to add the whole folder, or name a folder inside it. Mount a network share there first to add one.',
+    hintLocalOutside:
+      'This folder is outside {roots}, the only folders this server may read. Saving it will fail until MEMRIES_SOURCE_ROOTS includes it.',
     hintWebdav: 'Nextcloud, ownCloud, Synology, or any WebDAV server.',
     excludeTitle: 'Skip folders',
     excludeHelp:

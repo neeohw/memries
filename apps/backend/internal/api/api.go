@@ -34,6 +34,11 @@ type API struct {
 	Settings SettingsStore
 	// CacheRoots are the directories the thumbnail cache may be moved under.
 	CacheRoots []string
+	// SourceRoots are the directories a local Source may sit under
+	// (MEMRIES_LOCAL_ROOT plus MEMRIES_SOURCE_ROOTS). The admin UI shows the
+	// root as a fixed prefix on the folder form, so a path outside it is
+	// unreachable rather than rejected after the fact (ADR 0013).
+	SourceRoots []string
 	// DefaultThumbnailRoot is MEMRIES_CACHE_ROOT, the install default a
 	// stored choice overrides.
 	DefaultThumbnailRoot string
