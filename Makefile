@@ -40,7 +40,7 @@ else
   REQUIRE_ENV := test -f memries.yaml || { echo "Missing memries.yaml (copy memries.example.yaml; see README quick start)" >&2; exit 1; }
 endif
 
-.PHONY: help up down down-wipe db-clear build build-pi e2e e2e-down e2e-docker e2e-docker-force e2e-last-runs install-requirements
+.PHONY: help up down down-wipe db-clear build build-pi build-deb e2e e2e-down e2e-docker e2e-docker-force e2e-last-runs install-requirements
 
 help:
 	$(info make up              Start the stack (docker compose up -d --build))
@@ -50,6 +50,7 @@ help:
 	$(info make db-clear        Delete the SQLite catalog; restart the API)
 	$(info make build           turbo run build (host Node/Go/pnpm required))
 	$(info make build-pi        server + indexer for the box into dist/pi (needs Docker))
+	$(info make build-deb       the installable .deb into dist/deb (builds the frontend + binaries first))
 	$(info make install-requirements  Host Node 22, Go 1.26, corepack pnpm)
 	$(info make e2e             Playwright BDD against the isolated memries-e2e stack)
 	$(info make e2e-down        Stop the isolated e2e stack; keep volumes)
@@ -82,6 +83,13 @@ db-clear:
 
 build-pi:
 	$(SCRIPT_RUN) ./apps/scripts/build-pi/build-pi.$(SCRIPT_EXT)
+
+# The frontend first: the package carries the built interface, and a stale
+# dist/ ships an old UI beside a new server with nothing to say so.
+build-deb:
+	pnpm --filter @memries/frontend build
+	$(MAKE) build-pi
+	$(SCRIPT_RUN) ./apps/scripts/build-deb/build-deb.$(SCRIPT_EXT)
 
 install-requirements:
 	$(SCRIPT_RUN) ./apps/scripts/install-requirements/install-requirements.$(SCRIPT_EXT)

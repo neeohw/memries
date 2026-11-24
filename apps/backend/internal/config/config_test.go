@@ -163,14 +163,24 @@ func TestFindPrefersTheFlagThenTheEnvironment(t *testing.T) {
 // The file holds the session key and the bootstrap password.
 func TestWorldReadableNoticesLoosePermissions(t *testing.T) {
 	path := write(t, minimal)
-	if WorldReadable(path) {
-		t.Error("0600 should be fine")
+	for _, mode := range []os.FileMode{0o600, 0o640, 0o660} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		// 0640 root:memries is how the Debian package ships it: group access
+		// is how a service account reads a file it does not own, not a
+		// mistake to warn about on every start (ADR 0030).
+		if WorldReadable(path) {
+			t.Errorf("%o should be fine", mode)
+		}
 	}
-	if err := os.Chmod(path, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if !WorldReadable(path) {
-		t.Error("0644 should be reported")
+	for _, mode := range []os.FileMode{0o644, 0o604, 0o666} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		if !WorldReadable(path) {
+			t.Errorf("%o should be reported", mode)
+		}
 	}
 	if WorldReadable(filepath.Join(t.TempDir(), "absent")) {
 		t.Error("a missing file is not a permissions problem")

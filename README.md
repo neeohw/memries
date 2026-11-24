@@ -381,6 +381,77 @@ Docker is therefore required. `build-pi --help` lists `--platform`, `--out`,
 same recipe builds from source on the box itself: `apt install libvips-dev`
 and `go build -tags vips ./cmd/server ./cmd/indexer`.
 
+### Installing it: the .deb
+
+```bash
+make build-deb           # -> dist/deb/memries_0.1.0_arm64.deb
+```
+
+On the box:
+
+```bash
+sudo apt install ./memries_0.1.0_arm64.deb
+```
+
+That installs the API as a systemd service on **127.0.0.1:5987**, the web
+interface in `/usr/share/memries/www`, and `/etc/memries/config.yaml` as a
+conffile your edits survive upgrades in. It generates a session key on first
+install, pulls in libvips and ffmpeg, and starts the service
+([0030](docs/adr/0030-debian-package.md)).
+
+The interface still needs a web server in front, because the app calls `/api`
+with relative paths and the session cookie is `SameSite=Lax` — the interface
+and the API must share an origin:
+
+```bash
+sudo cp /usr/share/memries/nginx.conf /etc/nginx/sites-available/memries
+sudo ln -s /etc/nginx/sites-available/memries /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Then open **http://your-box:5988**.
+
+**Already serving something on :80?** Mount Memries under a path of that
+site instead — paste `/usr/share/memries/nginx-sublocation.conf` into it and
+browse to `http://your-box/memries/`:
+
+```bash
+sudoedit /etc/nginx/sites-available/default   # paste the three blocks inside server { }
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Nothing else about that site changes. The app works out where it is mounted
+from the URL its own `index.html` came from, so one package serves at the
+root or under any prefix; change the prefix by editing the `/memries/` paths
+in the snippet. Set `public_url` to the origin only — `http://your-box`, no
+path.
+
+It listens on a port of its own and touches nothing else you serve. A box
+that runs a photo library usually runs other things, and a vhost on `:80`
+matching `server_name _` would compete for every request that arrives by IP
+address — installing this should not require disabling somebody else's site.
+
+To put it on `:80` instead, either give it a name (`server_name
+photos.example.lan`, a DNS or `/etc/hosts` entry, and `listen 80`) or add
+`default_server` to the listen lines if nothing else already carries it.
+Requests by bare IP always go to the default site, because an address matches
+no `server_name`. Whichever you choose, set `public_url` in
+`/etc/memries/config.yaml` to the origin the browser actually uses, port and
+all.
+
+An Apache equivalent ships beside it. Then edit `/etc/memries/config.yaml`:
+set `public_url` to the origin the browser uses, point `library.roots` at
+your photos, and change `admins.emails` and `bootstrap_password`. If the
+photos are on another disk, let the service reach it:
+
+```bash
+sudo systemctl edit memries     # [Service] / ReadWritePaths=/media/sdhc
+sudo systemctl restart memries
+```
+
+Removing the package leaves your photos alone. `apt purge` additionally drops
+the catalog and the thumbnail cache, both of which a scan rebuilds.
+
 ## Troubleshooting
 
 - **`no configuration file at /etc/memries/config.yaml`** — copy `memries.example.yaml` to `memries.yaml`. Compose mounts it into the container at that path.

@@ -1,0 +1,20 @@
+Package: memries
+Version: {{VERSION}}
+Section: web
+Priority: optional
+Architecture: {{ARCH}}
+Depends: libvips42t64, ffmpeg, passwd, systemd
+Recommends: nginx | apache2
+Maintainer: Memries <memries@localhost>
+Installed-Size: {{SIZE}}
+Description: Self-hosted photo and video library
+ A date-scrolling timeline for a photo library kept on your own machine.
+ Originals stay where they are; thumbnails are generated once.
+ .
+ This package installs the API server as a systemd service listening on
+ 127.0.0.1:5987, the built web interface in /usr/share/memries/www, and
+ example configuration for nginx and Apache. The web server serves the
+ interface and proxies /api and /auth to the service: the two must share an
+ origin, because the session cookie is SameSite=Lax.
+ .
+ Configuration is one file, /etc/memries/config.yaml.

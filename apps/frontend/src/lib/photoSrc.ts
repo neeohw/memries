@@ -1,3 +1,4 @@
+import { withBase } from './basePath';
 import type { Photo } from '../models/photo';
 
 export type PhotoDensity = 'thumb' | 'medium' | 'featured' | 'day';
@@ -22,7 +23,7 @@ export function compactThumbSize(viewportWidth: number): 256 | 512 {
  * stale cover is acceptable where a stale photo is not.
  */
 export function thumbUrl(id: string, size: 256 | 512 | 1024, hash?: string): string {
-  const url = `/api/thumb/${encodeURIComponent(id)}?size=${size}`;
+  const url = withBase(`/api/thumb/${encodeURIComponent(id)}?size=${size}`);
   return hash ? `${url}&v=${encodeURIComponent(hash)}` : url;
 }
 

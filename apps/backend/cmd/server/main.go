@@ -42,7 +42,7 @@ func main() {
 		// It holds the session key and the bootstrap password. A warning
 		// rather than a refusal: a bind-mounted file is routinely 0644 and
 		// the server still has to start.
-		log.Warn("configuration file is readable by other users", "file", path, "want", "chmod 600")
+		log.Warn("configuration file is readable by everyone", "file", path, "want", "chmod 640")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

@@ -51,9 +51,11 @@ failure this format is meant to prevent. `library.cahce: /media/sdhc` has to
 fail loudly, so `KnownFields(true)` is on and a typo names itself.
 
 Secrets live in the file. It is gitignored, the server warns at startup if it
-is readable by anyone but its owner, and the warning is not a refusal: a
-bind-mounted file in a container is routinely `0644` and the server still has
-to start.
+is world-readable, and the warning is not a refusal: a bind-mounted file in a
+container is routinely `0644` and the server still has to start. Group access
+is deliberately not flagged — the Debian package installs it `root:memries
+0640`, which is how a service account reads a file it does not own
+([0030](0030-debian-package.md)).
 
 ### The thumbnail folder stops being a runtime setting
 

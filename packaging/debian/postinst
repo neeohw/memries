@@ -1,0 +1,71 @@
+#!/bin/sh
+set -e
+
+CONFIG=/etc/memries/config.yaml
+
+case "$1" in
+  configure)
+    # A system account with no login and no home of its own. The library and
+    # the cache are named in the config and may live anywhere, so nothing is
+    # assumed about where its data is.
+    #
+    # useradd rather than adduser: adduser stopped being essential in Debian
+    # and is absent from a minimal trixie, where this failed with exit 127.
+    # useradd comes from passwd, which is required and always there.
+    if ! getent group memries >/dev/null; then
+      groupadd --system memries
+    fi
+    if ! getent passwd memries >/dev/null; then
+      useradd --system --gid memries --no-create-home \
+              --home-dir /var/lib/memries --shell /usr/sbin/nologin \
+              --comment "Memries photo library" memries
+    fi
+
+    # The config holds the session key and the bootstrap password, so it is
+    # readable by the service account and nobody else.
+    if [ -f "$CONFIG" ]; then
+      chown root:memries "$CONFIG"
+      chmod 640 "$CONFIG"
+
+      # A package cannot ship a session key: every install would share one,
+      # and anyone with the .deb could forge a session on any of them. One is
+      # generated here, once, and only while the placeholder is still in
+      # place — so reinstalling never signs everybody out.
+      if grep -q 'replace-with-32-byte-random-base64' "$CONFIG"; then
+        KEY="$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+        # A literal replacement: the key is base64 and can contain / and +,
+        # which would be read as sed syntax in the pattern half.
+        awk -v key="$KEY" '
+          index($0, "replace-with-32-byte-random-base64") {
+            sub(/replace-with-32-byte-random-base64/, key)
+          }
+          { print }
+        ' "$CONFIG" > "$CONFIG.new"
+        chown root:memries "$CONFIG.new"
+        chmod 640 "$CONFIG.new"
+        mv "$CONFIG.new" "$CONFIG"
+        echo "memries: generated a session key in $CONFIG"
+      fi
+    fi
+
+    for dir in /var/lib/memries /var/cache/memries; do
+      mkdir -p "$dir"
+      chown memries:memries "$dir"
+      chmod 750 "$dir"
+    done
+    ;;
+esac
+
+#DEBHELPER#
+
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  if [ "$1" = "configure" ]; then
+    systemctl enable memries.service >/dev/null 2>&1 || true
+    # Started, not restarted-if-running: a fresh install should come up, and
+    # an upgrade should pick up the new binary.
+    systemctl restart memries.service >/dev/null 2>&1 || true
+  fi
+fi
+
+exit 0

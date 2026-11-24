@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { withBase } from '../lib/basePath';
 import { useI18n } from '../i18n/I18nProvider';
 
 /**
@@ -55,7 +56,7 @@ export function LoginScreen({
         <form
           onSubmit={submit}
           method="post"
-          action="/auth/login"
+          action={withBase('/auth/login')}
           className="flex flex-col gap-4"
           noValidate
         >

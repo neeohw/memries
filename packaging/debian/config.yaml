@@ -1,0 +1,47 @@
+# Memries server configuration.
+#
+# This file is the only source of truth: there are no environment variables
+# to go looking for (ADR 0028). It holds secrets, so it is root:memries 0640
+# and dpkg treats it as a conffile — your edits survive an upgrade.
+#
+# After changing anything here: systemctl restart memries
+
+server:
+  # Loopback only. nginx or Apache is what faces the network, and it must
+  # serve the web interface and /api from one origin: the session cookie is
+  # SameSite=Lax, so a different origin signs in and then looks signed out
+  # (ADR 0030). See /usr/share/memries/nginx.conf.
+  addr: "127.0.0.1:5987"
+  # The origin browsers reach the web server on — not this service's port.
+  # It matches the port in /usr/share/memries/nginx.conf. Put this machine's
+  # name or address in it. It is the CORS allow-list, and it decides whether
+  # the session cookie is marked Secure, so it must say https:// once you
+  # have TLS.
+  public_url: http://localhost:5988
+  # Filled in with a random key on first install. Rotating it signs everyone
+  # out and means re-entering folder passwords.
+  session_key: "replace-with-32-byte-random-base64"
+
+database:
+  driver: sqlite
+  dsn: /var/lib/memries/memries.db
+
+library:
+  # Folders an admin may add photos from. Point this at where the photos
+  # actually are — an external disk, say /media/sdhc/photos — and give the
+  # service access with: systemctl edit memries
+  #   [Service]
+  #   ReadWritePaths=/media/sdhc
+  roots:
+    - /var/lib/memries/library
+  # Thumbnails are a regenerable cache, so this belongs on the roomiest disk.
+  cache: /var/cache/memries/thumbs
+
+admins:
+  # Who may add, edit, remove and scan folders. Everyone else can only browse.
+  emails:
+    - admin@example.com
+  # Fills an empty password on a fresh install only, so changing the password
+  # later is not undone by a restart. Change this before first start, then
+  # delete the line once you have signed in.
+  bootstrap_password: "change-me"

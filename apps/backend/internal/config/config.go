@@ -221,17 +221,22 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// WorldReadable reports whether the file can be read by anyone but its owner.
+// WorldReadable reports whether the file can be read by anyone at all.
 //
-// The file holds the session key and the bootstrap password, so this is worth
+// It holds the session key and the bootstrap password, so this is worth
 // saying out loud. It is a warning and not a refusal: a bind-mounted file in
 // a container is routinely 0644 and the server still has to start.
+//
+// Group access is deliberately not flagged. The Debian package installs the
+// config as root:memries 0640, which is how a service account reads a file it
+// does not own — the tighter check called that out as a problem on every
+// start of a correctly installed system (ADR 0030).
 func WorldReadable(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
 		return false
 	}
-	return info.Mode().Perm()&0o077 != 0
+	return info.Mode().Perm()&0o007 != 0
 }
 
 // defaultCacheRoot is where generated thumbnails go when library.cache says

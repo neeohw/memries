@@ -1,0 +1,26 @@
+#!/bin/sh
+set -e
+
+if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
+case "$1" in
+  purge)
+    # The catalog and the generated thumbnails are both rebuildable from the
+    # photos, so purge takes them. It never touches library.roots: those are
+    # the photos themselves, they were there before this package, and a
+    # package manager has no business deleting them.
+    rm -rf /var/lib/memries /var/cache/memries
+    rm -f /etc/memries/config.yaml
+    rmdir /etc/memries 2>/dev/null || true
+    if getent passwd memries >/dev/null; then
+      userdel memries >/dev/null 2>&1 || true
+    fi
+    if getent group memries >/dev/null; then
+      groupdel memries >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+exit 0

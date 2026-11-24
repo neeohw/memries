@@ -1,3 +1,4 @@
+import { withBase } from './basePath';
 import { thumbUrl } from './photoSrc';
 import type { HistogramBucket } from './scrubberScale';
 import { wallClockFromExifValue } from './takenAt';
@@ -189,7 +190,7 @@ export function mapPhoto(raw: ApiPhoto): Photo {
     hash,
     kind,
     durationMs: raw.duration_ms ?? 0,
-    imageUrl: `/api/original/${encodeURIComponent(id)}`,
+    imageUrl: withBase(`/api/original/${encodeURIComponent(id)}`),
     thumbnailUrl: thumbUrl(id, 512, hash),
     takenAt: raw.taken_at_local || wallClockFromApi(raw.taken_at),
     width: raw.dims?.w || 1,
@@ -224,7 +225,9 @@ export function flattenPhotoPages(pages: Array<{ photos: Photo[] }>): Photo[] {
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(path, {
+  // withBase, so the same build works at the root of a host or under a
+  // sublocation of a site that is already serving something (ADR 0030).
+  const res = await fetch(withBase(path), {
     credentials: 'include',
     ...init,
   });
@@ -405,7 +408,7 @@ export const SIGN_IN_FAILED = 'That login and password did not match.';
  * password to report in the form, not a lost session to recover from.
  */
 export async function signIn(login: string, password: string): Promise<Me> {
-  const res = await fetch('/auth/login', {
+  const res = await fetch(withBase('/auth/login'), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -429,7 +432,7 @@ export async function signIn(login: string, password: string): Promise<Me> {
 }
 
 export async function signOut(): Promise<void> {
-  const res = await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+  const res = await fetch(withBase('/auth/logout'), { method: 'POST', credentials: 'include' });
   if (!res.ok && res.status !== 401) {
     throw new Error((await res.text()) || res.statusText);
   }

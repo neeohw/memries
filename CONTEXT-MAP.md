@@ -30,6 +30,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0027](docs/adr/0027-folder-dry-run.md) | Dry run on the folder form: a folder tree with photo counts, excluded folders named, writing nothing |
 | [0028](docs/adr/0028-yaml-configuration.md) | One `memries.yaml` configures the server, secrets included; no environment layer; the thumbnail folder stops being a runtime setting |
 | [0029](docs/adr/0029-video.md) | Video indexed via ffmpeg (metadata + poster frame into the existing ladder); originals streamed with byte ranges; nothing transcoded |
+| [0030](docs/adr/0030-debian-package.md) | A .deb installs the API as a systemd service on 127.0.0.1 plus the built SPA; nginx or Apache serves it and proxies `/api` and `/auth` from the same origin |
 | [0019](docs/adr/0019-pointer-driven-timeline-zoom.md) | Granularity is a 3-step zoom ladder (year/month/week, no day); Ctrl+wheel and pinch, − level + control replaces the radiogroup, period headings drill in, level kept in `sessionStorage` |
 
 ## Contexts

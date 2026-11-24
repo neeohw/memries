@@ -1,0 +1,47 @@
+[Unit]
+Description=Memries photo library
+Documentation=file:///usr/share/doc/memries/README.Debian
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=memries
+Group=memries
+ExecStart=/usr/bin/memries-server --config /etc/memries/config.yaml
+Restart=on-failure
+RestartSec=5s
+
+# StateDirectory gives /var/lib/memries, CacheDirectory /var/cache/memries,
+# both created and chowned by systemd. The config's library.cache may name
+# either of those or a disk of its own; CACHE_DIRECTORY is what the server
+# falls back to when it names none (ADR 0028).
+StateDirectory=memries
+CacheDirectory=memries
+
+# The library and the cache usually live outside both of those — on the Pi,
+# a card at /media/sdhc — so the sandbox has to let a configured path
+# through. ReadWritePaths is the one line an admin edits, with
+# `systemctl edit memries`, when their disk is somewhere else.
+ReadWritePaths=/media
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+
+# Measured at ~230MiB peak with four index workers on 12MP frames; this caps
+# runaway GC growth on a 1.9GB box with no swap (ADR 0015).
+Environment=GOMEMLIMIT=512MiB
+
+[Install]
+WantedBy=multi-user.target
