@@ -287,7 +287,27 @@ of a file in the library), `storage_path`, `taken_at_local`,
 
 An Index run walks every folder (Source) — the client never submits a path; only admins add folders, and they are server-wide. Photo storage paths are `<source id>/<path inside the folder>`. Unchanged files (same size + mtime) are skipped without re-reading, so re-scans of network folders are cheap. A folder that cannot be reached is reported as an error and its photos are kept, not pruned.
 
-Accepted media extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.heic`, `.heif`.
+Accepted media extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.heic`,
+`.heif`, and the video containers `.mov`, `.mp4`, `.m4v`, `.webm`
+([0029](docs/adr/0029-video.md)).
+
+### Video
+
+Clips are indexed beside photos and sort into the same timeline by their
+container's creation time. ffmpeg grabs one frame a second in as the poster,
+which goes through the ordinary thumbnail ladder, so the grid shows a clip as
+a tile with a play mark and its length.
+
+Opening a clip plays it. If the browser blocks sound it starts muted and says
+so, rather than showing a frame that looks frozen.
+
+Nothing is transcoded. `/api/original` streams the original bytes with byte
+ranges, so seeking works, and the viewer plays them. Safari and a current
+Chromium on hardware with an HEVC decoder play iPhone HEVC `.mov` as-is
+(measured); a browser that cannot gets a plain message and a download link.
+
+The box needs `apt install ffmpeg`. Without it the server says so once at
+startup and skips video — a library of stills works fine without it.
 
 ## Local Turbo (host Node + Go)
 

@@ -3,6 +3,8 @@ import type { Album, Photo } from '../models/photo';
 export function testPhoto(overrides: Partial<Photo> = {}): Photo {
   return {
     id: 'p1',
+    kind: 'photo',
+    durationMs: 0,
     hash: 'p1hash',
     imageUrl: '/api/original/p1',
     thumbnailUrl: '/api/thumb/p1?size=512&v=p1hash',

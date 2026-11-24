@@ -181,6 +181,15 @@ export function SignOutIcon(props: IconProps) {
   );
 }
 
+/** Filled, unlike the rest: it reads as a button at thumbnail size. */
+export function PlayIcon(props: IconProps) {
+  return (
+    <svg {...icon(props)} strokeWidth={0}>
+      <path d="M8 5.5v13l11-6.5z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function CheckIcon(props: IconProps) {
   return (
     <svg {...icon(props)} strokeWidth={2.4}>

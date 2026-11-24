@@ -11,8 +11,14 @@ export interface Album {
   photoIds: string[];
 }
 
+/** A still or a clip. The timeline shows both; only the viewer differs. */
+export type MediaKind = 'photo' | 'video';
+
 export interface Photo {
   id: string;
+  kind: MediaKind;
+  /** Playing time in milliseconds; 0 for a still (ADR 0029). */
+  durationMs: number;
   /**
    * Content fingerprint, not identity. `id` survives a resync; `hash` changes
    * when the bytes do, which is what versions the thumb URL so an immutable

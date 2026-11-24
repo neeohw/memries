@@ -3,6 +3,7 @@ import { useI18n } from '../i18n/I18nProvider';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { formatCompactDate, formatDayLabel, formatTime } from '../lib/formatDate';
 import { photoViewerAlt } from '../lib/photoName';
+import { VideoStage } from './VideoStage';
 import { viewerFallbackSrc } from '../lib/photoSrc';
 import { resolveViewerGesture } from '../lib/viewerGesture';
 import type { Album, Photo } from '../models/photo';
@@ -296,21 +297,25 @@ export function PhotoViewer({
                 setDrag({ x: 0, y: 0 });
               }}
             >
-              <img
-                key={photo.id}
-                ref={imgRef}
-                src={src}
-                alt={photoViewerAlt(photo, t, intl)}
-                draggable={false}
-                className={`max-h-[min(100%,calc(100dvh-12rem))] max-w-full rounded-2xl object-contain shadow-lift ${
-                  !reducedMotion && motion === 'navigating' ? 'photo-crossfade' : ''
-                }`}
-                style={{ transform: dragTransform }}
-                onError={() => {
-                  const fallback = viewerFallbackSrc(photo);
-                  if (src !== fallback) setSrc(fallback);
-                }}
-              />
+              {photo.kind === 'video' ? (
+                <VideoStage photo={photo} />
+              ) : (
+                <img
+                  key={photo.id}
+                  ref={imgRef}
+                  src={src}
+                  alt={photoViewerAlt(photo, t, intl)}
+                  draggable={false}
+                  className={`max-h-[min(100%,calc(100dvh-12rem))] max-w-full rounded-2xl object-contain shadow-lift ${
+                    !reducedMotion && motion === 'navigating' ? 'photo-crossfade' : ''
+                  }`}
+                  style={{ transform: dragTransform }}
+                  onError={() => {
+                    const fallback = viewerFallbackSrc(photo);
+                    if (src !== fallback) setSrc(fallback);
+                  }}
+                />
+              )}
             </div>
             <button
               type="button"

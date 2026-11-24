@@ -54,6 +54,10 @@ export const nl: Messages = {
     },
   },
   photo: {
+    videoUnsupported:
+      'Deze browser kan deze clip niet afspelen. Safari wel, of download het origineel.',
+    videoMuted: 'Zonder geluid gestart — je browser blokkeerde het. Hieronder aanzetten.',
+    videoDownload: 'Download het origineel',
     open: 'Foto openen, {when}',
     openFavorited: 'Favoriete foto openen, {when}',
     select: 'Foto selecteren, {when}',

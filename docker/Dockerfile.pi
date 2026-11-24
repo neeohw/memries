@@ -85,6 +85,8 @@ RUN set -eu; \
             || { echo "$bin is not linked against libvips"; exit 1; }; \
         echo "$bin: $(readelf -d "/out/$bin" | grep -c NEEDED) shared libraries"; \
     done
+# ffmpeg is not linked in: it is run as a program, so the box needs the
+# package but the binaries carry no reference to it (ADR 0029).
 
 # One stage per selection, so --server-only and --indexer-only export exactly
 # what was asked for rather than everything the builder made.

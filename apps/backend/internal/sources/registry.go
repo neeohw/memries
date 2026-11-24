@@ -127,6 +127,24 @@ func (r *Registry) Walk(ctx context.Context, prefix string, fn func(storage.Obje
 	})
 }
 
+// LocalPath forwards to the Source's backend when it has one, so the indexer
+// can hand ffmpeg a path instead of a copy (ADR 0029). A WebDAV Source has
+// none, and the caller indexes the video without a poster frame rather than
+// downloading hundreds of megabytes to make a thumbnail.
+func (r *Registry) LocalPath(ctx context.Context, key string) (string, bool) {
+	st, rest, err := r.route(ctx, key)
+	if err != nil {
+		return "", false
+	}
+	pather, ok := st.(interface {
+		LocalPath(context.Context, string) (string, bool)
+	})
+	if !ok {
+		return "", false
+	}
+	return pather.LocalPath(ctx, rest)
+}
+
 func (r *Registry) route(ctx context.Context, key string) (storage.Storage, string, error) {
 	id, rest := splitKey(key)
 	if id == "" || rest == "" {

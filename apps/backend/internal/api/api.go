@@ -249,6 +249,23 @@ func (a *API) original(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", ctype)
 	}
 	w.Header().Set("Cache-Control", "private, max-age=86400")
+
+	// A player needs byte ranges: dragging the scrubber is a request for the
+	// middle of the file, and without 206 the browser either refuses to seek
+	// or refetches the whole clip — which for a 528MB phone video is the
+	// difference between playable and not (ADR 0029). ServeContent handles
+	// the Range parsing, the 206 and the If-Range revalidation.
+	if seeker, ok := rc.(io.ReadSeeker); ok {
+		modTime := time.Time{}
+		if p.Storage.ModTime != nil {
+			modTime = *p.Storage.ModTime
+		}
+		// The name is only used to guess a type, which is already set.
+		http.ServeContent(w, r, "", modTime, seeker)
+		return
+	}
+	// A backend that cannot seek (WebDAV) streams whole, as before.
+	w.Header().Set("Accept-Ranges", "none")
 	_, _ = io.Copy(w, rc)
 }
 

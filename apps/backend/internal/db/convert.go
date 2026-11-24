@@ -57,7 +57,7 @@ func (b *boolVal) Scan(src any) error {
 // photoColumns is what is stored on the row. It carries no favorite: the
 // library is shared and a heart belongs to the reader who pressed it, so that
 // flag lives in the favorites table and is read per viewer (ADR 0020).
-const photoColumns = `key, kind, taken_at, taken_at_local, taken_at_source,
+const photoColumns = `key, kind, duration_ms, taken_at, taken_at_local, taken_at_source,
 	tz_offset, hash, size_bytes, mime, width, height, orientation,
 	storage_backend, storage_path, storage_bucket, storage_mtime,
 	exif_camera, exif_lens, exif_iso, exif_f_number, exif_shutter,
@@ -80,7 +80,7 @@ func scanPhoto(sc rowScanner) (*Photo, error) {
 		deletedAt sql.NullInt64
 	)
 	err := sc.Scan(
-		&p.Key, &p.Kind, &takenAt, &p.TakenAtLocal, &p.TakenAtSource,
+		&p.Key, &p.Kind, &p.DurationMS, &takenAt, &p.TakenAtLocal, &p.TakenAtSource,
 		&p.TZOffset, &p.Hash, &p.SizeBytes, &p.MIME,
 		&p.Dims.W, &p.Dims.H, &p.Orientation,
 		&p.Storage.Backend, &p.Storage.Path, &p.Storage.Bucket, &mtime,
@@ -102,18 +102,23 @@ func scanPhoto(sc rowScanner) (*Photo, error) {
 	return &p, nil
 }
 
+// kindOf defaults a blank kind to "photo", so a row written by older code or
+// a caller that only cares about stills still says what it is.
+func kindOf(p *Photo) string {
+	if p.Kind == "" {
+		return "photo"
+	}
+	return p.Kind
+}
+
 // photoValues mirrors photoColumns for INSERT.
 func photoValues(p *Photo) []any {
 	var lat, lon any
 	if p.EXIF.GPS != nil {
 		lat, lon = p.EXIF.GPS.Lat, p.EXIF.GPS.Lon
 	}
-	kind := p.Kind
-	if kind == "" {
-		kind = "photo"
-	}
 	return []any{
-		p.Key, kind, micros(p.TakenAt), p.TakenAtLocal, p.TakenAtSource,
+		p.Key, kindOf(p), p.DurationMS, micros(p.TakenAt), p.TakenAtLocal, p.TakenAtSource,
 		p.TZOffset, p.Hash, p.SizeBytes, p.MIME,
 		p.Dims.W, p.Dims.H, p.Orientation,
 		p.Storage.Backend, p.Storage.Path, p.Storage.Bucket, nullMicros(p.Storage.ModTime),

@@ -23,6 +23,7 @@ import (
 	"github.com/memries/memries/internal/sources"
 	"github.com/memries/memries/internal/storage"
 	"github.com/memries/memries/internal/thumb"
+	"github.com/memries/memries/internal/video"
 )
 
 func main() {
@@ -69,6 +70,12 @@ func main() {
 	if err := a.Bootstrap(ctx); err != nil {
 		log.Error("auth bootstrap", "err", err)
 		os.Exit(1)
+	}
+	// Said once, at startup, rather than once per clip during a scan: a
+	// library with no video runs fine without ffmpeg, so this is a warning
+	// and not a refusal (ADR 0029).
+	if err := video.Available(); err != nil {
+		log.Warn("video will be skipped", "err", err)
 	}
 	sealer, err := sources.NewSealer(cfg.Server.SessionKey)
 	if err != nil {

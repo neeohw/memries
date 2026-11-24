@@ -22,11 +22,13 @@ In scope:
 
 - Timeline browse (virtual scroll, lightbox)
 - Local password sign-in, cookie session ([0016](docs/adr/0016-local-password-auth.md))
-- Indexer CLI (EXIF, sha256 dedup, 256 / 512 / 1024 thumbs)
+- Indexer CLI (EXIF, sha256 dedup, 256 / 512 / 1024 thumbs; ffmpeg for video)
 - Admin-managed Sources, server-wide: a local path or WebDAV ([0013](docs/adr/0013-admin-managed-sources.md), [0020](docs/adr/0020-server-wide-library.md))
 - One shared library; favorites and Albums stay per reader ([0020](docs/adr/0020-server-wide-library.md))
 
-Out of scope unless the user asks: video, S3 storage, WebSockets, sharing graph, Piwigo import.
+- Video: indexed, poster frame, played as-is, nothing transcoded ([0029](docs/adr/0029-video.md))
+
+Out of scope unless the user asks: S3 storage, WebSockets, sharing graph, Piwigo import.
 
 ## Stack
 

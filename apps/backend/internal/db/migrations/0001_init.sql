@@ -30,6 +30,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE TABLE IF NOT EXISTS photos (
   key              TEXT PRIMARY KEY,
   kind             TEXT NOT NULL DEFAULT 'photo',
+  -- Playing time in milliseconds, 0 for a still (ADR 0029).
+  duration_ms      BIGINT NOT NULL DEFAULT 0,
   taken_at         BIGINT NOT NULL,
   taken_at_local   TEXT NOT NULL DEFAULT '',
   taken_at_source  TEXT NOT NULL DEFAULT '',

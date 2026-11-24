@@ -151,7 +151,8 @@ test('main explains a missing docker rather than reporting a build failure', asy
   assert.ok(logs.some((l) => l.includes('cgo builds against libvips')));
 });
 
-// Both binaries link libvips, so the run says what the box needs.
+// Both binaries link libvips, and video needs ffmpeg beside it, so the run
+// says what the box needs.
 test('main names the package the box needs', async () => {
   const { logs, deps } = fakeDeps();
   await main([], deps);

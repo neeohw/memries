@@ -20,11 +20,43 @@ func TestIsMediaStillTakesTheWebFormatsAndSkipsTheRest(t *testing.T) {
 			t.Errorf("%q should be indexed", key)
 		}
 	}
-	// Raw and TIFF are deliberately still out (ADR 0025).
-	for _, key := range []string{"a.cr2", "a.nef", "a.tif", "a.avif", "a.mov", "a.txt", "a"} {
+	// Raw and TIFF are deliberately still out (ADR 0025), and so are the
+	// containers ffmpeg could open but a browser could not play (ADR 0029).
+	for _, key := range []string{"a.cr2", "a.nef", "a.tif", "a.avif", "a.mkv", "a.avi", "a.txt", "a"} {
 		if IsMedia(key) {
 			t.Errorf("%q should be skipped", key)
 		}
+	}
+}
+
+// Video is indexed, but never given the JPEG stand-in a HEIC gets: the viewer
+// plays the original (ADR 0029).
+func TestIsMediaTakesVideo(t *testing.T) {
+	for _, key := range []string{"a/IMG_0181.MOV", "b.mp4", "c.m4v", "d.webm"} {
+		if !IsMedia(key) {
+			t.Errorf("%q should be indexed", key)
+		}
+		if IsWebSafe(key) {
+			t.Errorf("%q should not be given a display rendition", key)
+		}
+		if got := mediaMIME(key); got == "" || got == "application/octet-stream" {
+			t.Errorf("mediaMIME(%q) = %q", key, got)
+		}
+	}
+	if got := mediaMIME("a.MOV"); got != "video/quicktime" {
+		t.Errorf("mediaMIME(.MOV) = %q", got)
+	}
+}
+
+// A clip whose poster could not be made keeps its row rather than being
+// retried, and called changed, on every scan.
+func TestExpectedThumbsForAVideoWithoutAPoster(t *testing.T) {
+	if got := expectedThumbs("a.mov", db.Thumbs{}); got != nil {
+		t.Errorf("expected %v, want nothing to check", got)
+	}
+	full := db.Thumbs{S256: "a", S512: "b", S1024: "c"}
+	if got := expectedThumbs("a.mov", full); len(got) != 3 {
+		t.Errorf("expected %v", got)
 	}
 }
 

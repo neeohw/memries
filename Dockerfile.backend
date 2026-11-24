@@ -46,8 +46,11 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 # libheif1 itself, which is what decodes HEIC. The same release as the
 # builder, so the sonames match.
 FROM debian:trixie-slim
+# ffmpeg reads video: metadata and one poster frame per clip (ADR 0029).
+# There is no pure-Go H.264 or HEVC decoder, and a phone library is mostly
+# HEVC, so this is a runtime dependency like libvips.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libvips42t64 \
+    && apt-get install -y --no-install-recommends ca-certificates libvips42t64 ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /repo/apps/backend/bin/server /usr/local/bin/server
 COPY --from=builder /repo/apps/backend/bin/indexer /usr/local/bin/indexer

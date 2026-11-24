@@ -183,3 +183,104 @@ func TestThumbCandidatesLeadWithTheDisplayRendition(t *testing.T) {
 		t.Fatalf("got %v, want d.jpg first", got)
 	}
 }
+
+// seekableStore serves one key as something a player can seek in, which is
+// what a video needs (ADR 0029).
+type seekableStore struct {
+	key  string
+	body string
+}
+
+type nopSeekCloser struct{ *strings.Reader }
+
+func (nopSeekCloser) Close() error { return nil }
+
+func (s *seekableStore) Backend() string { return "local" }
+func (s *seekableStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	if key != s.key {
+		return nil, storage.ErrNotFound
+	}
+	return nopSeekCloser{strings.NewReader(s.body)}, nil
+}
+func (s *seekableStore) Put(context.Context, string, io.Reader) error { return nil }
+func (s *seekableStore) Stat(context.Context, string) (storage.ObjectInfo, error) {
+	return storage.ObjectInfo{}, nil
+}
+func (s *seekableStore) URL(context.Context, string, time.Duration) (string, error) {
+	return "", nil
+}
+func (s *seekableStore) Delete(context.Context, string) error { return nil }
+func (s *seekableStore) Walk(context.Context, string, func(storage.ObjectInfo) error) error {
+	return nil
+}
+
+// Dragging a player's scrubber is a request for the middle of the file.
+// Without 206 the browser either refuses to seek or refetches the whole clip,
+// which for a 528MB phone video is the difference between playable and not.
+func TestOriginalAnswersAByteRangeForAVideo(t *testing.T) {
+	a := displayAPI(t, &db.Photo{
+		Key:     "vid1",
+		Kind:    db.KindVideo,
+		MIME:    "video/quicktime",
+		Storage: db.StoragePtr{Path: "clips/IMG_0181.MOV"},
+	}, nil)
+	a.Store = &seekableStore{key: "clips/IMG_0181.MOV", body: "0123456789"}
+
+	r := chi.NewRouter()
+	r.Get("/original/{id}", a.original)
+	req := withUser(httptest.NewRequest(http.MethodGet, "/original/vid1", nil), "reader")
+	req.Header.Set("Range", "bytes=2-5")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusPartialContent {
+		t.Fatalf("status = %d, want 206: %s", w.Code, w.Body)
+	}
+	if w.Body.String() != "2345" {
+		t.Errorf("body = %q", w.Body.String())
+	}
+	if got := w.Header().Get("Content-Range"); got != "bytes 2-5/10" {
+		t.Errorf("Content-Range = %q", got)
+	}
+	if got := w.Header().Get("Content-Type"); got != "video/quicktime" {
+		t.Errorf("Content-Type = %q, want the stored MIME", got)
+	}
+}
+
+// A whole-file request still works, and says ranges are available so the
+// player knows it may seek.
+func TestOriginalAdvertisesRangesForASeekableStore(t *testing.T) {
+	a := displayAPI(t, &db.Photo{
+		Key:     "vid2",
+		Kind:    db.KindVideo,
+		MIME:    "video/mp4",
+		Storage: db.StoragePtr{Path: "clips/a.mp4"},
+	}, nil)
+	a.Store = &seekableStore{key: "clips/a.mp4", body: "0123456789"}
+	w := getOriginal(t, a, "vid2")
+	if w.Code != http.StatusOK || w.Body.String() != "0123456789" {
+		t.Fatalf("status %d body %q", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Accept-Ranges"); got != "bytes" {
+		t.Errorf("Accept-Ranges = %q", got)
+	}
+}
+
+// A backend that cannot seek still streams, and says so rather than letting a
+// player believe it can seek.
+func TestOriginalSaysSoWhenTheBackendCannotSeek(t *testing.T) {
+	a := displayAPI(t, &db.Photo{
+		Key:     "vid3",
+		Kind:    db.KindVideo,
+		MIME:    "video/mp4",
+		Storage: db.StoragePtr{Path: "clips/remote.mp4"},
+	}, nil)
+	a.Store = &oneFileStore{key: "clips/remote.mp4", body: "original-bytes"}
+	w := getOriginal(t, a, "vid3")
+	if w.Code != http.StatusOK || w.Body.String() != "original-bytes" {
+		t.Fatalf("status %d body %q", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Accept-Ranges"); got != "none" {
+		t.Errorf("Accept-Ranges = %q", got)
+	}
+}

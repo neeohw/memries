@@ -29,7 +29,8 @@ The server is one of them because it runs the index coordinator in-process:
 pressing Scan in the UI renders thumbnails inside the server, so a pure
 server cannot import a HEIC.
 
-The box needs 'apt install libvips42t64'. Requires Docker.
+The box needs 'apt install libvips42t64 ffmpeg' — libvips is linked in,
+ffmpeg is run as a program to read video. Requires Docker.
 
 Defaults: --out ${DEFAULT_OUT} --platform ${DEFAULT_PLATFORM} --go-version ${DEFAULT_GO_VERSION}
 `;
@@ -199,7 +200,7 @@ export async function main(argv, deps = {}) {
   }
   if (result.status !== 0) return result.status ?? 1;
   log('');
-  log('The box needs: apt install libvips42t64');
+  log('The box needs: apt install libvips42t64 ffmpeg');
 
   return 0;
 }

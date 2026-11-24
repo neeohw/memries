@@ -8,8 +8,9 @@ import { usePhotoSelection } from '../hooks/usePhotoSelection';
 import { photoOpenLabel, photoSelectLabel } from '../lib/photoName';
 import { compactThumbSize, sizedThumbUrl, timelineSrc, type PhotoDensity } from '../lib/photoSrc';
 import type { Photo } from '../models/photo';
+import { formatDuration } from '../lib/duration';
 import { FavoriteBadge } from './FavoriteBadge';
-import { CheckIcon } from './icons';
+import { CheckIcon, PlayIcon } from './icons';
 
 export type { PhotoDensity };
 
@@ -71,6 +72,8 @@ export function PhotoCard({
   }
 
   const radius = density === 'thumb' || size ? 'rounded-md' : 'rounded-2xl';
+  // A small tile wants a smaller glyph, or the play mark covers the picture.
+  const tiny = density === 'thumb' || (size ? Math.min(size.width, size.height) < 160 : false);
 
   // The label has to say what the click will actually do.
   const ariaLabel = selection.active
@@ -139,6 +142,28 @@ export function PhotoCard({
         )}
         {photo.favorite && (
           <FavoriteBadge compact={density === 'thumb' || (size ? size.height < 200 : false)} />
+        )}
+        {/* A poster frame is just a photo until something says otherwise, so
+            a clip has to announce itself on the tile (ADR 0029). A play glyph
+            in the middle is the shape everyone already reads as "this moves";
+            a mark in a corner was too easy to miss. The label is on the
+            button's aria-label, so all of this is decoration. */}
+        {photo.kind === 'video' && (
+          <span aria-hidden data-video-badge className="pointer-events-none">
+            <span
+              className={`absolute left-1/2 top-1/2 grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white shadow-lift backdrop-blur-[2px] transition duration-200 group-hover:bg-black/60 ${
+                tiny ? 'h-7 w-7' : 'h-10 w-10'
+              }`}
+            >
+              {/* Nudged right: a triangle's visual centre is left of its box. */}
+              <PlayIcon className={tiny ? 'h-3.5 w-3.5 pl-px' : 'h-5 w-5 pl-0.5'} />
+            </span>
+            {formatDuration(photo.durationMs) && (
+              <span className="absolute bottom-1.5 right-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white">
+                {formatDuration(photo.durationMs)}
+              </span>
+            )}
+          </span>
         )}
         {selected && (
           <span

@@ -93,6 +93,27 @@ func (l *Local) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	return os.Open(p)
 }
 
+// LocalPath returns the file's own path on disk.
+//
+// ffmpeg reads files, not io.Readers, and a phone video is hundreds of
+// megabytes — streaming one through a pipe or a temporary copy to grab one
+// frame would cost the whole file twice on a card that has neither the space
+// nor the write budget (ADR 0029). An excluded tree has no path, like it has
+// no Stat.
+func (l *Local) LocalPath(ctx context.Context, key string) (string, bool) {
+	if hidden(l.SkipDir, key) {
+		return "", false
+	}
+	p, err := l.resolve(key)
+	if err != nil {
+		return "", false
+	}
+	if st, err := os.Stat(p); err != nil || st.IsDir() {
+		return "", false
+	}
+	return p, true
+}
+
 func (l *Local) Stat(ctx context.Context, key string) (ObjectInfo, error) {
 	// Excluded trees do not exist as far as this Source is concerned, so a
 	// Photo left behind by an earlier scan is pruned rather than kept alive

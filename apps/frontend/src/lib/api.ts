@@ -15,6 +15,8 @@ import type { IndexStatus } from './indexStatus';
 export type ApiPhoto = {
   _key: string;
   hash?: string;
+  kind?: string;
+  duration_ms?: number;
   taken_at?: string;
   taken_at_local?: string;
   dims?: { w?: number; h?: number };
@@ -179,16 +181,21 @@ export function wallClockFromApi(value: string | undefined): string {
 export function mapPhoto(raw: ApiPhoto): Photo {
   const id = raw._key;
   const hash = raw.hash ?? '';
+  // Anything the server does not call a video is a still: a row written
+  // before video existed says nothing, and it is a photo (ADR 0029).
+  const kind = raw.kind === 'video' ? 'video' : 'photo';
   return {
     id,
     hash,
+    kind,
+    durationMs: raw.duration_ms ?? 0,
     imageUrl: `/api/original/${encodeURIComponent(id)}`,
     thumbnailUrl: thumbUrl(id, 512, hash),
     takenAt: raw.taken_at_local || wallClockFromApi(raw.taken_at),
     width: raw.dims?.w || 1,
     height: raw.dims?.h || 1,
     favorite: raw.favorite === true,
-    alt: 'Photo',
+    alt: kind === 'video' ? 'Video' : 'Photo',
   };
 }
 

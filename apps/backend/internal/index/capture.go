@@ -6,12 +6,16 @@ import (
 	"github.com/memries/memries/internal/db"
 	"github.com/memries/memries/internal/exif"
 	"github.com/memries/memries/internal/storage"
+	"github.com/memries/memries/internal/video"
 )
 
 const (
-	SourceEXIF  = "exif"
-	SourceBirth = "birth"
-	SourceMtime = "mtime"
+	SourceEXIF = "exif"
+	// SourceContainer is a video's own creation tags, which are not EXIF but
+	// are just as authoritative about when it was shot (ADR 0029).
+	SourceContainer = "container"
+	SourceBirth     = "birth"
+	SourceMtime     = "mtime"
 )
 
 type Capture struct {
@@ -45,6 +49,22 @@ func ResolveCaptureTime(ex exif.Result, info storage.ObjectInfo) Capture {
 		return captureFromFileTime(info.ModTime, SourceMtime)
 	}
 	return captureFromFileTime(time.Now().UTC(), SourceMtime)
+}
+
+// ResolveVideoCaptureTime is ResolveCaptureTime for a clip. The container's
+// creation tags stand in for EXIF — including the UTC offset, which is why
+// Apple's creationdate is preferred over creation_time (ADR 0026, ADR 0029) —
+// and the fall back to file times is the same one stills get.
+func ResolveVideoCaptureTime(v video.Info, info storage.ObjectInfo) Capture {
+	c := ResolveCaptureTime(exif.Result{
+		TakenAt:      v.TakenAt,
+		TakenAtLocal: v.TakenAtLocal,
+		TZOffset:     v.TZOffset,
+	}, info)
+	if c.Source == SourceEXIF {
+		c.Source = SourceContainer
+	}
+	return c
 }
 
 func captureFromFileTime(t time.Time, source string) Capture {

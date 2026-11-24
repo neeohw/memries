@@ -38,9 +38,17 @@ type Thumbs struct {
 	S2048 string `json:"2048,omitempty"`
 }
 
+// The two kinds of media a row can be.
+const (
+	KindPhoto = "photo"
+	KindVideo = "video"
+)
+
 type Photo struct {
-	Key           string    `json:"_key"`
-	Kind          string    `json:"kind"` // photo|video
+	Key  string `json:"_key"`
+	Kind string `json:"kind"` // photo|video
+	// DurationMS is the playing time of a video, 0 for a still (ADR 0029).
+	DurationMS    int64     `json:"duration_ms,omitempty"`
 	TakenAt       time.Time `json:"taken_at"`
 	TakenAtLocal  string    `json:"taken_at_local,omitempty"`
 	TakenAtSource string    `json:"taken_at_source,omitempty"`

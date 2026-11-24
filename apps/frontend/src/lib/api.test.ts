@@ -24,6 +24,8 @@ describe('api mapping', () => {
     });
     expect(photo).toEqual({
       id: 'abc123',
+      kind: 'photo',
+      durationMs: 0,
       hash: 'deadbeef',
       imageUrl: '/api/original/abc123',
       thumbnailUrl: '/api/thumb/abc123?size=512&v=deadbeef',
@@ -33,6 +35,27 @@ describe('api mapping', () => {
       favorite: false,
       alt: 'Photo',
     });
+  });
+
+  // A clip is the same row with a kind and a length. Anything the server does
+  // not call a video is a still, including a row written before video existed
+  // (ADR 0029).
+  it('maps a clip, and treats an unknown kind as a photo', () => {
+    const clip = mapPhoto({
+      _key: 'v1',
+      hash: 'beef',
+      kind: 'video',
+      duration_ms: 222_000,
+      taken_at_local: '2026-06-18T19:09:27',
+    });
+    expect(clip.kind).toBe('video');
+    expect(clip.durationMs).toBe(222_000);
+    expect(clip.alt).toBe('Video');
+    // The player is handed the original, not a rendition.
+    expect(clip.imageUrl).toBe('/api/original/v1');
+
+    expect(mapPhoto({ _key: 'x', kind: 'something-else' }).kind).toBe('photo');
+    expect(mapPhoto({ _key: 'y' }).durationMs).toBe(0);
   });
 
   // A catalog row without a hash must still map, just without a cache version.

@@ -55,6 +55,10 @@ export const en = {
     },
   },
   photo: {
+    videoUnsupported:
+      'This browser cannot play this clip. Safari plays it, or download the original.',
+    videoMuted: 'Started muted — your browser blocked sound. Unmute below.',
+    videoDownload: 'Download the original',
     open: 'Open photo, {when}',
     openFavorited: 'Open favorited photo, {when}',
     select: 'Select photo, {when}',
