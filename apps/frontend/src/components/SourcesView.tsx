@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useI18n } from '../i18n/I18nProvider';
 import type { FolderPreview as Preview, Source, SourceInput, SourceType } from '../models/source';
-import { ExcludeEditor } from './ExcludeEditor';
+import { ExcludeEditor, withPendingPattern } from './ExcludeEditor';
 import { FolderPreview } from './FolderPreview';
 import { joinLocation, splitLocation, trimRoot } from '../lib/sourcePath';
 import { DriveIcon, FoldersIcon, PlusIcon, SyncIcon } from './icons';
@@ -305,6 +305,10 @@ function SourceForm({
   const [pending, setPending] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
+  // The exclude box is a staging area with its own Add button. Saving while
+  // something sits in it used to throw it away, so the folder came back with
+  // no filter: the form holds it and commits it on submit.
+  const [pendingExclude, setPendingExclude] = useState('');
   const [error, setError] = useState<string | null>(null);
   const locationRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
@@ -344,6 +348,7 @@ function SourceForm({
 
   const input = (): SourceInput => ({
     ...draft,
+    excludes: withPendingPattern(draft.excludes ?? [], pendingExclude),
     // A rooted field left empty means the root itself.
     location: root !== null ? joinLocation(root, rel) : draft.location,
     password: remote && draft.password ? draft.password : undefined,
@@ -354,7 +359,10 @@ function SourceForm({
     setPending(true);
     setError(null);
     try {
-      await onSubmit(input());
+      const committed = input();
+      setDraft((current) => ({ ...current, excludes: committed.excludes ?? [] }));
+      setPendingExclude('');
+      await onSubmit(committed);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -370,7 +378,11 @@ function SourceForm({
     setPreviewing(true);
     setError(null);
     try {
-      setPreview(await onPreview(input()));
+      // The dry run answers for what would be saved, pending pattern and all.
+      const committed = input();
+      setDraft((current) => ({ ...current, excludes: committed.excludes ?? [] }));
+      setPendingExclude('');
+      setPreview(await onPreview(committed));
     } catch (err) {
       setPreview(null);
       setError(errorText(err));
@@ -520,7 +532,19 @@ function SourceForm({
         </div>
       )}
 
-      <ExcludeEditor value={draft.excludes ?? []} onChange={(excludes) => set({ excludes })} />
+      <ExcludeEditor
+        value={draft.excludes ?? []}
+        onChange={(excludes) => set({ excludes })}
+        pending={pendingExclude}
+        onPendingChange={setPendingExclude}
+        folder={
+          remote
+            ? draft.location.trim()
+            : root !== null
+              ? joinLocation(root, rel)
+              : draft.location.trim()
+        }
+      />
 
       <div className="grid gap-4">
         <label className="text-sm font-medium text-plum">

@@ -297,4 +297,44 @@ describe('SourcesView', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'On this server' }));
     expect(screen.getByRole('textbox', { name: /Folder/ })).toHaveValue('');
   });
+  // Typing a pattern and pressing Save used to lose it: the box has its own
+  // Add button, and the text in it never reached the folder. Reopening the
+  // folder then showed no filter and nothing said why.
+  it('saves a pattern that was typed but never added', async () => {
+    const props = renderView({ sources: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Folder/ }), {
+      target: { value: 'holidays' },
+    });
+    fireEvent.change(screen.getByLabelText('Pattern to skip'), { target: { value: '^RAW' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect folder' }));
+
+    await waitFor(() => expect(props.onCreate).toHaveBeenCalledTimes(1));
+    expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({ excludes: ['^RAW'] }));
+  });
+
+  it('dry-runs with the pattern still in the box, so the two agree', async () => {
+    const props = renderView({ sources: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
+    fireEvent.change(screen.getByLabelText('Pattern to skip'), { target: { value: '^RAW' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+
+    await waitFor(() =>
+      expect(props.onPreview).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({ excludes: ['^RAW'] }),
+      ),
+    );
+    // Committed, not duplicated: it is now a listed pattern.
+    expect(screen.getByRole('button', { name: 'Stop skipping ^RAW' })).toBeTruthy();
+    expect(screen.getByLabelText('Pattern to skip')).toHaveValue('');
+  });
+
+  it('keeps a stored pattern visible when the folder is reopened', () => {
+    renderView({
+      sources: [{ ...nas, type: 'local', location: '/data/photos/x', excludes: ['^RAW'] }],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByRole('button', { name: 'Stop skipping ^RAW' })).toBeTruthy();
+  });
 });

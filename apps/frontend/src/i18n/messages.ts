@@ -202,8 +202,9 @@ export const en = {
       'This folder is outside {roots}, the only folders this server may read. Saving it will fail until MEMRIES_SOURCE_ROOTS includes it.',
     hintWebdav: 'Nextcloud, ownCloud, Synology, or any WebDAV server.',
     excludeTitle: 'Skip folders',
+    excludeTitleNamed: 'Skip folders inside {folder}',
     excludeHelp:
-      "Regular expressions, matched against each folder's path inside this source. A matching folder is never read, and photos already indexed from it leave the library on the next scan.",
+      "These patterns apply to this folder only. Each is a regular expression matched against a subfolder's path below it: a match is never read, and photos already indexed from it leave the library on the next scan.",
     excludeAdd: 'Add',
     excludeField: 'Pattern to skip',
     excludeStop: 'Stop skipping {pattern}',

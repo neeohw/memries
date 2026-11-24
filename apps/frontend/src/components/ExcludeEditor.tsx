@@ -3,25 +3,60 @@ import { useI18n } from '../i18n/I18nProvider';
 import { CloseIcon } from './icons';
 
 /**
- * Edits a Source's exclude patterns (ADR 0020).
+ * Edits one folder's exclude patterns (ADR 0020).
  *
- * Each pattern is a regular expression matched against a folder's path below
- * the source root, so `^2019/` pins to one place and `(^|/)\.thumbs$` catches
- * every occurrence. An excluded tree is never read during a scan.
+ * Each pattern is a regular expression matched against a subfolder's path
+ * below *this* folder, so `^2019/` pins to one place and `(^|/)\.thumbs$`
+ * catches every occurrence. The patterns belong to this folder alone and are
+ * never applied to another — which the copy now says, because the panel gave
+ * no reason to believe it.
  */
+/**
+ * Appends a typed-but-unadded pattern to the list.
+ *
+ * The input is a staging area with its own Add button, so a pattern typed and
+ * then saved straight away used to be dropped on the floor: the folder came
+ * back with no filter and nothing said why. The form commits whatever is in
+ * the box when it submits, and this is that rule — in one place, because the
+ * dry run has to agree with the save about what the patterns are.
+ *
+ * An unusable or duplicate pattern is left out rather than refused here; the
+ * editor has already said so on screen.
+ */
+export function withPendingPattern(value: string[], pending: string): string[] {
+  const pattern = pending.trim();
+  if (!pattern || value.includes(pattern)) return value;
+  try {
+    new RegExp(pattern);
+  } catch {
+    return value;
+  }
+  return [...value, pattern];
+}
+
 export function ExcludeEditor({
   value,
   onChange,
+  pending,
+  onPendingChange,
+  folder,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
+  /**
+   * The half-typed pattern. Held by the form rather than here, so pressing
+   * Save commits it instead of discarding it.
+   */
+  pending: string;
+  onPendingChange: (next: string) => void;
+  /** The folder these patterns belong to, named in the heading when known. */
+  folder?: string;
 }) {
   const { t } = useI18n();
-  const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
 
   const add = () => {
-    const pattern = draft.trim();
+    const pattern = pending.trim();
     if (!pattern) return;
     // Compiled here as well as on the server, so a typo is caught while the
     // reader is still looking at what they typed.
@@ -36,17 +71,16 @@ export function ExcludeEditor({
       return;
     }
     setError('');
-    setDraft('');
+    onPendingChange('');
     onChange([...value, pattern]);
   };
 
   return (
     <div data-exclude-editor className="grid gap-2">
-      <p className="text-sm font-medium text-plum">Skip folders</p>
-      <p className="text-xs text-ink">
-        Regular expressions, matched against each folder&rsquo;s path inside this source. A matching
-        folder is never read, and photos already indexed from it leave the library on the next scan.
+      <p className="text-sm font-medium text-plum">
+        {folder ? t('folders.excludeTitleNamed', { folder }) : t('folders.excludeTitle')}
       </p>
+      <p className="text-xs text-ink">{t('folders.excludeHelp')}</p>
 
       {value.length > 0 && (
         <ul className="grid gap-1">
@@ -59,7 +93,7 @@ export function ExcludeEditor({
               <button
                 type="button"
                 onClick={() => onChange(value.filter((p) => p !== pattern))}
-                aria-label={`Stop skipping ${pattern}`}
+                aria-label={t('folders.excludeStop', { pattern })}
                 className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink transition hover:bg-surface hover:text-plum"
               >
                 <CloseIcon className="h-4 w-4" />
@@ -71,12 +105,12 @@ export function ExcludeEditor({
 
       <div className="flex items-start gap-2">
         <label className="min-w-0 flex-1 text-sm">
-          <span className="sr-only">Pattern to skip</span>
+          <span className="sr-only">{t('folders.excludeField')}</span>
           <input
             type="text"
-            value={draft}
+            value={pending}
             onChange={(event) => {
-              setDraft(event.target.value);
+              onPendingChange(event.target.value);
               setError('');
             }}
             onKeyDown={(event) => {
@@ -99,7 +133,7 @@ export function ExcludeEditor({
           onClick={add}
           className="min-h-11 shrink-0 rounded-full bg-surface px-4 text-sm font-medium text-plum transition hover:bg-surface/70"
         >
-          Add
+          {t('folders.excludeAdd')}
         </button>
       </div>
 

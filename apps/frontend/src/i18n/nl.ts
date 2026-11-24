@@ -201,8 +201,9 @@ export const nl: Messages = {
       'Deze map ligt buiten {roots}, de enige mappen die deze server mag lezen. Opslaan lukt pas als MEMRIES_SOURCE_ROOTS die map bevat.',
     hintWebdav: 'Nextcloud, ownCloud, Synology of een andere WebDAV-server.',
     excludeTitle: 'Mappen overslaan',
+    excludeTitleNamed: 'Mappen overslaan in {folder}',
     excludeHelp:
-      'Reguliere expressies, vergeleken met het pad van elke map binnen deze bron. Een map die overeenkomt wordt nooit gelezen, en foto’s die er eerder uit zijn opgenomen verdwijnen bij de volgende scan uit de bibliotheek.',
+      'Deze patronen gelden alleen voor deze map. Elk is een reguliere expressie, vergeleken met het pad van een submap eronder: wat overeenkomt wordt nooit gelezen, en foto’s die er eerder uit zijn opgenomen verdwijnen bij de volgende scan uit de bibliotheek.',
     excludeAdd: 'Toevoegen',
     excludeField: 'Patroon om over te slaan',
     excludeStop: '{pattern} niet meer overslaan',
