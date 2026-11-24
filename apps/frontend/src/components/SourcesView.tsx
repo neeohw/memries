@@ -319,16 +319,27 @@ function SourceForm({
   // not show up as `/data/photos//holidays` in the field.
   const roots = configuredRoots.map(trimRoot);
 
-  // A local folder is written relative to a server root. An empty field on a
-  // new folder means the first root itself, which is how "the whole folder"
-  // is said; a stored path under no root (the roots changed since it was
-  // saved) falls back to a plain absolute field, which is what root === null
-  // renders.
-  const rooted = !remote ? splitLocation(draft.location, roots) : { root: null, rel: '' };
-  const root = rooted.root ?? (!remote && draft.location.trim() === '' ? (roots[0] ?? null) : null);
-  const rel = rooted.root !== null ? rooted.rel : '';
+  // A local folder is written relative to a server root, and the part below
+  // it is held here as typed.
+  //
+  // It used to be derived from the composed path on every render, which made
+  // a slash impossible to type: joining and splitting both trim a trailing
+  // slash, so the character was normalised away the instant it was entered
+  // and `holidays/2019` could never be reached. What someone is typing is
+  // not a value to round-trip through a canonical form — it is only
+  // canonical once they are done.
+  const initialSplit = splitLocation(initial.location, roots);
+  const [root, setRoot] = useState<string | null>(
+    initialSplit.root ?? (initial.location.trim() === '' ? (roots[0] ?? null) : null),
+  );
+  const [rel, setRel] = useState(initialSplit.root !== null ? initialSplit.rel : '');
+  // An empty field on a new folder means the first root itself, which is how
+  // "the whole folder" is said; a stored path under no root (the roots
+  // changed since it was saved) falls back to a plain absolute field, which
+  // is what root === null renders.
+  const rooted = !remote && root !== null;
   // With a root in hand the field may be empty: the root is the folder.
-  const complete = root !== null || draft.location.trim() !== '';
+  const complete = rooted || draft.location.trim() !== '';
 
   useEffect(() => {
     locationRef.current?.focus();
@@ -343,14 +354,17 @@ function SourceForm({
   const chooseType = (next: SourceType) => {
     if (next === draft.type) return;
     set({ type: next, location: '' });
+    setRel('');
+    setRoot(next === 'local' ? (roots[0] ?? null) : null);
     setPreview(null);
   };
 
   const input = (): SourceInput => ({
     ...draft,
     excludes: withPendingPattern(draft.excludes ?? [], pendingExclude),
-    // A rooted field left empty means the root itself.
-    location: root !== null ? joinLocation(root, rel) : draft.location,
+    // Composed here, where the typing has stopped: a rooted field left empty
+    // means the root itself, and a pasted absolute path loses the duplicate.
+    location: rooted ? joinLocation(root, rel) : draft.location,
     password: remote && draft.password ? draft.password : undefined,
   });
 
@@ -430,7 +444,7 @@ function SourceForm({
       <label className="text-sm font-medium text-plum">
         {tr(type.locationLabel)}
 
-        {root !== null ? (
+        {rooted ? (
           // The root is shown rather than typed, so a folder outside the ones
           // this server may read cannot be written in the first place — it
           // used to be a rejection you only met after pressing Connect
@@ -449,7 +463,7 @@ function SourceForm({
               ref={locationRef}
               type="text"
               value={rel}
-              onChange={(event) => set({ location: joinLocation(root, event.target.value) })}
+              onChange={(event) => setRel(event.target.value)}
               placeholder={type.placeholder}
               aria-describedby={error ? `${hintId} ${errorId}` : hintId}
               aria-invalid={error ? true : undefined}
@@ -474,14 +488,14 @@ function SourceForm({
           />
         )}
 
-        {roots.length > 1 && !remote && (
+        {roots.length > 1 && rooted && (
           <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-normal text-ink">
             {tr('folders.rootLabel')}
             {roots.map((candidate) => (
               <button
                 key={candidate}
                 type="button"
-                onClick={() => set({ location: joinLocation(candidate, rel) })}
+                onClick={() => setRoot(candidate)}
                 aria-pressed={candidate === root}
                 className={`min-h-8 rounded-full px-2.5 font-mono text-xs ring-1 transition ${
                   candidate === root
@@ -498,7 +512,7 @@ function SourceForm({
         <span id={hintId} className="mt-1.5 block text-xs font-normal text-ink">
           {remote
             ? tr('folders.hintWebdav')
-            : root !== null
+            : rooted
               ? tr('folders.hintLocal', { root })
               : tr('folders.hintLocalOutside', { roots: roots.join(', ') })}
         </span>
@@ -538,11 +552,7 @@ function SourceForm({
         pending={pendingExclude}
         onPendingChange={setPendingExclude}
         folder={
-          remote
-            ? draft.location.trim()
-            : root !== null
-              ? joinLocation(root, rel)
-              : draft.location.trim()
+          remote ? draft.location.trim() : rooted ? joinLocation(root, rel) : draft.location.trim()
         }
       />
 

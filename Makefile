@@ -50,7 +50,7 @@ help:
 	$(info make db-clear        Delete the SQLite catalog; restart the API)
 	$(info make build           turbo run build (host Node/Go/pnpm required))
 	$(info make build-pi        server + indexer for the box into dist/pi (needs Docker))
-	$(info make build-deb       the installable .deb into dist/deb (builds the frontend + binaries first))
+	$(info make build-deb       the installable .deb into dist/deb (builds the frontend + binaries first; VERSION=x.y.z to bump))
 	$(info make install-requirements  Host Node 22, Go 1.26, corepack pnpm)
 	$(info make e2e             Playwright BDD against the isolated memries-e2e stack)
 	$(info make e2e-down        Stop the isolated e2e stack; keep volumes)
@@ -86,10 +86,14 @@ build-pi:
 
 # The frontend first: the package carries the built interface, and a stale
 # dist/ ships an old UI beside a new server with nothing to say so.
+#
+# VERSION=0.1.1 bumps the package version. apt refuses a version it already
+# has, so rebuilding the same one means `apt install --reinstall`; bumping is
+# the tidier half of that choice.
 build-deb:
 	pnpm --filter @memries/frontend build
 	$(MAKE) build-pi
-	$(SCRIPT_RUN) ./apps/scripts/build-deb/build-deb.$(SCRIPT_EXT)
+	$(SCRIPT_RUN) ./apps/scripts/build-deb/build-deb.$(SCRIPT_EXT) $(if $(VERSION),--version $(VERSION))
 
 install-requirements:
 	$(SCRIPT_RUN) ./apps/scripts/install-requirements/install-requirements.$(SCRIPT_EXT)

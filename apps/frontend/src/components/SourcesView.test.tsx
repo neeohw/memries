@@ -337,4 +337,44 @@ describe('SourcesView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByRole('button', { name: 'Stop skipping ^RAW' })).toBeTruthy();
   });
+  // The bug: rel was derived from the composed path on every render, and both
+  // halves of that round-trip trim a trailing slash — so the character
+  // vanished as it was typed and a nested folder could never be reached.
+  it('lets a slash be typed, so a nested folder can be named', async () => {
+    const props = renderView({ sources: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
+    const field = screen.getByRole('textbox', { name: /Folder/ });
+
+    // As it arrives from a keyboard, one character at a time.
+    let typed = '';
+    for (const ch of 'holidays/2019') {
+      typed += ch;
+      fireEvent.change(field, { target: { value: typed } });
+      expect(field).toHaveValue(typed);
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect folder' }));
+    await waitFor(() =>
+      expect(props.onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ location: '/data/photos/holidays/2019' }),
+      ),
+    );
+  });
+
+  // A trailing slash is fine to leave behind: it is trimmed when the path is
+  // composed, not while it is being written.
+  it('trims a trailing slash on save rather than while typing', async () => {
+    const props = renderView({ sources: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
+    const field = screen.getByRole('textbox', { name: /Folder/ });
+    fireEvent.change(field, { target: { value: 'holidays/' } });
+    expect(field).toHaveValue('holidays/');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect folder' }));
+    await waitFor(() =>
+      expect(props.onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ location: '/data/photos/holidays' }),
+      ),
+    );
+  });
 });
