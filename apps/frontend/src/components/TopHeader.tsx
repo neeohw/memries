@@ -26,10 +26,7 @@ export function TopHeader({
       <div className="flex items-center">
         <ThemeToggle />
         {admin && onOpenSettings && (
-          <SettingsButton
-            selected={tab === 'settings' || tab === 'folders'}
-            onOpen={onOpenSettings}
-          />
+          <SettingsButton selected={tab === 'folders'} onOpen={onOpenSettings} />
         )}
         {onOpenAccount && <AccountButton selected={tab === 'account'} onOpen={onOpenAccount} />}
       </div>

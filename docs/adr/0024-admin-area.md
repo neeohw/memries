@@ -1,33 +1,30 @@
 # ADR 0024 — Administration behind the gear, not in the nav
 
 - Status: accepted
-- Date: 2026-11-20
+- Date: 2026-11-20 (revised 2026-11-24)
 
 ## Context
 
 **Folders** was a main nav tab, appended to Memories / Favorites / Albums for
-admins ([0013](0013-admin-managed-sources.md)). Adding the thumbnail-folder
-page ([0022](0022-admin-settings-thumbnail-location.md)) made the split
-obvious: two admin surfaces, one in the nav bar and one behind a gear, with
-nothing connecting them.
+admins ([0013](0013-admin-managed-sources.md)). A second admin surface — the
+thumbnail-folder page — sat behind a gear, with nothing connecting the two.
 
-The nav bar is for browsing a photo library. Connecting a WebDAV share and
-choosing a cache directory are not browsing, and an admin's nav bar having a
-fourth tab a reader never sees made the bar mean different things to
-different people.
+The nav bar is for browsing a photo library. Connecting a WebDAV share is not
+browsing, and an admin's nav bar having a fourth tab a reader never sees made
+the bar mean different things to different people.
 
 ## Decision
 
-Both admin pages sit behind the gear, with a strip to move between them:
-**Folders** and **Storage**. The nav bar holds the three browsing tabs for
-everyone, admin or not.
+Administration sits behind the gear. The nav bar holds the three browsing
+tabs for everyone, admin or not.
 
-The gear opens **Folders**, not the first section alphabetically or the newest
-one. Adding and scanning folders is the recurring job; the storage path is set
-once, usually at install.
+There is one admin page, **Folders**, so the gear opens it directly. The
+section strip this ADR introduced is gone with the page it was there to reach:
+the thumbnail folder is a line in `memries.yaml` now, not a setting an admin
+changes while the server runs ([0028](0028-yaml-configuration.md)). A strip
+over a single tab is a navigation control that navigates nowhere.
 
-Both admin tabs keep the gear marked `aria-current="page"`, since from the
-nav's point of view they are one place.
+The gear keeps `aria-current="page"` while the admin page is open.
 
 `AdminLayout` wraps whichever page is open rather than each page drawing its
 own strip, so the two cannot drift. `SourcesView` and `SettingsView` keep

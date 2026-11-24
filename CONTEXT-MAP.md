@@ -23,12 +23,12 @@ Stay in this repository. Do not read or edit parent directories.
 | [0018](docs/adr/0018-multi-select-and-batch-actions.md) | Hover multi-select + selection toolbar; batch favorite and batch album-add, all-or-nothing |
 | [0020](docs/adr/0020-server-wide-library.md) | One server-wide library: photos have no owner, favorites are a per-user table, albums stay owned; SMB and browsing removed; per-Source exclude regexes |
 | [0021](docs/adr/0021-interface-languages.md) | English and Dutch from typed dictionaries; `users.locale` per reader, empty follows the browser; dates render en-GB/nl-NL; chosen on the Account page |
-| [0022](docs/adr/0022-admin-settings-thumbnail-location.md) | `settings` key/value table; admins move the thumbnail folder at runtime, confined to `MEMRIES_CACHE_ROOTS` and never inside a Source |
 | [0023](docs/adr/0023-scan-progress.md) | Live scan progress on Folders: one panel per library, indeterminate until discovery counts, live region |
-| [0024](docs/adr/0024-admin-area.md) | Folders and Storage sit behind the admin gear with a section strip; the nav bar is browsing only |
+| [0024](docs/adr/0024-admin-area.md) | Administration sits behind the admin gear (one page, Folders); the nav bar is browsing only |
 | [0025](docs/adr/0025-heic-and-the-cgo-build.md) | HEIC via cgo `-tags vips` builds of **both** binaries (the server indexes in-process) made in a debian:trixie container; 2048 JPEG rendition for originals browsers cannot show |
 | [0026](docs/adr/0026-heic-capture-time-and-orientation.md) | HEIC EXIF read from the `Exif` item; offset-time tags read from raw IFDs; HEIF rotation left to the decoder |
 | [0027](docs/adr/0027-folder-dry-run.md) | Dry run on the folder form: a folder tree with photo counts, excluded folders named, writing nothing |
+| [0028](docs/adr/0028-yaml-configuration.md) | One `memries.yaml` configures the server, secrets included; no environment layer; the thumbnail folder stops being a runtime setting |
 | [0019](docs/adr/0019-pointer-driven-timeline-zoom.md) | Granularity is a 3-step zoom ladder (year/month/week, no day); Ctrl+wheel and pinch, − level + control replaces the radiogroup, period headings drill in, level kept in `sessionStorage` |
 
 ## Contexts

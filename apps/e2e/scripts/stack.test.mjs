@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { composeArgs, resolveStackConfig, up } from './stack.mjs';
+import { composeArgs, renderConfig, resolveStackConfig, up } from './stack.mjs';
 
 describe('resolveStackConfig', () => {
   it('uses the single-instance defaults so make e2e keeps 18080', () => {
@@ -47,14 +47,12 @@ describe('resolveStackConfig', () => {
 describe('composeArgs', () => {
   it('pins the compose project and files', () => {
     const config = resolveStackConfig({ MEMRIES_E2E_PROJECT: 'memries-e2e' });
-    assert.deepEqual(composeArgs(config, '/e2e/docker-compose.yml', '/app/.env', ['up', '-d']), [
+    assert.deepEqual(composeArgs(config, '/e2e/docker-compose.yml', ['up', '-d']), [
       'compose',
       '-p',
       'memries-e2e',
       '-f',
       '/e2e/docker-compose.yml',
-      '--env-file',
-      '/app/.env',
       'up',
       '-d',
     ]);
@@ -68,7 +66,7 @@ describe('up', () => {
       () =>
         up({
           env: {},
-          allowMissingEnv: true,
+          skipConfig: true,
           skipFixtures: true,
           skipLogs: true,
           runDocker: async (_cmd, args) => {
@@ -79,5 +77,25 @@ describe('up', () => {
       /compose failed/,
     );
     assert.deepEqual(commands, ['up']);
+  });
+});
+
+// The stack's configuration is a file now, generated per run because the
+// public URL carries the leased port (ADR 0028).
+describe('renderConfig', () => {
+  it('writes the leased origin as the public URL', () => {
+    const yaml = renderConfig('http://localhost:19000');
+    assert.match(yaml, /public_url: http:\/\/localhost:19000/);
+    assert.match(yaml, /e2e: true/);
+  });
+
+  it('pins the throwaway credentials rather than reading a developer\'s', () => {
+    const yaml = renderConfig('http://localhost:18080');
+    assert.match(yaml, /bootstrap_password: "password"/);
+    assert.match(yaml, /session_key: "[A-Za-z0-9+/=]+"/);
+    // One admin per Playwright worker, in sync with owners.mjs.
+    for (const who of ['admin', 'worker-1', 'worker-2', 'worker-3']) {
+      assert.ok(yaml.includes(`${who}@example.com`), `${who} missing`);
+    }
   });
 });

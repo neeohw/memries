@@ -85,7 +85,7 @@ type Auth struct {
 }
 
 func New(cfg *config.Config, store UserStore, log *slog.Logger) (*Auth, error) {
-	key, err := base64.StdEncoding.DecodeString(cfg.SessionKey)
+	key, err := base64.StdEncoding.DecodeString(cfg.Server.SessionKey)
 	if err != nil || len(key) < 32 {
 		return nil, errors.New("MEMRIES_SESSION_KEY must be base64-encoded, at least 32 bytes")
 	}
@@ -100,7 +100,7 @@ func New(cfg *config.Config, store UserStore, log *slog.Logger) (*Auth, error) {
 		SameSite: http.SameSiteLaxMode,
 		// Only promise Secure when the deployment is actually https; setting it
 		// on a plain-http LAN install would make the cookie unusable.
-		Secure: strings.HasPrefix(strings.ToLower(cfg.PublicURL), "https://"),
+		Secure: strings.HasPrefix(strings.ToLower(cfg.Server.PublicURL), "https://"),
 	}
 	return &Auth{
 		cfg:       cfg,
@@ -120,17 +120,17 @@ func New(cfg *config.Config, store UserStore, log *slog.Logger) (*Auth, error) {
 // restart would silently undo a password change, and leaving the variable set
 // is the normal case for a Compose or systemd unit.
 func (a *Auth) Bootstrap(ctx context.Context) error {
-	if a.cfg.BootstrapPassword == "" {
+	if a.cfg.Admins.BootstrapPassword == "" {
 		a.warnIfNobodyCanSignIn(ctx)
 		return nil
 	}
-	if len(a.cfg.AdminEmails) == 0 {
+	if len(a.cfg.Admins.Emails) == 0 {
 		return errors.New("MEMRIES_BOOTSTRAP_PASSWORD is set but MEMRIES_ADMIN_EMAILS is empty, so there is no account to apply it to")
 	}
-	if len(a.cfg.BootstrapPassword) > maxPasswordBytes {
+	if len(a.cfg.Admins.BootstrapPassword) > maxPasswordBytes {
 		return fmt.Errorf("MEMRIES_BOOTSTRAP_PASSWORD must be at most %d bytes", maxPasswordBytes)
 	}
-	for _, email := range a.cfg.AdminEmails {
+	for _, email := range a.cfg.Admins.Emails {
 		user, err := a.db.UpsertUserByEmail(ctx, email, "")
 		if err != nil {
 			return fmt.Errorf("bootstrap %s: %w", email, err)
@@ -138,7 +138,7 @@ func (a *Auth) Bootstrap(ctx context.Context) error {
 		if user.PasswordHash != "" {
 			continue
 		}
-		hash, err := HashPassword(a.cfg.BootstrapPassword)
+		hash, err := HashPassword(a.cfg.Admins.BootstrapPassword)
 		if err != nil {
 			return fmt.Errorf("bootstrap %s: %w", email, err)
 		}
@@ -160,7 +160,7 @@ func (a *Auth) Bootstrap(ctx context.Context) error {
 // than failing, because an install whose passwords were set on an earlier run
 // is perfectly normal and must still start.
 func (a *Auth) warnIfNobodyCanSignIn(ctx context.Context) {
-	for _, email := range a.cfg.AdminEmails {
+	for _, email := range a.cfg.Admins.Emails {
 		user, err := a.db.GetUserByEmail(ctx, email)
 		if err != nil || user == nil {
 			continue

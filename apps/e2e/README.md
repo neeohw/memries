@@ -7,7 +7,7 @@ Locally (no `CI`) Playwright uses at most four workers. In a pipeline (`CI=true`
 ## First run
 
 1. Docker Desktop (Compose v2) running.
-2. App `.env` present (same secrets as local dev: `SESSION_KEY`, and `BOOTSTRAP_PASSWORD` if you want a password other than the suite default).
+2. Nothing to configure. `scripts/stack.mjs` writes `.work/memries.yaml` for the stack on every `up`, with pinned throwaway credentials, because the public URL carries the port that run leased ([ADR 0028](../../docs/adr/0028-yaml-configuration.md)).
 3. Chromium for Playwright, once per machine:
 
 ```bash
@@ -26,9 +26,9 @@ pnpm --filter @memries/e2e test
 `make e2e-docker` plans the suite; `make e2e-docker-force` marks it `needs-run` so `/e2e-docker --force` can refresh last-runs.
 What the suite proves — and whether its last-run passed — is on the [main README](../../README.md#end-to-end-tests). `make e2e-last-runs` fails unless that last-run is green.
 
-Every account's password is `password`: the e2e Compose file pins `MEMRIES_BOOTSTRAP_PASSWORD` to that literal so the suite's `signIn` has a known credential ([ADR 0016](../../docs/adr/0016-local-password-auth.md)).
+Every account's password is `password`: the generated config pins `admins.bootstrap_password` to that literal so the suite's `signIn` has a known credential ([ADR 0016](../../docs/adr/0016-local-password-auth.md)).
 
-Each parallel worker signs in as its own owner, so the workers cannot see or clear each other's data ([ADR 0012](../../docs/adr/0012-e2e-one-suite-two-profiles.md)). The accounts are listed in [`scripts/owners.mjs`](scripts/owners.mjs) and bootstrapped by `MEMRIES_ADMIN_EMAILS`; worker 0 is `admin@example.com`, so a one-worker run behaves exactly as before. Fixture JPEGs live in `apps/e2e/.work/photos/<owner>/`, one folder per account, and are all regenerated before every `stack:up`. Inside a scenario use `prepare-fixtures prepare-owner`, which rebuilds only the calling worker's folder.
+Each parallel worker signs in as its own owner, so the workers cannot see or clear each other's data ([ADR 0012](../../docs/adr/0012-e2e-one-suite-two-profiles.md)). The accounts are listed in [`scripts/owners.mjs`](scripts/owners.mjs) and bootstrapped from `admins.emails` in the generated config; worker 0 is `admin@example.com`, so a one-worker run behaves exactly as before. Fixture JPEGs live in `apps/e2e/.work/photos/<owner>/`, one folder per account, and are all regenerated before every `stack:up`. Inside a scenario use `prepare-fixtures prepare-owner`, which rebuilds only the calling worker's folder.
 
 ## Cleanup
 

@@ -157,6 +157,11 @@ export const en = {
     },
     stopped: 'The scan stopped before it finished.',
   },
+  admin: {
+    // The gear's label. It opens the admin area, which is the Folders page
+    // (ADR 0024) — server configuration itself lives in memries.yaml.
+    open: 'Server settings',
+  },
   folders: {
     intro:
       'Photos in these folders appear in the shared library. Originals stay where they are; thumbnails are made once and kept on this server.',
@@ -232,31 +237,6 @@ export const en = {
     },
     previewExpand: 'Show the folders in {name}',
     previewCollapse: 'Hide the folders in {name}',
-  },
-  settings: {
-    heading: 'Server settings',
-    open: 'Server settings',
-    thumbnailsTitle: 'Thumbnail folder',
-    thumbnailsHelp:
-      'Where the generated thumbnails are written. Point this at external storage to keep them off the system card.',
-    thumbnailsLabel: 'Folder on the server',
-    current: 'Now using',
-    defaultIs: 'Default: {path}',
-    usingDefault: 'the install default',
-    allowedRoots: 'Must sit under: {roots}',
-    freeSpace: '{size} free',
-    save: 'Save folder',
-    saving: 'Saving…',
-    reset: 'Back to the default',
-    movedTitle: 'Thumbnails moved',
-    movedBody:
-      'Existing thumbnails stayed in the old folder. Scan a folder to generate them again in the new one.',
-  },
-  admin: {
-    heading: 'Admin',
-    sections: 'Admin sections',
-    folders: 'Folders',
-    storage: 'Storage',
   },
   account: {
     heading: 'Account',

@@ -68,21 +68,18 @@ describe('AppShell', () => {
     expect(onTabChange).toHaveBeenCalledWith('folders');
   });
 
-  it('marks the gear as current for either admin page', () => {
-    for (const tab of ['folders', 'settings'] as const) {
-      const { unmount } = render(
-        <ThemeProvider>
-          <AppShell tab={tab} admin onTabChange={() => {}}>
-            <h1>Admin</h1>
-          </AppShell>
-        </ThemeProvider>,
-      );
-      expect(screen.getAllByRole('button', { name: 'Server settings' })[0]).toHaveAttribute(
-        'aria-current',
-        'page',
-      );
-      unmount();
-    }
+  it('marks the gear as current while the admin page is open', () => {
+    render(
+      <ThemeProvider>
+        <AppShell tab="folders" admin onTabChange={() => {}}>
+          <h1>Admin</h1>
+        </AppShell>
+      </ThemeProvider>,
+    );
+    expect(screen.getAllByRole('button', { name: 'Server settings' })[0]).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   it('always offers the account page', () => {

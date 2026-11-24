@@ -8,7 +8,7 @@ import (
 )
 
 // Thumbnails are a regenerable cache, so they belong under the XDG cache
-// directory — and under systemd, wherever systemd says (ADR 0022).
+// directory — and under systemd, wherever systemd says (ADR 0028).
 func TestDefaultCacheRootPrefersSystemdCacheDirectory(t *testing.T) {
 	t.Setenv("CACHE_DIRECTORY", "/var/cache/memries")
 	t.Setenv("XDG_CACHE_HOME", "/should/not/win")
@@ -54,43 +54,5 @@ func TestDefaultCacheRootUsesTheHomeCacheDirectory(t *testing.T) {
 	}
 	if got, want := defaultCacheRoot(), filepath.Join(home, ".cache", "memries", "thumbs"); got != want {
 		t.Fatalf("got %q, want %q", got, want)
-	}
-}
-
-// Whatever the source, the configured root ends up absolute: a service
-// started from / must not scatter a relative directory, and the admin page
-// has to show a path that means something.
-func TestFromEnvMakesTheCacheRootAbsolute(t *testing.T) {
-	t.Setenv("MEMRIES_CACHE_ROOT", "data/cache")
-	t.Setenv("MEMRIES_SESSION_KEY", "k")
-	c, err := FromEnv()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !filepath.IsAbs(c.CacheRoot) {
-		t.Fatalf("cache root %q is not absolute", c.CacheRoot)
-	}
-	if filepath.Base(c.CacheRoot) != "cache" {
-		t.Fatalf("cache root %q lost its name", c.CacheRoot)
-	}
-}
-
-// An explicit MEMRIES_CACHE_ROOT still wins, which is what the dev Compose
-// file relies on.
-func TestFromEnvHonoursAnExplicitCacheRoot(t *testing.T) {
-	t.Setenv("MEMRIES_CACHE_ROOT", "/media/sdhc/memries/thumbs")
-	t.Setenv("CACHE_DIRECTORY", "/var/cache/memries")
-	t.Setenv("MEMRIES_SESSION_KEY", "k")
-	c, err := FromEnv()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.CacheRoot != "/media/sdhc/memries/thumbs" {
-		t.Fatalf("got %q", c.CacheRoot)
-	}
-	// The cache root's parent is always an allowed destination, so an admin
-	// can move the cache beside itself with no extra configuration.
-	if c.CacheRoots[0] != "/media/sdhc/memries" {
-		t.Fatalf("allowed roots %+v", c.CacheRoots)
 	}
 }

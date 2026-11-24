@@ -1,0 +1,52 @@
+# Memries server configuration.
+#
+# Copy to memries.yaml and edit. This file is the only source of truth: there
+# are no environment variables to go looking for (ADR 0028). The server reads
+# --config, then $MEMRIES_CONFIG, then ./memries.yaml, then
+# /etc/memries/config.yaml.
+#
+# It holds secrets, so keep it chmod 600 and out of version control.
+
+server:
+  addr: ":8080"
+  # The origin browsers reach this server on. It is the CORS allow-list, so a
+  # wrong value shows up as a blank page rather than a warning.
+  public_url: http://localhost
+  # 32 random bytes, base64. Generate with: openssl rand -base64 32
+  # Rotating it signs everyone out and means re-entering folder passwords.
+  session_key: "replace-with-32-byte-random-base64"
+
+database:
+  # sqlite (one file, the default) or postgres for larger setups (ADR 0014).
+  driver: sqlite
+  # A file path for sqlite, a connection URL for postgres.
+  dsn: /data/db/memries.db
+
+library:
+  # Folders an admin may add photos from. The first is also where photos
+  # indexed before Folders existed are read from. The admin UI shows these as
+  # the prefix on the folder field, so nothing outside them can be typed.
+  roots:
+    - /data/photos
+  # Where generated thumbnails are written. They are a regenerable cache, so
+  # this belongs on the roomiest disk rather than beside the catalog — on the
+  # Pi, the card: /media/sdhc/memries/thumbs.
+  #
+  # Optional. Left out, it follows $CACHE_DIRECTORY (systemd's
+  # CacheDirectory=), then $XDG_CACHE_HOME/memries/thumbs, then
+  # ~/.cache/memries/thumbs.
+  cache: /data/cache
+
+admins:
+  # Who may add, edit, remove and scan folders. Everyone else can only browse.
+  emails:
+    - admin@example.com
+  # Gives those accounts a password on a fresh install (ADR 0016). It only
+  # ever fills an empty password, so leaving it here does not undo a later
+  # change. Remove it once the password has been set.
+  bootstrap_password: "password"
+
+# Originals backend. "local" is the only one Phase 1 ships; s3 lands in
+# phase 3 and its settings live under storage.s3.
+# storage:
+#   backend: local

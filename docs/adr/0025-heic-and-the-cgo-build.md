@@ -156,7 +156,7 @@ gets a smaller image rather than an error.
   pre-release (ADR 0020).
 - **Disk**: ~400KB per HEIC photo. 12k photos is roughly 5GB, which does not
   fit the 3.0GB free on the box's eMMC — the cache belongs on the 29GB card,
-  via `MEMRIES_CACHE_ROOT` (ADR 0022).
+  via `library.cache` ([0028](0028-yaml-configuration.md)).
 - **HEIC capture time** was listed here as a known limitation, which was the
   wrong call — capture-date ordering is the product. Fixed in
   [0026](0026-heic-capture-time-and-orientation.md), along with two bugs found

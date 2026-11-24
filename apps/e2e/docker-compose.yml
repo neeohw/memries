@@ -6,30 +6,13 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.backend
-    environment:
-      MEMRIES_ADDR: ":8080"
-      MEMRIES_DB_DRIVER: sqlite
-      MEMRIES_DB_DSN: /data/db/memries.db
-      MEMRIES_STORAGE_BACKEND: local
-      MEMRIES_LOCAL_ROOT: /data/photos
-      MEMRIES_CACHE_ROOT: /data/cache
-      # Extra server directories local folders may live under (MEMRIES_LOCAL_ROOT is always allowed).
-      MEMRIES_SOURCE_ROOTS: ${SOURCE_ROOTS:-}
-      MEMRIES_SESSION_KEY: ${SESSION_KEY}
-      # Pinned, NOT read from .env: apps/e2e/steps/fixtures.ts signs in with
-      # this exact literal, so a developer's own BOOTSTRAP_PASSWORD must not
-      # reach this disposable stack (ADR 0016).
-      MEMRIES_BOOTSTRAP_PASSWORD: password
-      # Likewise pinned, so the bootstrapped accounts are the ones the suite
-      # uses: one per Playwright worker, kept in sync with
-      # apps/e2e/scripts/owners.mjs. Local runs use four parallel workers
-      # against this one stack, and every worker needs an owner of its own —
-      # /api/e2e/reset is owner-scoped, so a shared account meant one worker's
-      # teardown wiped another's albums and favorites (ADR 0012).
-      MEMRIES_ADMIN_EMAILS: admin@example.com,worker-1@example.com,worker-2@example.com,worker-3@example.com
-      MEMRIES_PUBLIC_URL: http://localhost:${CADDY_HOST_PORT:-18080}
-      MEMRIES_E2E: "1"
     volumes:
+      # Written per run by scripts/stack.mjs: the public URL depends on the
+      # port this run leased, and the server reads one YAML file and nothing
+      # else (ADR 0028). The session key, bootstrap password and admin list
+      # are pinned in there, so a developer's own secrets never reach this
+      # disposable stack (ADR 0012, ADR 0016).
+      - ./.work/memries.yaml:/etc/memries/config.yaml:ro
       - ./.work/photos:/data/photos
       - ./.work/cache:/data/cache
       - ./.work/db:/data/db

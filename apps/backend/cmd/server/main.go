@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
@@ -25,11 +26,22 @@ import (
 )
 
 func main() {
+	configPath := flag.String("config", "", "path to memries.yaml (default: $MEMRIES_CONFIG, ./memries.yaml, /etc/memries/config.yaml)")
+	flag.Parse()
+
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	cfg, err := config.FromEnv()
+	path := config.Find(*configPath)
+	cfg, err := config.Load(path)
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)
+	}
+	log.Info("configuration", "file", cfg.Path)
+	if config.WorldReadable(path) {
+		// It holds the session key and the bootstrap password. A warning
+		// rather than a refusal: a bind-mounted file is routinely 0644 and
+		// the server still has to start.
+		log.Warn("configuration file is readable by other users", "file", path, "want", "chmod 600")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -44,25 +56,10 @@ func main() {
 		log.Error("db", "err", err)
 		os.Exit(1)
 	}
-	tg, err := thumb.NewGenerator(cfg.CacheRoot)
+	tg, err := thumb.NewGenerator(cfg.Library.Cache)
 	if err != nil {
 		log.Error("thumb", "err", err)
 		os.Exit(1)
-	}
-	// A stored thumbnail location overrides MEMRIES_CACHE_ROOT, so a move an
-	// admin made in the UI survives a restart and the indexer writes where
-	// the server reads (ADR 0022).
-	if stored, err := dbc.Setting(ctx, db.SettingThumbnailRoot); err != nil {
-		log.Error("thumb setting", "err", err)
-		os.Exit(1)
-	} else if stored != "" && stored != cfg.CacheRoot {
-		if err := tg.SetRoot(stored); err != nil {
-			// Falling back to the env default would serve an empty cache and
-			// look like data loss, so this stops instead.
-			log.Error("stored thumbnail folder unusable", "path", stored, "err", err)
-			os.Exit(1)
-		}
-		log.Info("thumbnail folder from settings", "path", stored)
 	}
 	a, err := auth.New(cfg, dbc, log)
 	if err != nil {
@@ -73,12 +70,12 @@ func main() {
 		log.Error("auth bootstrap", "err", err)
 		os.Exit(1)
 	}
-	sealer, err := sources.NewSealer(cfg.SessionKey)
+	sealer, err := sources.NewSealer(cfg.Server.SessionKey)
 	if err != nil {
 		log.Error("sources", "err", err)
 		os.Exit(1)
 	}
-	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.SourceRoots, Log: log}
+	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.Library.Roots, Log: log}
 	idx := &index.Indexer{Store: reg, DB: dbc, Thumb: tg, Log: log}
 	lib := index.Library{Photos: dbc, Store: reg}
 	coord := index.NewCoordinator(ctx, idx, dbc, dbc, idx, lib, log).WithScopes(reg)
@@ -88,19 +85,15 @@ func main() {
 	}
 	apiH := &api.API{
 		DB:          dbc,
-		Settings:    dbc,
-		CacheRoots:  cfg.CacheRoots,
-		SourceRoots: cfg.SourceRoots,
-
-		DefaultThumbnailRoot: cfg.CacheRoot,
-		Store:                store,
-		SourceStore:          reg,
-		Thumb:                tg,
-		Index:                coord,
-		Sources:              reg,
-		Rescan:               coord,
-		IsAdmin:              cfg.IsAdmin,
-		E2E:                  os.Getenv("MEMRIES_E2E") == "1",
+		Store:       store,
+		SourceStore: reg,
+		Thumb:       tg,
+		Index:       coord,
+		Sources:     reg,
+		Rescan:      coord,
+		SourceRoots: cfg.Library.Roots,
+		IsAdmin:     cfg.IsAdmin,
+		E2E:         cfg.Server.E2E,
 	}
 
 	r := chi.NewRouter()
@@ -110,7 +103,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{cfg.PublicURL, "http://localhost:5173"},
+		AllowedOrigins:   []string{cfg.Server.PublicURL, "http://localhost:5173"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -130,7 +123,7 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:              cfg.Addr,
+		Addr:              cfg.Server.Addr,
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -140,7 +133,7 @@ func main() {
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()
-	log.Info("starting", "addr", cfg.Addr)
+	log.Info("starting", "addr", cfg.Server.Addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("serve", "err", err)
 		os.Exit(1)

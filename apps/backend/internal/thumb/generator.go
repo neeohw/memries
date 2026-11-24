@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
 // Sizes is the thumb ladder, ascending. Each entry becomes one JPEG per Photo.
@@ -32,11 +31,11 @@ var SizesWithDisplay = []int{256, 512, 1024, DisplaySize}
 
 const jpegQuality = 88
 
-// Generator holds the cache root behind a mutex because an admin can move it
-// while the server is serving (ADR 0022). Thumb paths on a Photo are relative,
-// so a move changes only this field — no catalog row is rewritten.
+// Generator writes the thumb set under one fixed directory, named by
+// library.cache in the configuration file (ADR 0028). Thumb paths on a Photo
+// are relative to it, so moving the cache is a matter of moving the files and
+// editing one line — nothing in the catalog refers to the root.
 type Generator struct {
-	mu        sync.RWMutex
 	cacheRoot string
 }
 
@@ -48,31 +47,9 @@ func NewGenerator(cacheRoot string) (*Generator, error) {
 }
 
 // Root reports the directory thumbs are read from and written to.
-func (g *Generator) Root() string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.cacheRoot
-}
+func (g *Generator) Root() string { return g.cacheRoot }
 
-// SetRoot points the generator at a different directory, creating it if
-// needed. Thumbs already written under the old root stay there: this changes
-// where thumbs are found, not where they are, so the caller tells the admin
-// that a reindex is what repopulates the new location.
-func (g *Generator) SetRoot(root string) error {
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return err
-	}
-	g.mu.Lock()
-	g.cacheRoot = root
-	g.mu.Unlock()
-	return nil
-}
-
-// path resolves rel under the current root in one read-lock, so a concurrent
-// SetRoot cannot split a single operation across two roots.
 func (g *Generator) path(rel string) string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	return filepath.Join(g.cacheRoot, rel)
 }
 

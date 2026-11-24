@@ -21,11 +21,12 @@ func main() {
 	source := flag.String("source", "", "index only this source id (default: every source)")
 	conc := flag.Int("concurrency", 4, "worker count")
 	force := flag.Bool("force", false, "reindex + regenerate thumbs even if files look unchanged")
+	configPath := flag.String("config", "", "path to memries.yaml (default: $MEMRIES_CONFIG, ./memries.yaml, /etc/memries/config.yaml)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	cfg, err := config.FromEnv()
+	cfg, err := config.Load(config.Find(*configPath))
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)
@@ -39,32 +40,17 @@ func main() {
 		log.Error("db", "err", err)
 		os.Exit(1)
 	}
-	tg, err := thumb.NewGenerator(cfg.CacheRoot)
+	tg, err := thumb.NewGenerator(cfg.Library.Cache)
 	if err != nil {
 		log.Error("thumb gen", "err", err)
 		os.Exit(1)
 	}
-	// A stored thumbnail location overrides MEMRIES_CACHE_ROOT, so a move an
-	// admin made in the UI survives a restart and the indexer writes where
-	// the server reads (ADR 0022).
-	if stored, err := dbc.Setting(ctx, db.SettingThumbnailRoot); err != nil {
-		log.Error("thumb setting", "err", err)
-		os.Exit(1)
-	} else if stored != "" && stored != cfg.CacheRoot {
-		if err := tg.SetRoot(stored); err != nil {
-			// Falling back to the env default would serve an empty cache and
-			// look like data loss, so this stops instead.
-			log.Error("stored thumbnail folder unusable", "path", stored, "err", err)
-			os.Exit(1)
-		}
-		log.Info("thumbnail folder from settings", "path", stored)
-	}
-	sealer, err := sources.NewSealer(cfg.SessionKey)
+	sealer, err := sources.NewSealer(cfg.Server.SessionKey)
 	if err != nil {
 		log.Error("sources", "err", err)
 		os.Exit(1)
 	}
-	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.SourceRoots, Log: log}
+	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.Library.Roots, Log: log}
 	scopes, err := reg.Scopes(ctx)
 	if err != nil {
 		log.Error("sources", "err", err)

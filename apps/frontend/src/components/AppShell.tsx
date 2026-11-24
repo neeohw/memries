@@ -50,10 +50,7 @@ export function AppShell({
         <div className="flex w-full flex-col items-center">
           <ThemeToggle />
           {admin && (
-            <SettingsButton
-              selected={tab === 'settings' || tab === 'folders'}
-              onOpen={() => onTabChange('folders')}
-            />
+            <SettingsButton selected={tab === 'folders'} onOpen={() => onTabChange('folders')} />
           )}
           <AccountButton selected={tab === 'account'} onOpen={() => onTabChange('account')} />
         </div>

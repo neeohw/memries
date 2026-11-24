@@ -11,8 +11,9 @@ import (
 // fallback that stands in for an original the store cannot open.
 //
 // A list rather than one pick: a rendition recorded in the catalog may be
-// missing from the cache — the admin moved the thumbnail folder (ADR 0022),
-// or a scan was interrupted — and a reader is better served a smaller image
+// missing from the cache — library.cache was repointed at a directory the
+// thumbs were never written to, or a scan was interrupted — and a reader is
+// better served a smaller image
 // than a 500. The display rendition leads because it is the largest, and it
 // is also the one most likely to be absent, since it exists only for HEIC.
 func thumbCandidates(t db.Thumbs) []string {

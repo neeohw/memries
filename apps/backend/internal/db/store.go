@@ -45,14 +45,14 @@ type Store struct {
 
 // Connect opens the catalog, applies pending migrations, and returns a Store.
 func Connect(ctx context.Context, cfg *config.Config) (*Store, error) {
-	switch strings.ToLower(strings.TrimSpace(cfg.DBDriver)) {
+	switch strings.ToLower(strings.TrimSpace(cfg.Database.Driver)) {
 	case "", DriverSQLite:
-		return openSQLite(ctx, cfg.DBDSN)
+		return openSQLite(ctx, cfg.Database.DSN)
 	case DriverPostgres:
-		return openPostgres(ctx, cfg.DBDSN)
+		return openPostgres(ctx, cfg.Database.DSN)
 	default:
 		return nil, fmt.Errorf("unsupported MEMRIES_DB_DRIVER %q (want %q or %q)",
-			cfg.DBDriver, DriverSQLite, DriverPostgres)
+			cfg.Database.Driver, DriverSQLite, DriverPostgres)
 	}
 }
 

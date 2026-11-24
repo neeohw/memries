@@ -30,19 +30,12 @@ type API struct {
 	Sources     SourceAdmin
 	Rescan      Rescanner
 	IsAdmin     func(email string) bool
-	// Settings holds the server-wide settings an admin can change (ADR 0022).
-	Settings SettingsStore
-	// CacheRoots are the directories the thumbnail cache may be moved under.
-	CacheRoots []string
 	// SourceRoots are the directories a local Source may sit under
-	// (MEMRIES_LOCAL_ROOT plus MEMRIES_SOURCE_ROOTS). The admin UI shows the
-	// root as a fixed prefix on the folder form, so a path outside it is
+	// (library.roots in the configuration file). The admin UI shows the root
+	// as a fixed prefix on the folder form, so a path outside it is
 	// unreachable rather than rejected after the fact (ADR 0013).
 	SourceRoots []string
-	// DefaultThumbnailRoot is MEMRIES_CACHE_ROOT, the install default a
-	// stored choice overrides.
-	DefaultThumbnailRoot string
-	E2E                  bool
+	E2E         bool
 }
 
 func (a *API) Routes(r chi.Router) {

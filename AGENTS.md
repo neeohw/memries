@@ -39,19 +39,19 @@ Out of scope unless the user asks: video, S3 storage, WebSockets, sharing graph,
 
 - Do not leave this repository.
 - Do not deploy infrastructure or mutate remote environments. Do not run Compose against a remote host.
-- Do not commit `.env` or `data/`. Do not put secrets in docs.
+- Do not commit `memries.yaml` or `data/`. Do not put secrets in docs.
 - Commit only when the user asks.
 - Ignore README pointers that leave this folder.
 
 ## How to run
 
-Follow the README quick start (Compose + `.env`). Host Turbo builds need `make install-requirements` then `pnpm install`. Initial index:
+Follow the README quick start (Compose + `memries.yaml`, the server's one configuration file — [0028](docs/adr/0028-yaml-configuration.md)). Host Turbo builds need `make install-requirements` then `pnpm install`. Initial index:
 
 ```bash
 docker compose exec backend indexer
 ```
 
-Dev login is `admin@example.com` plus `BOOTSTRAP_PASSWORD` from `.env` ([0016](docs/adr/0016-local-password-auth.md)). Troubleshooting and host ports are in the README.
+Dev login is the first `admins.emails` entry plus `admins.bootstrap_password` from `memries.yaml` ([0016](docs/adr/0016-local-password-auth.md)). Troubleshooting and host ports are in the README.
 
 ## Seams
 

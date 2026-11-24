@@ -35,9 +35,9 @@ else
 endif
 
 ifeq ($(OS),Windows_NT)
-  REQUIRE_ENV := $(PWSH) -NoProfile -Command "if (-not (Test-Path -LiteralPath .env)) { Write-Error 'Missing .env (see README quick start)'; exit 1 }"
+  REQUIRE_ENV := $(PWSH) -NoProfile -Command "if (-not (Test-Path -LiteralPath memries.yaml)) { Write-Error 'Missing memries.yaml (copy memries.example.yaml; see README quick start)'; exit 1 }"
 else
-  REQUIRE_ENV := test -f .env || { echo "Missing .env (see README quick start)" >&2; exit 1; }
+  REQUIRE_ENV := test -f memries.yaml || { echo "Missing memries.yaml (copy memries.example.yaml; see README quick start)" >&2; exit 1; }
 endif
 
 .PHONY: help up down down-wipe db-clear build build-pi e2e e2e-down e2e-docker e2e-docker-force e2e-last-runs install-requirements

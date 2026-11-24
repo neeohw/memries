@@ -156,6 +156,9 @@ export const nl: Messages = {
     },
     stopped: 'De scan is gestopt voordat deze klaar was.',
   },
+  admin: {
+    open: 'Serverinstellingen',
+  },
   folders: {
     intro:
       'Foto’s in deze mappen komen in de gedeelde bibliotheek. Originelen blijven staan waar ze staan; miniaturen worden één keer gemaakt en op deze server bewaard.',
@@ -231,31 +234,6 @@ export const nl: Messages = {
     },
     previewExpand: 'Toon de mappen in {name}',
     previewCollapse: 'Verberg de mappen in {name}',
-  },
-  settings: {
-    heading: 'Serverinstellingen',
-    open: 'Serverinstellingen',
-    thumbnailsTitle: 'Miniaturenmap',
-    thumbnailsHelp:
-      'Waar de gegenereerde miniaturen worden opgeslagen. Zet dit op externe opslag om ze van de systeemkaart te houden.',
-    thumbnailsLabel: 'Map op de server',
-    current: 'Nu in gebruik',
-    defaultIs: 'Standaard: {path}',
-    usingDefault: 'de standaardmap',
-    allowedRoots: 'Moet binnen staan: {roots}',
-    freeSpace: '{size} vrij',
-    save: 'Map opslaan',
-    saving: 'Opslaan…',
-    reset: 'Terug naar standaard',
-    movedTitle: 'Miniaturen verplaatst',
-    movedBody:
-      'Bestaande miniaturen zijn in de oude map gebleven. Scan een map om ze opnieuw te genereren in de nieuwe.',
-  },
-  admin: {
-    heading: 'Beheer',
-    sections: 'Beheeronderdelen',
-    folders: 'Mappen',
-    storage: 'Opslag',
   },
   account: {
     heading: 'Account',

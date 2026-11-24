@@ -42,8 +42,6 @@ func (a *API) adminRoutes(r chi.Router) {
 	// and one of a folder being edited needs it to recover a stored password.
 	r.Post("/sources/preview", a.previewSource)
 	r.Post("/sources/{id}/preview", a.previewSource)
-	r.Get("/settings", a.settings)
-	r.Put("/settings/thumbnails", a.setThumbnailRoot)
 }
 
 func (a *API) requireAdmin(next http.Handler) http.Handler {

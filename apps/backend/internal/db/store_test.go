@@ -14,8 +14,7 @@ import (
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	cfg := &config.Config{
-		DBDriver: DriverSQLite,
-		DBDSN:    filepath.Join(t.TempDir(), "catalog.db"),
+		Database: config.Database{Driver: DriverSQLite, DSN: filepath.Join(t.TempDir(), "catalog.db")},
 	}
 	s, err := Connect(context.Background(), cfg)
 	if err != nil {
@@ -65,7 +64,7 @@ func mustUpsert(t *testing.T, s *Store, photos ...*Photo) {
 
 func TestMigrationsAreIdempotent(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "catalog.db")
-	cfg := &config.Config{DBDriver: DriverSQLite, DBDSN: dsn}
+	cfg := &config.Config{Database: config.Database{Driver: DriverSQLite, DSN: dsn}}
 	for i := 0; i < 2; i++ {
 		s, err := Connect(context.Background(), cfg)
 		if err != nil {

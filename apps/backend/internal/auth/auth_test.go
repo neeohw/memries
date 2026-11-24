@@ -91,9 +91,11 @@ func (f *fakeUsers) SetPasswordHash(_ context.Context, key, hash string) error {
 
 func testConfig(publicURL string, admins ...string) *config.Config {
 	return &config.Config{
-		SessionKey:  base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")),
-		PublicURL:   publicURL,
-		AdminEmails: admins,
+		Server: config.Server{
+			SessionKey: base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")),
+			PublicURL:  publicURL,
+		},
+		Admins: config.Admins{Emails: admins},
 	}
 }
 
@@ -404,7 +406,7 @@ func TestNewRejectsAWeakSessionKey(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg := testConfig("http://localhost")
-			cfg.SessionKey = key
+			cfg.Server.SessionKey = key
 			if _, err := New(cfg, users, nil); err == nil {
 				t.Error("want error, got nil")
 			}
@@ -418,7 +420,7 @@ func TestBootstrapFillsOnlyEmptyPasswords(t *testing.T) {
 	originalHash := existing.PasswordHash
 
 	cfg := testConfig("http://localhost", "admin@example.com", "second@example.com")
-	cfg.BootstrapPassword = "bootstrap-secret"
+	cfg.Admins.BootstrapPassword = "bootstrap-secret"
 	a := newTestAuth(t, users, cfg)
 
 	if err := a.Bootstrap(context.Background()); err != nil {
@@ -457,10 +459,10 @@ func TestBootstrapIsANoOpWithoutAPassword(t *testing.T) {
 // would otherwise look like a working install nobody can sign into.
 func TestBootstrapRequiresAnAdminAddress(t *testing.T) {
 	cfg := testConfig("http://localhost")
-	cfg.BootstrapPassword = "secret"
+	cfg.Admins.BootstrapPassword = "secret"
 	a := newTestAuth(t, newFakeUsers(), cfg)
 	if err := a.Bootstrap(context.Background()); err == nil {
-		t.Error("want an error when MEMRIES_ADMIN_EMAILS is empty")
+		t.Error("want an error when admins.emails is empty")
 	}
 }
 

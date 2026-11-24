@@ -32,15 +32,16 @@ Not in Phase 1: video, S3 backend, WebSocket live updates, sharing graph, Piwigo
 Prereqs: Docker Desktop (Compose v2), `openssl`.
 
 ```bash
-# Write .env with strong random secrets
-cat > .env <<EOF
-SESSION_KEY=$(openssl rand -base64 32)
-BOOTSTRAP_PASSWORD=$(openssl rand -base64 12)
-ADMIN_EMAILS=admin@example.com
-EOF
+# The whole server configuration is one file (ADR 0028).
+cp memries.example.yaml memries.yaml
+chmod 600 memries.yaml
+
+# Fill in the two secrets it ships with placeholders for:
+openssl rand -base64 32    # -> server.session_key
+openssl rand -base64 12    # -> admins.bootstrap_password
 
 # Drop photos into ./data/photos/... and add it as a folder
-mkdir -p data/photos/admin@example.com
+mkdir -p data/photos
 
 # Catalog directory. Create it yourself: Docker would create a missing
 # bind-mount as root, and the backend image runs as uid 1000.
@@ -50,37 +51,73 @@ docker compose build
 docker compose up -d
 ```
 
-Open http://localhost and sign in as `admin@example.com` with the `BOOTSTRAP_PASSWORD` you just generated. That variable gives every `ADMIN_EMAILS` account a password on a fresh install, and only ever fills an *empty* one, so it is safe to leave in `.env` ([ADR 0016](docs/adr/0016-local-password-auth.md)). After login the splash indexes the configured **folders** and then loads photos from `/api/photos`.
+Open http://localhost and sign in as the address in `admins.emails` with the
+`bootstrap_password` you generated. That password gives every admin account a
+password on a fresh install and only ever fills an *empty* one, so it is safe
+to leave in the file ([ADR 0016](docs/adr/0016-local-password-auth.md)). After
+login the splash indexes the configured **folders** and then loads photos from
+`/api/photos`.
 
-Admins (`MEMRIES_ADMIN_EMAILS`) get a gear icon holding **Folders** and **Storage** ([0024](docs/adr/0024-admin-area.md)). Folders feed the one shared library:
+### Configuration
+
+Everything the server reads lives in `memries.yaml`. There are no `MEMRIES_*`
+environment variables: a setting has one home, so what a server is doing is
+answered by one file you can read, comment and diff
+([0028](docs/adr/0028-yaml-configuration.md)).
+
+The file is found at `--config`, then `$MEMRIES_CONFIG`, then
+`./memries.yaml`, then `/etc/memries/config.yaml`. Compose mounts yours at
+that last path, so the container needs no flag.
+
+| Setting | What it does |
+|---|---|
+| `server.addr` | Listen address. Default `:8080`. |
+| `server.public_url` | The origin browsers reach the server on; it is the CORS allow-list, so a wrong value shows up as a blank page. |
+| `server.session_key` | 32 random bytes, base64. Rotating it signs everyone out and means re-entering folder passwords. |
+| `database.driver` / `.dsn` | `sqlite` (a file path) or `postgres` (a URL) ([0014](docs/adr/0014-pluggable-sql-store.md)). |
+| `library.roots` | Folders an admin may add photos from. The first is also where photos indexed before Folders existed are read from. |
+| `library.cache` | Where thumbnails are written. Optional — see below. |
+| `admins.emails` | Who may add, edit, remove and scan folders. Everyone else can only browse. |
+| `admins.bootstrap_password` | First-run password for those accounts. |
+
+It holds secrets, so it is gitignored and the server warns at startup if it is
+readable by anyone but its owner. A misspelled key is an error rather than a
+silent fallback to a default — in a file that is the only source of truth,
+`library.cahce` has to fail loudly.
+
+Admins get a gear icon, which opens **Folders**
+([0024](docs/adr/0024-admin-area.md)). Folders feed the one shared library:
 
 | Kind | Location example | Notes |
 |------|------------------|-------|
-| On this server | `/data/photos/family` | Must sit under `MEMRIES_LOCAL_ROOT` or a `MEMRIES_SOURCE_ROOTS` entry; mount host dirs into the backend container. NFS: mount on the host, add as a server folder. |
+| On this server | `/data/photos/family` | Must sit under a `library.roots` entry, which the form shows as a fixed prefix; mount host dirs into the backend container. NFS: mount on the host, add as a server folder. |
 | WebDAV | `https://cloud.example.com/remote.php/dav/files/me/Photos` | Nextcloud, ownCloud, Synology, … |
 
-Originals stay where they are and are streamed through the backend; thumbs are always generated into the local thumbnail folder. The connection is checked before a folder is saved. Folder passwords are AES-GCM sealed in the catalog with a key derived from `MEMRIES_SESSION_KEY` (rotating it means re-entering folder passwords).
+Originals stay where they are and are streamed through the backend; thumbs are
+always generated into the thumbnail folder. The connection is checked before a
+folder is saved, and **Preview** walks the folder first and shows what a scan
+would add ([0027](docs/adr/0027-folder-dry-run.md)). Folder passwords are
+AES-GCM sealed in the catalog with a key derived from `server.session_key`.
 
 ### Thumbnail folder
 
-The gear → **Storage** moves the thumbnail cache without editing env or restarting
-([0022](docs/adr/0022-admin-settings-thumbnail-location.md)) — the point of
-it on a Pi, where 8GB of eMMC does not hold a 12k-photo ladder. The page shows
-the free space on the holding filesystem.
+`library.cache` is where the generated thumbnails go. On a Pi that wants to be
+somewhere other than the system card — 8GB of eMMC does not hold a 12k-photo
+ladder — so point it at the big disk:
 
-Unset, the cache follows XDG: `$CACHE_DIRECTORY` when systemd provides it
+```yaml
+library:
+  cache: /media/sdhc/memries/thumbs
+```
+
+Left out, it follows the platform: `$CACHE_DIRECTORY` when systemd provides it
 (`/var/cache/memries` for a system unit), else `$XDG_CACHE_HOME/memries`, else
-`~/.cache/memries`. The page names that default whenever something else is in
-use.
+`~/.cache/memries`.
 
-A folder must be absolute, writable by the server, inside
-`MEMRIES_CACHE_ROOTS` (the default root's parent is always allowed), and
-neither inside nor containing a photo folder — a cache under a Source would be
-indexed as photos by the next scan.
-
-Moving does not carry the existing thumbnails: they stay in the old folder and
-a scan regenerates them in the new one. Clearing the field restores
-`MEMRIES_CACHE_ROOT`.
+Changing it does not carry the existing thumbnails. Stop the server, move the
+directory, edit the line, start it — or edit it and rescan, which regenerates
+them. Thumb paths in the catalog are relative to this root, so nothing else
+has to change.
 
 The CLI remains an idempotent fallback (hash skip unless `-force`):
 
@@ -225,7 +262,7 @@ same message so the form cannot be used to discover which addresses exist.
 
 ## Data model
 
-One SQLite file by default, or PostgreSQL via `DB_DRIVER=postgres`
+One SQLite file by default, or PostgreSQL via `database.driver: postgres`
 ([ADR 0014](docs/adr/0014-pluggable-sql-store.md)). Schema lives in
 `apps/backend/internal/db/migrations/`, embedded in the binary and applied at
 start-up.
@@ -250,7 +287,7 @@ of a file in the library), `storage_path`, `taken_at_local`,
 
 An Index run walks every folder (Source) — the client never submits a path; only admins add folders, and they are server-wide. Photo storage paths are `<source id>/<path inside the folder>`. Unchanged files (same size + mtime) are skipped without re-reading, so re-scans of network folders are cheap. A folder that cannot be reached is reported as an error and its photos are kept, not pruned.
 
-Accepted media extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
+Accepted media extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.heic`, `.heif`.
 
 ## Local Turbo (host Node + Go)
 
@@ -270,21 +307,25 @@ pnpm test   # frontend, backend, scripts — not Playwright
 # Start the edge and the frontend via compose
 docker compose up -d caddy frontend
 
-# Backend
+# Backend. The paths in memries.yaml are the container's, so a host run
+# wants its own file rather than the Compose one.
 cd apps/backend
-export $(grep -v '^#' ../../.env | xargs)
-export MEMRIES_SESSION_KEY=$SESSION_KEY
-export MEMRIES_BOOTSTRAP_PASSWORD=$BOOTSTRAP_PASSWORD
-export MEMRIES_ADMIN_EMAILS=admin@example.com
-export MEMRIES_DB_DSN=../../data/db/memries.db
-export MEMRIES_LOCAL_ROOT=../../data/photos
-# Optional. Unset, thumbnails follow XDG: $CACHE_DIRECTORY (set by systemd's
-# CacheDirectory=), else $XDG_CACHE_HOME/memries, else ~/.cache/memries.
-export MEMRIES_CACHE_ROOT=../../data/cache
-# Optional: extra folders an admin may move the thumbnail cache to.
-# export MEMRIES_CACHE_ROOTS=/media/sdhc
+cat > dev.yaml <<'EOF'
+server:
+  public_url: http://localhost
+  session_key: "paste openssl rand -base64 32 here"
+database:
+  dsn: ../../data/db/memries.db
+library:
+  roots:
+    - ../../data/photos
+  cache: ../../data/cache
+admins:
+  emails: [admin@example.com]
+  bootstrap_password: "whatever you like"
+EOF
 go mod tidy
-go run ./cmd/server
+go run ./cmd/server --config dev.yaml
 
 # Frontend (in another shell)
 cd apps/frontend
@@ -322,8 +363,11 @@ and `go build -tags vips ./cmd/server ./cmd/indexer`.
 
 ## Troubleshooting
 
-- **`level=ERROR msg="auth bootstrap"`** — `MEMRIES_BOOTSTRAP_PASSWORD` is set but `MEMRIES_ADMIN_EMAILS` is empty, so there is no account to apply it to. Set `ADMIN_EMAILS` in `.env`.
-- **`MEMRIES_SESSION_KEY must be base64-encoded, at least 32 bytes`** — regenerate with `openssl rand -base64 32`. Rotating it invalidates sessions and requires re-entering folder passwords.
+- **`no configuration file at /etc/memries/config.yaml`** — copy `memries.example.yaml` to `memries.yaml`. Compose mounts it into the container at that path.
+- **`missing required setting(s): ...`** — the file is there but incomplete; the message names every one at once rather than one per restart.
+- **`field librarry not found in type config.Config`** — a misspelled key. Unknown keys are rejected rather than ignored, since this file is the only source of truth (ADR 0028).
+- **`level=ERROR msg="auth bootstrap"`** — `admins.bootstrap_password` is set but `admins.emails` is empty, so there is no account to apply it to.
+- **`session key must be base64-encoded, at least 32 bytes`** — regenerate with `openssl rand -base64 32`. Rotating it invalidates sessions and requires re-entering folder passwords.
 - **Sign-in says the login and password did not match, and you are sure they do** — bootstrap only fills an *empty* password, so a password set earlier still applies. `make db-clear` clears the users and re-applies the variable.
 - **`too many sign-in attempts`** — the per-address and per-account limiter allows eight attempts, then one more every 30 seconds. A successful sign-in clears it; so does restarting the backend, since the buckets are in memory.
 - **`unknown flag --build`** — Two-step instead: `docker compose build && docker compose up -d`.

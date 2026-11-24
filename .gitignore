@@ -1,4 +1,7 @@
 .env
+# The server configuration: it holds the session key and the bootstrap
+# password (ADR 0028). memries.example.yaml is the committed template.
+memries.yaml
 data/*
 node_modules/
 dist/
