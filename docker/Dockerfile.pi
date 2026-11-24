@@ -1,0 +1,99 @@
+# syntax=docker/dockerfile:1
+#
+# Builds both Memries binaries for the Pi, linked against libvips (ADR 0025).
+#
+# HEIC needs native decode — pure Go measured 4.6s to 24.7s per 12MP frame on
+# an A53 against ~0.8s native — so these are cgo builds. The server is one
+# too: it runs the index coordinator in-process, so pressing Scan in the UI
+# renders thumbnails inside the server, and a pure server fails every HEIC.
+#
+# That makes the base image part of the contract rather than a convenience:
+# this must be the same Debian release as the box, because the binaries end up
+# linked against that release's glibc and libvips sonames.
+#
+#   Pi:   Debian 13 trixie, glibc 2.41, libvips 8.16.1, libheif 1.23.6
+#   here: debian:trixie
+#
+# On an arm64 Mac, Docker runs linux/arm64 natively, so this is a native-arch
+# build in a matched container rather than a cross-compile with a sysroot —
+# the versions match by construction instead of by hand.
+#
+# Build through apps/scripts/build-pi, not directly: the target platform comes
+# from that script's --platform, so this file has no architecture baked in and
+# builds for whatever is asked of it. The export stages are scratch so the
+# binaries come out with --output type=local and no image is left behind.
+
+FROM debian:trixie AS build
+
+ARG GO_VERSION=1.26.11
+# -s -w drop the symbol and DWARF tables, which is most of the binaries'
+# size. build-pi --keep-debug passes an empty value to keep them.
+ARG LDFLAGS="-s -w"
+
+# libvips-dev is build-only: it brings the headers and the pkg-config file.
+# The box needs just libvips42t64, which pulls libheif1 itself.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        pkg-config \
+        libvips-dev \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# The toolchain follows the container's own architecture, so this builds
+# natively whatever platform was requested.
+RUN arch="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+    | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH=/go
+
+WORKDIR /src
+
+# Module graph first, so edits to Go files do not re-download dependencies.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,id=gomod-arm64,target=/go/pkg/mod \
+    go mod download
+
+COPY . .
+
+# Fail loudly if libvips is not discoverable, rather than emitting a confusing
+# cgo error further down.
+RUN pkg-config --exists vips \
+    && echo "libvips $(pkg-config --modversion vips)"
+
+# -tags vips selects internal/thumb/vips.go over pure.go (ADR 0015).
+# GOOS/GOARCH are left to the toolchain's own defaults: cgo cannot cross
+# anyway, and the container is already the target platform.
+#
+# -trimpath keeps build paths out of the binaries.
+RUN --mount=type=cache,id=gomod-arm64,target=/go/pkg/mod \
+    --mount=type=cache,id=gobuild-arm64,target=/root/.cache/go-build \
+    CGO_ENABLED=1 go build -tags vips -trimpath -ldflags "$LDFLAGS" \
+        -o /out/server ./cmd/server \
+    && CGO_ENABLED=1 go build -tags vips -trimpath -ldflags "$LDFLAGS" \
+        -o /out/indexer ./cmd/indexer
+
+# Prove the binaries are what we think they are before they leave the
+# builder: a missing libvips link should fail here, not on the box. readelf
+# comes with build-essential's binutils; `file` is not installed.
+RUN set -eu; \
+    for bin in server indexer; do \
+        readelf -h "/out/$bin" | grep -E 'Class|Machine'; \
+        readelf -d "/out/$bin" | grep -q 'libvips' \
+            || { echo "$bin is not linked against libvips"; exit 1; }; \
+        echo "$bin: $(readelf -d "/out/$bin" | grep -c NEEDED) shared libraries"; \
+    done
+
+# One stage per selection, so --server-only and --indexer-only export exactly
+# what was asked for rather than everything the builder made.
+FROM scratch AS export
+COPY --from=build /out/server /server
+COPY --from=build /out/indexer /indexer
+
+FROM scratch AS export-server
+COPY --from=build /out/server /server
+
+FROM scratch AS export-indexer
+COPY --from=build /out/indexer /indexer

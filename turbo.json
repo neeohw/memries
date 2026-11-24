@@ -15,7 +15,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "bin/**"],
-      "env": ["MEMRIES_INDEXER_VIPS"]
+      "env": ["MEMRIES_VIPS"]
     },
     "test": {},
     "lint": {},

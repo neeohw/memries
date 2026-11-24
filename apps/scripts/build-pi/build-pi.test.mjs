@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
 import { test } from 'node:test';
-import { goPlatform, indexerBuildArgs, main, parseArgs, serverBuildArgs } from './build-pi.mjs';
+import { buildArgs, exportStage, main, parseArgs, validatePlatform } from './build-pi.mjs';
 
 test('parseArgs defaults to the box', () => {
   const args = parseArgs([]);
@@ -45,57 +44,52 @@ test('parseArgs rejects an unknown flag and a missing value', () => {
   assert.throws(() => parseArgs(['--out', '--platform']), /missing value/);
 });
 
-// One --platform drives both halves, so the Go build and the container build
-// cannot disagree about the target.
-test('goPlatform maps Docker platforms onto GOOS/GOARCH', () => {
-  assert.deepEqual(goPlatform('linux/arm64'), { GOOS: 'linux', GOARCH: 'arm64' });
-  assert.deepEqual(goPlatform('linux/amd64'), { GOOS: 'linux', GOARCH: 'amd64' });
+// Both binaries come out of one container build, so a selection is a choice
+// of export stage rather than a different toolchain (ADR 0025).
+test('exportStage picks the stage holding exactly what was asked for', () => {
+  assert.equal(exportStage({ server: true, indexer: true }), 'export');
+  assert.equal(exportStage({ server: true, indexer: false }), 'export-server');
+  assert.equal(exportStage({ server: false, indexer: true }), 'export-indexer');
 });
 
-// Docker spells 32-bit ARM linux/arm/v7; Go wants GOARCH=arm with GOARM=7.
-test('goPlatform translates the 32-bit ARM variant', () => {
-  assert.deepEqual(goPlatform('linux/arm/v7'), { GOOS: 'linux', GOARCH: 'arm', GOARM: '7' });
+test('validatePlatform rejects a malformed platform', () => {
+  assert.throws(() => validatePlatform('arm64'), /malformed platform/);
+  assert.equal(validatePlatform('linux/arm64'), undefined);
+  assert.equal(validatePlatform('linux/arm/v7'), undefined);
 });
 
-test('goPlatform rejects a malformed platform', () => {
-  assert.throws(() => goPlatform('arm64'), /malformed platform/);
-});
-
-test('serverBuildArgs strips symbols by default and keeps them on request', () => {
-  assert.deepEqual(serverBuildArgs({ outDir: '/out', keepDebug: false }), [
-    'build',
-    '-trimpath',
-    '-ldflags',
-    '-s -w',
-    '-o',
-    join('/out', 'server'),
-    './cmd/server',
-  ]);
-
-  assert.deepEqual(serverBuildArgs({ outDir: '/out', keepDebug: true }), [
-    'build',
-    '-trimpath',
-    '-o',
-    join('/out', 'server'),
-    './cmd/server',
-  ]);
-});
-
-test('indexerBuildArgs exports the binary instead of leaving an image', () => {
-  const args = indexerBuildArgs({
-    dockerfile: '/repo/docker/Dockerfile.pi-indexer',
+test('buildArgs exports the binaries instead of leaving an image', () => {
+  const args = buildArgs({
+    dockerfile: '/repo/docker/Dockerfile.pi',
     context: '/repo/apps/backend',
     platform: 'linux/arm64',
     outDir: '/repo/dist/pi',
     goVersion: '1.26.11',
+    target: 'export',
   });
   assert.deepEqual(args.slice(0, 2), ['buildx', 'build']);
-  assert.ok(args.includes('--platform'));
   assert.equal(args[args.indexOf('--platform') + 1], 'linux/arm64');
   assert.equal(args[args.indexOf('--target') + 1], 'export');
   assert.equal(args[args.indexOf('--output') + 1], 'type=local,dest=/repo/dist/pi');
-  assert.equal(args[args.indexOf('--build-arg') + 1], 'GO_VERSION=1.26.11');
+  assert.equal(args[args.indexOf('-f') + 1], '/repo/docker/Dockerfile.pi');
+  assert.ok(args.includes('GO_VERSION=1.26.11'));
+  assert.ok(args.includes('LDFLAGS=-s -w'));
   assert.equal(args.at(-1), '/repo/apps/backend');
+});
+
+// --keep-debug has to reach the container, which is where the build happens.
+test('buildArgs keeps the symbol tables on request', () => {
+  const args = buildArgs({
+    dockerfile: '/d',
+    context: '/c',
+    platform: 'linux/arm64',
+    outDir: '/o',
+    goVersion: '1.26.11',
+    target: 'export',
+    keepDebug: true,
+  });
+  assert.ok(args.includes('LDFLAGS='));
+  assert.ok(!args.includes('LDFLAGS=-s -w'));
 });
 
 function fakeDeps({ statuses = {} } = {}) {
@@ -117,71 +111,50 @@ function fakeDeps({ statuses = {} } = {}) {
   };
 }
 
-test('main builds the server with cgo off and the indexer through docker', async () => {
+// The server is a cgo build too, because it runs the index coordinator
+// in-process: a pure server fails every HEIC that Scan hands it (ADR 0025).
+test('main builds both binaries in one container', async () => {
   const { calls, deps } = fakeDeps();
   assert.equal(await main([], deps), 0);
-
-  const [server, indexer] = calls;
-  assert.equal(server.cmd, 'go');
-  assert.equal(server.opts.env.CGO_ENABLED, '0');
-  assert.equal(server.opts.env.GOARCH, 'arm64');
-  assert.equal(server.opts.cwd, join('/repo', 'apps', 'backend'));
-
-  assert.equal(indexer.cmd, 'docker');
-  assert.ok(indexer.args.includes('--platform'));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].cmd, 'docker');
+  assert.equal(calls[0].args[calls[0].args.indexOf('--target') + 1], 'export');
+  assert.ok(calls[0].args.some((a) => String(a).endsWith('Dockerfile.pi')));
 });
 
-test('main skips the docker half for --server-only', async () => {
-  const { calls, deps } = fakeDeps();
-  assert.equal(await main(['--server-only'], deps), 0);
-  assert.deepEqual(
-    calls.map((c) => c.cmd),
-    ['go'],
-  );
+test('main exports one binary alone when asked', async () => {
+  for (const [flag, stage] of [
+    ['--server-only', 'export-server'],
+    ['--indexer-only', 'export-indexer'],
+  ]) {
+    const { calls, deps } = fakeDeps();
+    assert.equal(await main([flag], deps), 0);
+    assert.deepEqual(
+      calls.map((c) => c.cmd),
+      ['docker'],
+    );
+    assert.equal(calls[0].args[calls[0].args.indexOf('--target') + 1], stage);
+  }
 });
 
-test('main skips the go half for --indexer-only', async () => {
-  const { calls, deps } = fakeDeps();
-  assert.equal(await main(['--indexer-only'], deps), 0);
-  assert.deepEqual(
-    calls.map((c) => c.cmd),
-    ['docker'],
-  );
-});
-
-// A failed server build must not go on to produce an indexer beside a
-// binary that is not there.
-test('main stops at the first failure', async () => {
-  const { calls, deps } = fakeDeps({ statuses: { go: { status: 2 } } });
+test('main passes a failed build through', async () => {
+  const { deps } = fakeDeps({ statuses: { docker: { status: 2 } } });
   assert.equal(await main([], deps), 2);
-  assert.deepEqual(
-    calls.map((c) => c.cmd),
-    ['go'],
-  );
 });
 
 test('main explains a missing docker rather than reporting a build failure', async () => {
   const { logs, deps } = fakeDeps({
     statuses: { docker: { error: new Error('spawn docker ENOENT') } },
   });
-  assert.equal(await main(['--indexer-only'], deps), 1);
+  assert.equal(await main([], deps), 1);
   assert.ok(logs.some((l) => l.includes('docker is not available')));
-  assert.ok(logs.some((l) => l.includes('--server-only')));
+  assert.ok(logs.some((l) => l.includes('cgo builds against libvips')));
 });
 
-test('main explains a missing go toolchain', async () => {
-  const { logs, deps } = fakeDeps({
-    statuses: { go: { error: new Error('spawn go ENOENT') } },
-  });
-  assert.equal(await main(['--server-only'], deps), 1);
-  assert.ok(logs.some((l) => l.includes('go is not available')));
-  assert.ok(logs.some((l) => l.includes('install-requirements')));
-});
-
-// The indexer is the only half with a system dependency, so the run says so.
+// Both binaries link libvips, so the run says what the box needs.
 test('main names the package the box needs', async () => {
   const { logs, deps } = fakeDeps();
-  await main(['--indexer-only'], deps);
+  await main([], deps);
   assert.ok(logs.some((l) => l.includes('libvips42t64')));
 });
 

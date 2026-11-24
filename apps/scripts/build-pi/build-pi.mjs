@@ -9,20 +9,27 @@ const DEFAULT_OUT = 'dist/pi';
 // Matches Dockerfile.backend's ARG GO_VERSION so both images use one toolchain.
 const DEFAULT_GO_VERSION = '1.26.11';
 
+/** The buildx stage that exports each selection (docker/Dockerfile.pi). */
+const EXPORT_STAGES = {
+  both: 'export',
+  server: 'export-server',
+  indexer: 'export-indexer',
+};
+
 const USAGE = `Usage: build-pi [--out DIR] [--platform linux/arm64] [--go-version X.Y.Z]
                 [--server-only | --indexer-only] [--keep-debug]
 
 Build the Memries binaries for the box (ADR 0025).
 
-  server   pure Go, CGO_ENABLED=0, built here. Decodes nothing, so it needs
-           no system libraries.
-  indexer  cgo, -tags vips, built inside a debian:trixie container so it
-           links the same glibc and libvips the box has. HEIC needs native
-           decode: pure Go measured 4.6-24.7s per 12MP frame on an A53
-           against ~0.8s native.
+Both are cgo, -tags vips, built inside a debian:trixie container so they link
+the same glibc and libvips the box has. HEIC needs native decode: pure Go
+measured 4.6-24.7s per 12MP frame on an A53 against ~0.8s native.
 
-The box needs 'apt install libvips42t64' for the indexer. The server has no
-such dependency. Requires Docker for the indexer only.
+The server is one of them because it runs the index coordinator in-process:
+pressing Scan in the UI renders thumbnails inside the server, so a pure
+server cannot import a HEIC.
+
+The box needs 'apt install libvips42t64'. Requires Docker.
 
 Defaults: --out ${DEFAULT_OUT} --platform ${DEFAULT_PLATFORM} --go-version ${DEFAULT_GO_VERSION}
 `;
@@ -71,41 +78,43 @@ export function parseArgs(argv) {
 }
 
 /**
- * goarch maps a Docker platform onto GOOS/GOARCH, so one --platform drives
- * both halves of the build and they cannot disagree about the target.
+ * validatePlatform rejects a typo here rather than letting buildx fail
+ * several seconds into a pull.
  * @param {string} platform
- * @returns {{ GOOS: string, GOARCH: string }}
  */
-export function goPlatform(platform) {
-  const [os, arch, variant] = platform.split('/');
+export function validatePlatform(platform) {
+  const [os, arch] = platform.split('/');
   if (!os || !arch) throw new Error(`malformed platform: ${platform}`);
-  // Docker spells 32-bit ARM linux/arm/v7; Go spells it linux/arm GOARM=7.
-  if (arch === 'arm' && variant) return { GOOS: os, GOARCH: 'arm', GOARM: variant.replace('v', '') };
-  return { GOOS: os, GOARCH: arch };
 }
 
 /**
- * serverBuild is the pure-Go half. -trimpath keeps build paths out of the
- * binary; -s -w drop the symbol and DWARF tables, which is most of the size.
- * @param {{ outDir: string, keepDebug: boolean }} opts
- * @returns {string[]}
+ * exportStage picks the scratch stage holding exactly the requested
+ * binaries, so --server-only does not drop an indexer next to it.
+ * @param {{ server: boolean, indexer: boolean }} selection
+ * @returns {string}
  */
-export function serverBuildArgs({ outDir, keepDebug }) {
-  const args = ['build', '-trimpath'];
-  if (!keepDebug) args.push('-ldflags', '-s -w');
-  args.push('-o', join(outDir, 'server'), './cmd/server');
-  return args;
+export function exportStage({ server, indexer }) {
+  if (server && indexer) return EXPORT_STAGES.both;
+  return server ? EXPORT_STAGES.server : EXPORT_STAGES.indexer;
 }
 
 /**
- * indexerBuildArgs drives buildx. --target export is a scratch stage holding
- * only the binary, and --output type=local writes it to disk instead of
- * leaving an image behind.
+ * buildArgs drives buildx. --target is a scratch stage holding only the
+ * binaries, and --output type=local writes them to disk instead of leaving
+ * an image behind.
  * @param {{ dockerfile: string, context: string, platform: string,
- *   outDir: string, goVersion: string }} opts
+ *   outDir: string, goVersion: string, target: string, keepDebug?: boolean }} opts
  * @returns {string[]}
  */
-export function indexerBuildArgs({ dockerfile, context, platform, outDir, goVersion }) {
+export function buildArgs({
+  dockerfile,
+  context,
+  platform,
+  outDir,
+  goVersion,
+  target,
+  keepDebug = false,
+}) {
   return [
     'buildx',
     'build',
@@ -113,10 +122,13 @@ export function indexerBuildArgs({ dockerfile, context, platform, outDir, goVers
     platform,
     '--build-arg',
     `GO_VERSION=${goVersion}`,
+    // Empty keeps the symbol and DWARF tables the default strips.
+    '--build-arg',
+    `LDFLAGS=${keepDebug ? '' : '-s -w'}`,
     '-f',
     dockerfile,
     '--target',
-    'export',
+    target,
     '--output',
     `type=local,dest=${outDir}`,
     context,
@@ -157,50 +169,37 @@ export async function main(argv, deps = {}) {
   const backendDir = join(repoRoot, 'apps', 'backend');
   await mkdirImpl(outDir, { recursive: true });
 
-  if (args.server) {
-    let target;
-    try {
-      target = goPlatform(args.platform);
-    } catch (err) {
-      error(err instanceof Error ? err.message : String(err));
-      return 1;
-    }
-    log(`server  -> ${join(args.out, 'server')} (${args.platform}, CGO_ENABLED=0)`);
-    const result = spawn('go', serverBuildArgs({ outDir, keepDebug: args.keepDebug }), {
-      cwd: backendDir,
-      env: { ...process.env, CGO_ENABLED: '0', ...target },
-      stdio: 'inherit',
-    });
-    if (result.error) {
-      error(`go is not available (${result.error.message}).`);
-      error('Install the host toolchain from apps/scripts/install-requirements/.');
-      return 1;
-    }
-    if (result.status !== 0) return result.status ?? 1;
+  try {
+    validatePlatform(args.platform);
+  } catch (err) {
+    error(err instanceof Error ? err.message : String(err));
+    return 1;
   }
 
-  if (args.indexer) {
-    log(`indexer -> ${join(args.out, 'indexer')} (${args.platform}, cgo + libvips)`);
-    const result = spawn(
-      'docker',
-      indexerBuildArgs({
-        dockerfile: join(repoRoot, 'docker', 'Dockerfile.pi-indexer'),
-        context: backendDir,
-        platform: args.platform,
-        outDir,
-        goVersion: args.goVersion,
-      }),
-      { cwd: repoRoot, stdio: 'inherit' },
-    );
-    if (result.error) {
-      error(`docker is not available (${result.error.message}).`);
-      error('The indexer needs it; --server-only skips this half.');
-      return 1;
-    }
-    if (result.status !== 0) return result.status ?? 1;
-    log('');
-    log('The box needs: apt install libvips42t64');
+  const wanted = [args.server && 'server', args.indexer && 'indexer'].filter(Boolean);
+  log(`${wanted.join(' + ')} -> ${args.out}/ (${args.platform}, cgo + libvips)`);
+
+  const result = spawn(
+    'docker',
+    buildArgs({
+      dockerfile: join(repoRoot, 'docker', 'Dockerfile.pi'),
+      context: backendDir,
+      platform: args.platform,
+      outDir,
+      goVersion: args.goVersion,
+      target: exportStage(args),
+      keepDebug: args.keepDebug,
+    }),
+    { cwd: repoRoot, stdio: 'inherit' },
+  );
+  if (result.error) {
+    error(`docker is not available (${result.error.message}).`);
+    error('Both binaries are cgo builds against libvips, so the container is how they are made.');
+    return 1;
   }
+  if (result.status !== 0) return result.status ?? 1;
+  log('');
+  log('The box needs: apt install libvips42t64');
 
   return 0;
 }

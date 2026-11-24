@@ -1,4 +1,4 @@
-# ADR 0025 — HEIC, and the cgo indexer it requires
+# ADR 0025 — HEIC, and the cgo build it requires
 
 - Status: accepted
 - Date: 2026-11-22
@@ -24,25 +24,41 @@ binary `CGO_ENABLED=0`, and the measurement ruled it out.
 
 ## Decision
 
-### The indexer becomes a cgo build; the server does not
+### Both binaries become cgo builds
 
-ADR 0015 built a seam for this — pure Go by default, `-tags vips` for the
-indexer, bound directly to libvips — and nothing had ever used it. HEIC turns
-it from an optional speed-up into the only way the indexer works.
+ADR 0015 built a seam for this — pure Go by default, `-tags vips` bound
+directly to libvips — and nothing had ever used it. HEIC turns it from an
+optional speed-up into the only way indexing works.
 
-So the two binaries now differ in linkage:
+`MEMRIES_VIPS=1` turns it on, for **both** binaries:
 
-- **`server`** — pure Go, `CGO_ENABLED=0`, static. It decodes nothing.
-- **`indexer`** — cgo, `-tags vips`, dynamically linked against libvips.
+- **`server`** — cgo, `-tags vips`, dynamically linked against libvips.
+- **`indexer`** — the same.
+
+This decision first read "the indexer becomes a cgo build; the server does
+not", on the grounds that the server decodes nothing. That was wrong, and the
+product showed it: adding 8 HEICs to a folder and pressing **Scan now** failed
+all eight with `thumb: render pure: HEIC needs the libvips build`.
+`cmd/server` constructs an `index.Indexer` and runs the coordinator
+**in-process** — that is what makes the live progress of
+[0023](0023-scan-progress.md) possible — so pressing Scan renders thumbnails
+inside the server. The `indexer` CLI is the other way to start the same work,
+not the only one, and it is the one nobody uses from the UI.
+
+The alternative was to keep the server pure and have it spawn the indexer
+binary for a scan. That buys a static server at the cost of process
+management and of the in-process status the progress panel reads, to avoid a
+dependency the box already has to install for the CLI. Not worth it.
 
 The box needs `apt install libvips42t64`, which pulls `libheif1` itself.
 Nothing is compiled from source: Debian trixie's libvips 8.16.1 already ships
 the HEIF loader (`heifload_buffer`, which is what `vips_thumbnail_buffer`
 dispatches to), so there is no libvips build to maintain.
 
-Keeping the server pure-Go is what makes the rest of this design fall out.
-It cannot decode a HEIC, so it cannot transcode one on demand — which is why
-the viewer is served a rendition made at index time instead.
+The server still does not decode **on a request path**: `/api/original`
+cannot transcode a HEIC on demand, because a decode per view is not something
+a request should pay for on an A53. That is why the viewer is served a
+rendition made at index time instead.
 
 ### Built in a matched container, not with a cross toolchain
 
@@ -50,7 +66,7 @@ cgo cannot cross-compile without a sysroot carrying the target's libvips,
 glib and libheif. Assembling one is work, and worse, drift between it and the
 box stays invisible until a runtime symbol error.
 
-Instead `docker/Dockerfile.pi-indexer` builds inside `debian:trixie` — the
+Instead `docker/Dockerfile.pi` builds inside `debian:trixie` — the
 same release as the box — so glibc 2.41 and the libvips soname match **by
 construction**. On an arm64 Mac, Docker runs linux/arm64 natively, so this is
 a native-arch build in a matched container rather than a cross-compile, and
@@ -60,12 +76,12 @@ machine, which is how building from source stays possible.
 The base image is therefore part of the contract, not a convenience: building
 on a newer Debian would link a newer glibc and fail on the box.
 
-`apps/scripts/build-pi/` drives both halves, with one `--platform` deriving
-`GOOS`/`GOARCH` for the Go build so the two cannot disagree about the target.
-The Dockerfile hardcodes no architecture; the toolchain follows the
-container's own. (`Dockerfile.backend` still fetches `linux-amd64`, which is
-why *that* image cannot build on an arm64 Mac — a known W3 bug, untouched
-here.)
+`apps/scripts/build-pi/` drives one container build producing both binaries,
+so they cannot disagree about the target or the libvips they link.
+`--server-only` and `--indexer-only` select an export stage rather than a
+different toolchain. The Dockerfile hardcodes no architecture; the toolchain
+follows the container's own. Docker is therefore required for either binary,
+where the server used to build on the host.
 
 ### The Compose image builds the same indexer
 
@@ -86,16 +102,15 @@ Three things had to move with it:
   and the Go toolchain now follows the image's architecture instead of
   hardcoding `linux-amd64` — which is why that image could not build on an
   arm64 Mac.
-- `build.mjs` turns cgo and `-tags vips` on for the **indexer alone** when
-  `MEMRIES_INDEXER_VIPS=1`. The server stays pure Go in every build. The flag
-  is declared in `turbo.json`'s `env` for the build task rather than
-  `passThroughEnv`: Turbo prunes task environments, so it would not otherwise
-  reach the script, and it has to be part of the cache key or Turbo hands back
-  a pure binary after the flag changes.
+- `build.mjs` turns cgo and `-tags vips` on for **every** binary when
+  `MEMRIES_VIPS=1`. The flag is declared in `turbo.json`'s `env` for the build
+  task rather than `passThroughEnv`: Turbo prunes task environments, so it
+  would not otherwise reach the script, and it has to be part of the cache key
+  or Turbo hands back a pure binary after the flag changes.
 
-A plain `go build` still produces the pure indexer with nothing installed. It
-will refuse a HEIC, but now says which build is needed rather than "unknown
-format".
+A plain `go build` still produces pure binaries with nothing installed. They
+refuse a HEIC, but say which build is needed rather than "unknown format" —
+which is how this bug was readable in the log at all.
 
 ### A display rendition, because the viewer cannot open a HEIC
 
@@ -152,8 +167,12 @@ gets a smaller image rather than an error.
   alternative, a format set that varies by build tag, hides the
   misconfiguration instead of surfacing it, and the shipped indexer is the
   vips one.
-- **Docker is needed to build the indexer**, not the server;
-  `build-pi --server-only` skips it.
+- **Docker is needed to build either binary.** Both are cgo, so both come out
+  of the matched container; `--server-only` picks an export stage, not a
+  host build.
+- **The server has a runtime dependency now**: `libvips42t64`, the same one
+  the indexer already needed. Nothing new to install on the box, but the
+  server is no longer a file you can copy onto a bare system.
 - `.avif` is decodable by the same loader but stays out, along with
   `.tif`/`.bmp` and raw formats.
 
@@ -165,3 +184,10 @@ tagged build can be asked. `internal/thumb/heic_vips_test.go` is
 ladder; it runs inside the container, where the whole suite also passes under
 `-tags vips` on arm64. The pure-Go `CGO_ENABLED=0 GOOS=linux GOARCH=arm64`
 build of `./cmd/...` still passes untouched.
+
+The hole this ADR first had was not visible in any of that, because every
+test exercised the renderer and none exercised **who calls it**. What found it
+was 8 HEICs in a folder and the Scan button. `build.test.mjs` now asserts that
+`MEMRIES_VIPS=1` tags the server too, which is the cheap half of the lesson;
+the expensive half is that "the server decodes nothing" was a claim about
+`cmd/server`, and `cmd/server` was never read for it.
