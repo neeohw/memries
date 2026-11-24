@@ -28,6 +28,19 @@ const MaxExcludeLength = 512
 // Returns nil when there is nothing to exclude, so the backend keeps its
 // cheaper path instead of calling a filter that always says no.
 func CompileExcludes(patterns []string) (storage.SkipDirFunc, error) {
+	match, err := ExcludeMatcher(patterns)
+	if err != nil || match == nil {
+		return nil, err
+	}
+	return func(dir string) bool { return match(dir) != "" }, nil
+}
+
+// ExcludeMatcher is the same test, reporting the pattern that matched rather
+// than a bool. The dry run names it, so a folder it leaves out is explained
+// by the rule responsible instead of being silently absent (ADR 0027).
+//
+// Returns nil when there is nothing to exclude, like CompileExcludes.
+func ExcludeMatcher(patterns []string) (func(dir string) string, error) {
 	cleaned, err := ValidateExcludes(patterns)
 	if err != nil {
 		return nil, err
@@ -43,17 +56,17 @@ func CompileExcludes(patterns []string) (storage.SkipDirFunc, error) {
 		}
 		res = append(res, re)
 	}
-	return func(dir string) bool {
+	return func(dir string) string {
 		dir = strings.Trim(dir, "/")
 		if dir == "" {
-			return false
+			return ""
 		}
 		for _, re := range res {
 			if re.MatchString(dir) {
-				return true
+				return re.String()
 			}
 		}
-		return false
+		return ""
 	}, nil
 }
 

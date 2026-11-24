@@ -16,7 +16,8 @@ import (
 )
 
 type fakeSources struct {
-	created []sources.Input
+	created   []sources.Input
+	previewed []string
 }
 
 func (f *fakeSources) List(context.Context) ([]sources.View, error) {
@@ -37,6 +38,14 @@ func (f *fakeSources) Update(context.Context, string, sources.Input) (sources.Vi
 
 func (f *fakeSources) Remove(context.Context, string) (sources.View, error) {
 	return sources.View{}, nil
+}
+
+func (f *fakeSources) Preview(_ context.Context, id string, in sources.Input) (sources.Preview, error) {
+	f.previewed = append(f.previewed, id)
+	if in.Location == "" {
+		return sources.Preview{}, sources.ErrInvalid
+	}
+	return sources.Preview{Name: "Photos", Location: in.Location, Photos: 3, Folders: 2}, nil
 }
 
 // There is one library, so a rescan takes no owner: the fake just counts.
@@ -111,4 +120,64 @@ func TestCreateSourceDefaultsOwnerAndRescans(t *testing.T) {
 
 func withUserEmail(r *http.Request, email string) context.Context {
 	return auth.WithUser(r.Context(), &auth.SessionUser{Key: "k", Email: email})
+}
+
+// A dry run must not start an index: the whole point is that pressing it has
+// no consequences (ADR 0027).
+func TestPreviewSourceReportsWithoutScanning(t *testing.T) {
+	src, rescan := &fakeSources{}, &fakeRescan{}
+	r := sourcesRouter(src, rescan)
+
+	req := withUser(httptest.NewRequest(http.MethodPost, "/admin/sources/preview",
+		bytes.NewBufferString(`{"type":"local","location":"/data/photos"}`)), "admin@example.com")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var p sources.Preview
+	if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Photos != 3 || p.Folders != 2 {
+		t.Errorf("preview = %+v", p)
+	}
+	if rescan.runs != 0 {
+		t.Errorf("a dry run queued %d index runs", rescan.runs)
+	}
+	if len(src.previewed) != 1 || src.previewed[0] != "" {
+		t.Errorf("previewed = %v, want one empty id for a new folder", src.previewed)
+	}
+
+	// Editing an existing folder hands the id through, so a blank password
+	// field can fall back to the stored one.
+	req = withUser(httptest.NewRequest(http.MethodPost, "/admin/sources/7/preview",
+		bytes.NewBufferString(`{"type":"local","location":"/data/photos"}`)), "admin@example.com")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	if len(src.previewed) != 2 || src.previewed[1] != "7" {
+		t.Errorf("previewed = %v", src.previewed)
+	}
+}
+
+func TestPreviewSourceRejectsABadForm(t *testing.T) {
+	r := sourcesRouter(&fakeSources{}, &fakeRescan{})
+	req := withUser(httptest.NewRequest(http.MethodPost, "/admin/sources/preview",
+		bytes.NewBufferString(`{"type":"local"}`)), "admin@example.com")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestPreviewSourceNeedsAnAdmin(t *testing.T) {
+	r := sourcesRouter(&fakeSources{}, &fakeRescan{})
+	req := httptest.NewRequest(http.MethodPost, "/admin/sources/preview",
+		bytes.NewBufferString(`{"type":"local","location":"/data/photos"}`))
+	req = req.WithContext(withUserEmail(req, "reader@example.com"))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", w.Code)
+	}
 }

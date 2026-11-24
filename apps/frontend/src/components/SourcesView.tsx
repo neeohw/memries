@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useI18n } from '../i18n/I18nProvider';
-import type { Source, SourceInput, SourceType } from '../models/source';
+import type { FolderPreview as Preview, Source, SourceInput, SourceType } from '../models/source';
 import { ExcludeEditor } from './ExcludeEditor';
-import { DriveIcon, PlusIcon, SyncIcon } from './icons';
+import { FolderPreview } from './FolderPreview';
+import { DriveIcon, FoldersIcon, PlusIcon, SyncIcon } from './icons';
 import { PageHeader } from './PageHeader';
 import { ScanProgress } from './ScanProgress';
 import type { IndexStatus } from '../lib/indexStatus';
@@ -70,6 +71,7 @@ export function SourcesView({
   onUpdate,
   onDelete,
   onScan,
+  onPreview,
   indexStatus,
 }: {
   sources: Source[];
@@ -79,6 +81,8 @@ export function SourcesView({
   onUpdate: (id: string, input: SourceInput) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
   onScan: (id: string) => Promise<unknown>;
+  /** Dry run of an unsaved form; id is null for a folder being added (ADR 0027). */
+  onPreview: (id: string | null, input: SourceInput) => Promise<Preview>;
   /** Live progress for a scan in flight (ADR 0023). */
   indexStatus?: IndexStatus;
 }) {
@@ -115,6 +119,7 @@ export function SourcesView({
               await onCreate(input);
               setEditing(null);
             }}
+            onPreview={(input) => onPreview(null, input)}
             onCancel={() => setEditing(null)}
           />
         )}
@@ -146,6 +151,7 @@ export function SourcesView({
                     await onUpdate(source.id, input);
                     setEditing(null);
                   }}
+                  onPreview={(input) => onPreview(source.id, input)}
                   onCancel={() => setEditing(null)}
                 />
               </li>
@@ -277,16 +283,20 @@ function SourceForm({
   initial,
   existing,
   onSubmit,
+  onPreview,
   onCancel,
 }: {
   initial: Draft;
   existing?: Source;
   onSubmit: (input: SourceInput) => Promise<void>;
+  onPreview: (input: SourceInput) => Promise<Preview>;
   onCancel: () => void;
 }) {
   const { t: tr } = useI18n();
   const [draft, setDraft] = useState<Draft>(initial);
   const [pending, setPending] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const locationRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
@@ -300,19 +310,38 @@ function SourceForm({
 
   const set = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
 
+  const input = (): SourceInput => ({
+    ...draft,
+    password: remote && draft.password ? draft.password : undefined,
+  });
+
   const submit = async () => {
     if (!draft.location.trim() || pending) return;
     setPending(true);
     setError(null);
     try {
-      await onSubmit({
-        ...draft,
-        password: remote && draft.password ? draft.password : undefined,
-      });
+      await onSubmit(input());
     } catch (err) {
       setError(errorText(err));
     } finally {
       setPending(false);
+    }
+  };
+
+  // The dry run answers "is this the right folder" before the folder is
+  // connected, so a wrong path or an over-eager exclude is a correction here
+  // rather than a scan to undo (ADR 0027).
+  const runPreview = async () => {
+    if (!draft.location.trim() || previewing) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      setPreview(await onPreview(input()));
+    } catch (err) {
+      setPreview(null);
+      setError(errorText(err));
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -422,13 +451,26 @@ function SourceForm({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      {preview && <FolderPreview preview={preview} />}
+
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="submit"
           disabled={!draft.location.trim() || pending}
           className="min-h-10 rounded-full bg-plum px-4 text-sm font-medium text-cream disabled:opacity-40"
         >
           {pending ? tr('folders.checking') : existing ? tr('folders.save') : tr('folders.connect')}
+        </button>
+        <button
+          type="button"
+          data-dry-run
+          onClick={() => void runPreview()}
+          disabled={!draft.location.trim() || previewing || pending}
+          title={tr('folders.dryRunHint')}
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-cream px-4 text-sm font-medium text-plum disabled:opacity-40"
+        >
+          <FoldersIcon className="h-4 w-4" />
+          {previewing ? tr('folders.dryRunning') : tr('folders.dryRun')}
         </button>
         <button
           type="button"

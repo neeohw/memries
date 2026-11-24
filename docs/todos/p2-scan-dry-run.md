@@ -18,20 +18,31 @@ the destructive ones:
 - A first scan of a large tree, where the file count alone would say whether
   the right folder was picked.
 
+## What already landed
+
+The form half of this: a **Preview** button beside **Connect folder** walks
+the typed path and shows the folder tree with a photo count per folder,
+excluded folders named with the pattern that skips them, writing nothing
+([0027](../adr/0027-folder-dry-run.md)). That answers "did I pick the right
+folder" and "is that exclude too greedy" before anything is saved.
+
+What is left is the part that needs the catalog to compare against — below.
+
 ## Wanted
 
-A dry run that walks and reports but writes nothing, and an overview of what
-a real scan would change:
+A dry run of a **saved** Source, diffed against the catalog, so **Scan now**
+becomes "here is what will happen, go ahead" rather than a button with
+consequences you discover afterwards:
 
-- files that would be **added**
 - photos that would **leave** the library, and which exclude pattern or
   missing folder accounts for each — this is the part worth confirming
 - files that would be **re-read** because they changed in place
 - files that would be **skipped** as unchanged
 - files that could not be read, with the reason
 
-Then **Scan now** becomes "here is what will happen, go ahead" rather than a
-button with consequences you discover afterwards.
+The added count 0027 already reports; what it cannot know is which of those
+files the catalog already holds, because it runs on a form rather than on a
+saved Source.
 
 ## Seams
 
@@ -45,7 +56,10 @@ button with consequences you discover afterwards.
 - `apps/backend/internal/sources/` — exclude matching, so a removal can name
   the pattern responsible.
 - `apps/frontend/src/components/ScanProgress.tsx` sits where the summary
-  would go.
+  would go. `FolderPreview.tsx` already renders a tree with per-folder counts
+  and can take more columns.
+- `apps/backend/internal/sources/preview.go` is the walk-and-report half,
+  already separated from the write.
 
 ## Notes
 

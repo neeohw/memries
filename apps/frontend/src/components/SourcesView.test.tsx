@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Source } from '../models/source';
+import type { FolderPreview, Source } from '../models/source';
 import { SourcesView } from './SourcesView';
 
 const nas: Source = {
@@ -14,6 +14,17 @@ const nas: Source = {
   updatedAt: '2026-09-22T10:00:00Z',
 };
 
+const emptyPreview: FolderPreview = {
+  name: 'Photos',
+  location: '/data/photos',
+  photos: 0,
+  skipped: 0,
+  others: 0,
+  folders: 0,
+  truncated: false,
+  tree: null,
+};
+
 function renderView(overrides: Partial<Parameters<typeof SourcesView>[0]> = {}) {
   const props = {
     sources: [nas],
@@ -23,6 +34,7 @@ function renderView(overrides: Partial<Parameters<typeof SourcesView>[0]> = {}) 
     onUpdate: vi.fn(async () => {}),
     onDelete: vi.fn(async () => {}),
     onScan: vi.fn(async () => {}),
+    onPreview: vi.fn(async () => emptyPreview),
     ...overrides,
   };
   render(<SourcesView {...props} />);
@@ -103,5 +115,67 @@ describe('SourcesView', () => {
       '7',
       expect.objectContaining({ password: undefined }),
     );
+  });
+  // The dry run is the step before connecting: it reports, and nothing else
+  // happens (ADR 0027).
+  it('previews a folder without connecting it', async () => {
+    const props = renderView({
+      sources: [],
+      onPreview: vi.fn(async () => ({
+        ...emptyPreview,
+        photos: 42,
+        folders: 2,
+        tree: {
+          name: 'photos',
+          path: '',
+          photos: 0,
+          total: 42,
+          children: [{ name: '2019', path: '2019', photos: 42, total: 42, children: [], more: 0 }],
+          more: 0,
+        },
+      })),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Folder path/ }), {
+      target: { value: '/data/photos' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+
+    expect(await screen.findByRole('region', { name: 'What a scan would add' })).toHaveTextContent(
+      '42',
+    );
+    expect(props.onPreview).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ location: '/data/photos' }),
+    );
+    expect(props.onCreate).not.toHaveBeenCalled();
+  });
+
+  it('previews the folder being edited, so the stored password is reused', async () => {
+    const props = renderView();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    await waitFor(() =>
+      expect(props.onPreview).toHaveBeenCalledWith(
+        '7',
+        expect.objectContaining({ password: undefined }),
+      ),
+    );
+    expect(props.onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('shows the server reason when a dry run cannot read the folder', async () => {
+    renderView({
+      sources: [],
+      onPreview: vi.fn(async () => {
+        throw new Error('invalid source: /etc is outside the allowed folders');
+      }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Folder path/ }), {
+      target: { value: '/etc' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('outside the allowed folders');
   });
 });

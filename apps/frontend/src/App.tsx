@@ -29,6 +29,7 @@ import {
   useCreateSource,
   useDeleteSource,
   useMe,
+  usePreviewSource,
   useScanSource,
   useSources,
   useUpdateSource,
@@ -167,6 +168,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   const updateSourceMutation = useUpdateSource();
   const deleteSourceMutation = useDeleteSource();
   const scanSourceMutation = useScanSource();
+  const previewSourceMutation = usePreviewSource();
 
   const albumsQuery = useAlbums();
   const favoriteMutation = useToggleFavorite();
@@ -316,6 +318,7 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
                   onUpdate={(id, input) => updateSourceMutation.mutateAsync({ id, input })}
                   onDelete={(id) => deleteSourceMutation.mutateAsync(id)}
                   onScan={(id) => scanSourceMutation.mutateAsync(id)}
+                  onPreview={(id, input) => previewSourceMutation.mutateAsync({ id, input })}
                   indexStatus={indexStatus}
                 />
               )}

@@ -50,6 +50,9 @@ func (l *locatedSources) Update(context.Context, string, sources.Input) (sources
 func (l *locatedSources) Remove(context.Context, string) (sources.View, error) {
 	return sources.View{}, nil
 }
+func (l *locatedSources) Preview(context.Context, string, sources.Input) (sources.Preview, error) {
+	return sources.Preview{}, nil
+}
 
 func settingsAPI(t *testing.T, allowed string, views ...sources.View) (*API, *fakeSettings) {
 	t.Helper()

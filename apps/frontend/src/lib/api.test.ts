@@ -5,6 +5,7 @@ import {
   flattenPhotoPages,
   isUnauthorized,
   mapAlbum,
+  mapFolderPreview,
   mapPhoto,
   signIn,
   signOut,
@@ -83,6 +84,36 @@ describe('api mapping', () => {
     const b = { id: 'b' } as Photo;
     const pages = flattenPhotoPages([{ photos: [a, b] }, { photos: [b, { id: 'c' } as Photo] }]);
     expect(pages.map((photo) => photo.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  // Go leaves a zero count and an empty slice out of its JSON, so every
+  // field here arrives absent on a folder with nothing in it.
+  it('fills in a dry run that the server sent sparsely', () => {
+    const preview = mapFolderPreview({
+      location: '/data/photos',
+      photos: 2,
+      tree: { name: 'photos', total: 2, children: [{ name: '2019', path: '2019', photos: 2 }] },
+    });
+    expect(preview).toMatchObject({
+      name: '',
+      location: '/data/photos',
+      photos: 2,
+      skipped: 0,
+      others: 0,
+      folders: 0,
+      truncated: false,
+    });
+    expect(preview.tree?.path).toBe('');
+    expect(preview.tree?.children[0]).toEqual({
+      name: '2019',
+      path: '2019',
+      photos: 2,
+      total: 0,
+      excluded: undefined,
+      children: [],
+      more: 0,
+    });
+    expect(mapFolderPreview({}).tree).toBeNull();
   });
 
   it('recognises only its own unauthorized error', () => {

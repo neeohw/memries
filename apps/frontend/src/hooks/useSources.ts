@@ -5,6 +5,7 @@ import {
   fetchMe,
   fetchSources,
   isUnauthorized,
+  previewSource,
   scanSource,
   updateSource,
 } from '../lib/api';
@@ -62,4 +63,17 @@ export function useDeleteSource() {
 
 export function useScanSource() {
   return useSourceMutation((id: string) => scanSource(id));
+}
+
+/**
+ * A dry run (ADR 0027). Deliberately not a useSourceMutation: it writes
+ * nothing, so invalidating the source list and the index status would make
+ * the app refetch over a request that changed neither. A mutation only
+ * because it POSTs the unsaved form.
+ */
+export function usePreviewSource() {
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string | null; input: SourceInput }) =>
+      previewSource(id, input),
+  });
 }

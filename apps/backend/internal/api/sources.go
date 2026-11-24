@@ -21,6 +21,9 @@ type SourceAdmin interface {
 	Create(ctx context.Context, in sources.Input) (sources.View, error)
 	Update(ctx context.Context, id string, in sources.Input) (sources.View, error)
 	Remove(ctx context.Context, id string) (sources.View, error)
+	// Preview is the dry run: what a scan of this form's folder would find,
+	// writing nothing. id is "" for a folder being added (ADR 0027).
+	Preview(ctx context.Context, id string, in sources.Input) (sources.Preview, error)
 }
 
 // Rescanner queues an Index run for an Owner whose Sources changed.
@@ -35,6 +38,10 @@ func (a *API) adminRoutes(r chi.Router) {
 	r.Put("/sources/{id}", a.updateSource)
 	r.Delete("/sources/{id}", a.deleteSource)
 	r.Post("/sources/{id}/scan", a.scanSource)
+	// Two routes, one handler: a dry run of a folder being added has no id,
+	// and one of a folder being edited needs it to recover a stored password.
+	r.Post("/sources/preview", a.previewSource)
+	r.Post("/sources/{id}/preview", a.previewSource)
 	r.Get("/settings", a.settings)
 	r.Put("/settings/thumbnails", a.setThumbnailRoot)
 }
@@ -123,6 +130,22 @@ func (a *API) scanSource(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.Error(w, "not found", http.StatusNotFound)
+}
+
+// previewSource answers what a scan would find. It is a POST because it
+// carries the unsaved form, not because it changes anything: nothing is
+// written, so it is safe to repeat.
+func (a *API) previewSource(w http.ResponseWriter, r *http.Request) {
+	in, ok := readSourceInput(w, r)
+	if !ok {
+		return
+	}
+	p, err := a.Sources.Preview(r.Context(), chi.URLParam(r, "id"), in)
+	if err != nil {
+		writeSourceError(w, err)
+		return
+	}
+	writeJSON(w, p)
 }
 
 func (a *API) rescan(ctx context.Context, v sources.View) {

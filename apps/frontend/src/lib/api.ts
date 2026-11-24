@@ -2,7 +2,14 @@ import { thumbUrl } from './photoSrc';
 import type { HistogramBucket } from './scrubberScale';
 import { wallClockFromExifValue } from './takenAt';
 import type { Album, Photo } from '../models/photo';
-import type { Me, Source, SourceInput, SourceType } from '../models/source';
+import type {
+  FolderPreview,
+  FolderPreviewNode,
+  Me,
+  Source,
+  SourceInput,
+  SourceType,
+} from '../models/source';
 import type { IndexStatus } from './indexStatus';
 
 export type ApiPhoto = {
@@ -78,6 +85,52 @@ export function mapSource(raw: ApiSource): Source {
     hasPassword: raw.has_password === true,
     excludes: raw.excludes ?? [],
     updatedAt: raw.updated_at,
+  };
+}
+
+type ApiPreviewNode = {
+  name?: string;
+  path?: string;
+  photos?: number;
+  total?: number;
+  excluded?: string;
+  children?: ApiPreviewNode[] | null;
+  more?: number;
+};
+
+export type ApiFolderPreview = {
+  name?: string;
+  location?: string;
+  photos?: number;
+  skipped?: number;
+  others?: number;
+  folders?: number;
+  truncated?: boolean;
+  tree?: ApiPreviewNode | null;
+};
+
+function mapPreviewNode(raw: ApiPreviewNode): FolderPreviewNode {
+  return {
+    name: raw.name ?? '',
+    path: raw.path ?? '',
+    photos: raw.photos ?? 0,
+    total: raw.total ?? 0,
+    excluded: raw.excluded || undefined,
+    children: (raw.children ?? []).map(mapPreviewNode),
+    more: raw.more ?? 0,
+  };
+}
+
+export function mapFolderPreview(raw: ApiFolderPreview): FolderPreview {
+  return {
+    name: raw.name ?? '',
+    location: raw.location ?? '',
+    photos: raw.photos ?? 0,
+    skipped: raw.skipped ?? 0,
+    others: raw.others ?? 0,
+    folders: raw.folders ?? 0,
+    truncated: raw.truncated === true,
+    tree: raw.tree ? mapPreviewNode(raw.tree) : null,
   };
 }
 
@@ -405,6 +458,25 @@ export async function deleteSource(id: string): Promise<void> {
 
 export async function scanSource(id: string): Promise<void> {
   await apiFetch(`/api/admin/sources/${encodeURIComponent(id)}/scan`, { method: 'POST' });
+}
+
+/**
+ * Dry run: what a scan of this unsaved form would find (ADR 0027).
+ *
+ * id is the folder being edited, so a blank password field can fall back to
+ * the stored one, or null for a folder being added. A POST because it carries
+ * the form, not because it changes anything.
+ */
+export async function previewSource(id: string | null, input: SourceInput): Promise<FolderPreview> {
+  const path = id
+    ? `/api/admin/sources/${encodeURIComponent(id)}/preview`
+    : '/api/admin/sources/preview';
+  const res = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(sourceBody(input)),
+  });
+  return mapFolderPreview((await res.json()) as ApiFolderPreview);
 }
 
 /** Server-wide settings an admin can change (ADR 0022). */
