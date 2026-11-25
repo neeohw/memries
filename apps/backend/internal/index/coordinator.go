@@ -196,7 +196,7 @@ func (c *Coordinator) Status(ctx context.Context) (Status, error) {
 				return Status{}, err
 			}
 		}
-		if run.Prefix != prefix || c.shouldRescan(ctx, scopes) {
+		if run.Prefix != prefix || c.shouldRescan(ctx, scopes, run) {
 			return idle, nil
 		}
 		s := statusFromRun(run, prefix)
@@ -208,13 +208,39 @@ func (c *Coordinator) Status(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	if n > 0 && !c.shouldRescan(ctx, scopes) {
+	// No run row: nothing says how many files the library was built from, so
+	// the growth probe has no baseline and is skipped (see shouldRescan).
+	if n > 0 && !c.shouldRescan(ctx, scopes, nil) {
 		return Status{Status: StatusComplete, Prefix: prefix, Sources: len(scopes)}, nil
 	}
 	return idle, nil
 }
 
-func (c *Coordinator) shouldRescan(ctx context.Context, scopes []Scope) bool {
+// shouldRescan reports whether the library on disk has moved out from under
+// the last run, which is what turns a `complete` row back into `not_started`
+// and makes the splash start a run by itself (ADR 0004).
+//
+// It asks two questions. Have recent originals gone? And has a folder grown?
+//
+// The second one used to compare the files on disk against the number of rows
+// in `photos`, and those two counts are not supposed to be equal. Dedup is a
+// unique index on `hash` alone (ADR 0020), so the same bytes in two folders
+// are one row; a file that cannot be imported is no row at all; a soft-deleted
+// row whose file is still there is another. Every one of those makes disk
+// exceed rows *permanently*, so a library of 11,000 photos with any duplicates
+// in it reported `not_started` on every single status read and reindexed
+// itself on every page load.
+//
+// The baseline is now the file count the last run actually walked, which is
+// the same thing being counted — duplicates, failures and all. A run that
+// walked 11,008 files is not out of date because the catalog holds 11,000
+// rows; it is out of date when the 11,008 becomes 11,009.
+//
+// `run` is the last recorded run, or nil when there is none. Without one there
+// is no baseline and the growth probe is skipped rather than guessed at: a
+// library indexed by the CLI reports what it is, instead of rescanning forever
+// because of its own duplicates.
+func (c *Coordinator) shouldRescan(ctx context.Context, scopes []Scope, run *db.IndexRun) bool {
 	n, err := c.counter.CountPhotos(ctx)
 	if err != nil {
 		return false
@@ -225,23 +251,35 @@ func (c *Coordinator) shouldRescan(ctx context.Context, scopes []Scope) bool {
 			return true
 		}
 	}
-	if c.media != nil {
-		disk := 0
-		for _, s := range scopes {
-			if s.Remote {
-				continue
-			}
-			k, err := c.media.CountMediaPrefix(ctx, s.Prefix)
-			if err != nil {
-				return false
-			}
-			disk += k
-		}
-		if int64(disk) > n {
-			return true
-		}
+	return c.libraryGrew(ctx, scopes, run)
+}
+
+// libraryGrew compares the media files on disk now against the number the last
+// run walked.
+//
+// It compares like with like or not at all. A remote Source is deliberately
+// not listed on every status read — that is a full network listing per page
+// load — but the last run *did* walk it and counted it in `Discovered`, so
+// with one in the library the two numbers are not comparable and the probe
+// stands down. Growth in a remote Source was never detected here anyway; the
+// Sync button is how a reader asks for that.
+func (c *Coordinator) libraryGrew(ctx context.Context, scopes []Scope, run *db.IndexRun) bool {
+	if c.media == nil || run == nil {
+		return false
 	}
-	return false
+	disk := 0
+	for _, s := range scopes {
+		if s.Remote {
+			return false
+		}
+		k, err := c.media.CountMediaPrefix(ctx, s.Prefix)
+		if err != nil {
+			// An unreadable folder is not a grown one.
+			return false
+		}
+		disk += k
+	}
+	return disk > run.Discovered
 }
 
 func (c *Coordinator) Start(ctx context.Context) (Status, error) {

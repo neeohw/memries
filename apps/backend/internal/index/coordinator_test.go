@@ -187,14 +187,85 @@ func TestCoordinatorReconcileInterruptedRun(t *testing.T) {
 	}
 }
 
-func TestCoordinatorStatusNotStartedWhenDiskHasMoreFiles(t *testing.T) {
+func TestCoordinatorStatusTrustsAnIndexedLibraryWithNoRunRow(t *testing.T) {
+	// 4 rows against 3,165 files on disk, and no run to compare against. The
+	// gap is not evidence of anything: dedup makes identical files one row
+	// (ADR 0020), a file that cannot be imported is no row at all, and a
+	// library indexed by the CLI has no run row to hold a baseline. Reading
+	// the gap as "the folder grew" is what made an 11,000-photo library
+	// reindex itself on every page load (ADR 0004).
 	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{n: 4}, memMediaCounter{n: 3165}, nil, nil).WithScopes(fixedScopes{{Prefix: "src-1"}})
+	s, err := c.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Status != StatusComplete {
+		t.Fatalf("got %q, want %q", s.Status, StatusComplete)
+	}
+}
+
+// completeRun is a finished run over `prefix` that walked `discovered` files.
+func completeRun(t *testing.T, prefix string, discovered int) RunStore {
+	t.Helper()
+	store := newMemStore()
+	now := time.Now().UTC()
+	if err := store.UpsertIndexRun(context.Background(), &db.IndexRun{
+		Key:        db.IndexRunKey,
+		Prefix:     prefix,
+		Status:     StatusComplete,
+		Discovered: discovered,
+		Processed:  discovered,
+		Indexed:    discovered,
+		FinishedAt: &now,
+		UpdatedAt:  now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func TestCoordinatorStatusIgnoresTheGapBetweenFilesAndRows(t *testing.T) {
+	// The run walked all 3,165 files; 11 of them were duplicates or failures,
+	// so the catalog holds 3,154 rows. Nothing has changed on disk, and the
+	// baseline is the file count rather than the row count, so this is
+	// complete — the regression this whole change exists for.
+	c := NewCoordinator(context.Background(), &fakeRunner{}, completeRun(t, "src-1", 3165), memCounter{n: 3154}, memMediaCounter{n: 3165}, nil, nil).
+		WithScopes(fixedScopes{{Prefix: "src-1"}})
+	s, err := c.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Status != StatusComplete {
+		t.Fatalf("got %q, want %q", s.Status, StatusComplete)
+	}
+}
+
+func TestCoordinatorStatusNotStartedWhenOneMoreFileAppears(t *testing.T) {
+	// One file more than the last run walked is the signal that still works.
+	c := NewCoordinator(context.Background(), &fakeRunner{}, completeRun(t, "src-1", 3165), memCounter{n: 3154}, memMediaCounter{n: 3166}, nil, nil).
+		WithScopes(fixedScopes{{Prefix: "src-1"}})
 	s, err := c.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.Status != StatusNotStarted {
 		t.Fatalf("got %q, want %q", s.Status, StatusNotStarted)
+	}
+}
+
+func TestCoordinatorStatusStandsDownOnARemoteSource(t *testing.T) {
+	// A remote Source is not listed on every status read — that is a full
+	// network listing per page load — but the last run did walk it and counted
+	// it in Discovered. The two numbers are therefore not comparable, so the
+	// growth probe says nothing rather than guessing.
+	c := NewCoordinator(context.Background(), &fakeRunner{}, completeRun(t, "src-1,src-2", 5000), memCounter{n: 3154}, memMediaCounter{n: 3165}, nil, nil).
+		WithScopes(fixedScopes{{Prefix: "src-1"}, {Prefix: "src-2", Remote: true}})
+	s, err := c.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Status != StatusComplete {
+		t.Fatalf("got %q, want %q", s.Status, StatusComplete)
 	}
 }
 
