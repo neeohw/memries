@@ -26,7 +26,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0023](docs/adr/0023-scan-progress.md) | Live scan progress on Folders: one panel per library, indeterminate until discovery counts, live region |
 | [0024](docs/adr/0024-admin-area.md) | Administration sits behind the admin gear (one page, Folders); the nav bar is browsing only |
 | [0025](docs/adr/0025-heic-and-the-cgo-build.md) | HEIC via cgo `-tags vips` builds of **both** binaries (the server indexes in-process) made in a debian:trixie container; 2048 JPEG rendition for originals browsers cannot show |
-| [0026](docs/adr/0026-heic-capture-time-and-orientation.md) | HEIC EXIF read from the `Exif` item; offset-time tags read from raw IFDs; HEIF rotation left to the decoder |
+| [0026](docs/adr/0026-heic-capture-time-and-orientation.md) | HEIC EXIF read from the `Exif` item; offset-time tags read from raw IFDs; HEIF rotation left to the decoder; every vips thumbnail call passes `no_rotate` and `upright` clears the angle, so no rung is turned twice |
 | [0027](docs/adr/0027-folder-dry-run.md) | Dry run on the folder form: a folder tree with photo counts, excluded folders named, writing nothing |
 | [0028](docs/adr/0028-yaml-configuration.md) | One `memries.yaml` configures the server, secrets included; no environment layer; the thumbnail folder stops being a runtime setting |
 | [0029](docs/adr/0029-video.md) | Video indexed via ffmpeg (metadata + poster frame into the existing ladder); originals streamed with byte ranges; nothing transcoded |
@@ -76,7 +76,7 @@ flowchart LR
 - **Granularity** — `year` / `month` / `week` / `day`; buckets come from `taken_at_local`, week as ISO year-week ([0014](docs/adr/0014-pluggable-sql-store.md)). Memories buckets in the SPA, not `/api/timeline` ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md)). Year is the one level fed by `/api/photos/summary` instead of the paged feed ([0031](docs/adr/0031-year-view-is-a-summary.md)).
 - **Storage** — interface; `local` and read-only `webdav` implemented; `sources.Registry` routes `<source id>/<path>` keys to them; `s3` factory returns “phase 3”.
 - **Source** — admin-managed folder (`sources` table) feeding one Owner's library; password sealed with a key derived from `MEMRIES_SESSION_KEY` ([0013](docs/adr/0013-admin-managed-sources.md)).
-- **Thumb** — JPEG cache under `MEMRIES_CACHE_ROOT`, paths `<key[:2]>/<key>/{s,m,l}.jpg` for 256 / 512 / 1024. Compact grids use 256 when the viewport is ≥1280px, else 512 ([docs/adr/0007-viewport-forced-compact-thumbs.md](docs/adr/0007-viewport-forced-compact-thumbs.md)).
+- **Thumb** — JPEG cache under `MEMRIES_CACHE_ROOT`, paths `<key[:2]>/<key>/{s,m,l}.jpg` for 256 / 512 / 1024 (`d.jpg` for the 2048 display rendition). Every rung is written upright and EXIF-stripped; a wrong one is only re-rendered if its file is missing, so repairing one means deleting it ([0026](docs/adr/0026-heic-capture-time-and-orientation.md)). Compact grids use 256 when the viewport is ≥1280px, else 512 ([docs/adr/0007-viewport-forced-compact-thumbs.md](docs/adr/0007-viewport-forced-compact-thumbs.md)).
 - **Album** — named owner-scoped set of Photos (`albums` + `album_photos`); any library Photo may be in any Album. Domain language: [CONTEXT.md](CONTEXT.md).
 - **Index run** — one persisted job, keyed `library`; walks every Source ([docs/adr/0004-cursor-paginated-photos.md](docs/adr/0004-cursor-paginated-photos.md)).
 - **Session** — cookie `memries`, 30 days, HttpOnly, Lax.

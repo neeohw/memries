@@ -43,10 +43,17 @@ static int thumb_from_buffer(const void *buf, size_t len, int size, VipsImage **
 		NULL);
 }
 
+// no_rotate here for the same reason as above, and it is not optional: the
+// input is a rung this package has already uprighted, but the EXIF angle rides
+// along on the image through every operation, so vips_thumbnail_image would
+// autorotate an upright photo a second time. That turned the 512 and 256 rungs
+// of a portrait photo on their side while the 1024 above them was correct —
+// the two the timeline shows at month and year level.
 static int thumb_from_image(VipsImage *in, int size, VipsImage **out) {
 	return vips_thumbnail_image(in, out, size,
 		"height", size,
 		"size", VIPS_SIZE_DOWN,
+		"no_rotate", TRUE,
 		NULL);
 }
 
@@ -70,6 +77,14 @@ static int do_flip(VipsImage *in, int horizontal, VipsImage **out) {
 static int do_sharpen(VipsImage *in, VipsImage **out) {
 	// Mild unsharp mask, standing in for imaging.Sharpen(img, 0.5).
 	return vips_sharpen(in, out, "sigma", 0.5, NULL);
+}
+
+// drop_angle clears the orientation libvips read from the file, so an image
+// this package has finished turning carries no pending rotation for the next
+// operation to apply. Belt and braces beside no_rotate: nothing downstream
+// has to remember to ask.
+static void drop_angle(VipsImage *in) {
+	vips_autorot_remove_angle(in);
 }
 
 static int copy_to_memory(VipsImage *in, VipsImage **out) {
@@ -261,7 +276,10 @@ func upright(raw *vipsImage, orientation int) (*vipsImage, error) {
 		return nil, err
 	}
 	if rotated == nil {
-		return &flat, nil // orientation 1, or absent: already upright
+		// Orientation 1, absent, or a HEIF the decoder already uprighted. The
+		// pixels are final either way, so the angle goes with them.
+		C.drop_angle(flat.p)
+		return &flat, nil
 	}
 	defer flat.free()
 	defer rotated.free()
@@ -269,6 +287,7 @@ func upright(raw *vipsImage, orientation int) (*vipsImage, error) {
 	if C.copy_to_memory(rotated.p, &out.p) != 0 {
 		return nil, fail("copy_memory")
 	}
+	C.drop_angle(out.p)
 	return &out, nil
 }
 

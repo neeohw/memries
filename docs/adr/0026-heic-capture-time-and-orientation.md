@@ -1,7 +1,7 @@
 # ADR 0026 — Reading a HEIC's capture time, and not rotating it twice
 
 - Status: accepted
-- Date: 2026-11-22
+- Date: 2026-11-22 (revised 2026-11-25)
 
 ## Context
 
@@ -85,6 +85,34 @@ they continue to agree.
 to be applied. The renderer is the single place that decides rotation, and
 that stays true as long as nothing else reads the field — nothing does today.
 
+### The EXIF angle rides along on the image, so every rung must refuse it
+
+The fix above was half of it. The ladder derives each rung below the top one
+from the rung above (`render`'s `chained`, for any source at least twice the
+largest size), and `vips_thumbnail_image` was called without `no_rotate` —
+because its input had already been uprighted by this package, so there looked
+to be nothing left to apply.
+
+There was. libvips reads the file's orientation into `VIPS_META_ORIENTATION`,
+and that field survives `vips_rot` and `vips_image_copy_memory` like any other
+metadata. So the lower rungs were autorotated a second time: **the 1024 was
+correct and the 512 and 256 came out sideways** — which are the two the
+timeline shows at month and year level, while week level reads the 1024 and
+looked fine. Measured on a 2560x1440 fixture with orientation 8: 1024 portrait,
+512 `512x288`, 256 `256x144`. A real library reported it as "a lot of
+thumbnails turned 90 degrees"; the matching row said portrait, because
+`Result.Width/Height` come from the file header plus `swapsAxes` and are the
+transpose whether or not a pixel was turned.
+
+So `thumb_from_image` passes `no_rotate` too, and `upright` now clears the
+angle with `vips_autorot_remove_angle` before returning. Either alone fixes
+this instance; both together mean an image that has left `upright` carries no
+pending rotation at all, and nothing downstream has to remember to ask.
+
+This reaches HEIF as well, for a different reason: there the angle is left on
+the image *and* deliberately not applied, so a source large enough to chain
+had its lower rungs turned by metadata the decoder had already honoured.
+
 ## Consequences
 
 - HEIC photos sort by when they were taken. Existing rows were indexed before
@@ -98,5 +126,17 @@ that stays true as long as nothing else reads the field — nothing does today.
   real HEIC from `MEMRIES_HEIC_SAMPLE`, since the shape of the bug needs a
   portrait photo from a real camera. The fixtures in the repo are synthetic
   and carry no personal data.
+- **A fixture whose orientation is only an argument cannot see a second
+  rotation.** The JPEG test passed `photoJPEG` bytes with no EXIF at all and
+  asserted only `Result.Width/Height`, so it was blind twice over: libvips had
+  no angle to re-apply, and the reported dims are right either way.
+  `jpegWithOrientation` now splices a minimal APP1 carrying the tag, the test
+  runs both ladder shapes, and it asserts the pixels of every rung on disk.
+- **The fix does not repair what is already written.** `record` re-renders a
+  thumb only when its file is *missing*, so a sideways one is protected by its
+  own existence. Deleting the thumb directories of the rows whose orientation
+  swaps axes and running a plain scan repairs exactly those photos, which is a
+  small fraction of a library; `indexer --force` repairs everything at the cost
+  of re-rendering all of it.
 - Still not read from a HEIC: nothing. Camera, lens, ISO, aperture, shutter
   and GPS all come through the same TIFF block.
