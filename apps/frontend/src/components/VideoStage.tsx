@@ -92,7 +92,12 @@ export function VideoStage({ photo, className }: { photo: Photo; className?: str
   }
 
   return (
-    <div className="relative flex max-h-full max-w-full items-center justify-center">
+    // Full height, not content height. The clip's own cap below is a
+    // percentage, and a percentage max-height against an auto-height parent
+    // resolves to `none` — leaving the clip capped only by the viewport, taller
+    // than the stage it sits in, which clips the bottom off a portrait video.
+    // The viewer's <img> has no such wrapper, which is why stills were fine.
+    <div className="relative flex h-full w-full items-center justify-center">
       <video
         key={photo.id}
         ref={ref}
@@ -111,6 +116,7 @@ export function VideoStage({ photo, className }: { photo: Photo; className?: str
         onPointerDown={(event) => event.stopPropagation()}
         onPointerMove={(event) => event.stopPropagation()}
         onPointerUp={(event) => event.stopPropagation()}
+        // The same cap the viewer puts on a still, now that `100%` resolves.
         className={`max-h-[min(100%,calc(100dvh-12rem))] max-w-full rounded-2xl bg-black object-contain shadow-lift ${className ?? ''}`}
       />
       {mutedByPolicy && (

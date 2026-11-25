@@ -24,6 +24,20 @@ describe('VideoStage', () => {
     expect(video).toHaveAttribute('controls');
   });
 
+  /**
+   * jsdom lays nothing out, so this guards the two classes that have to travel
+   * together rather than the geometry they produce. The clip is capped at
+   * `100%` of its wrapper; a percentage max-height against an auto-height
+   * wrapper resolves to `none`, which left a portrait clip taller than the
+   * viewer's stage and cut its bottom off behind `overflow-hidden`.
+   */
+  it('caps the clip against a wrapper that has a height to cap against', () => {
+    const { container } = render(<VideoStage photo={clip} />);
+    const video = container.querySelector('video');
+    expect(video?.className).toContain('max-h-[min(100%,calc(100dvh-12rem))]');
+    expect(video?.parentElement?.className).toContain('h-full');
+  });
+
   // Pressing a tile with a play mark on it is a request to watch; making
   // someone press play twice is a tax on the obvious case.
   it('starts playing on its own', async () => {
