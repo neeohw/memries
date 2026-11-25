@@ -1,8 +1,8 @@
 # ADR 0019 — Pointer-driven timeline zoom
 
 - Status: accepted
-- Date: 2026-11-18
-- Related: [0002](0002-spa-owned-timeline-groups.md), [0007](0007-viewport-forced-compact-thumbs.md), [0017](0017-date-scrubber.md)
+- Date: 2026-11-18 (revised 2026-11-25)
+- Related: [0002](0002-spa-owned-timeline-groups.md), [0007](0007-viewport-forced-compact-thumbs.md), [0017](0017-date-scrubber.md), [0031](0031-year-view-is-a-summary.md)
 
 ## Context
 
@@ -119,6 +119,11 @@ already existed to keep a reader's place across a granularity change; this
 passes the clicked group's newest photo into it instead of reading the
 viewport.
 
+The anchor also leaves the component. `onGranularityChange` carries it up,
+because landing on an old year is not only a scroll: drilling out of year view
+scopes the feed to the year that was clicked, so the photos to land among are
+fetched rather than paged back to ([0031](0031-year-view-is-a-summary.md)).
+
 The action rides on `aria-describedby`, not on the button's label. The heading
 is what its `<section>` is labelled by, so naming the button "2026, zoom in to
 months" would rename the section too — and the e2e suite matches heading names
@@ -144,6 +149,10 @@ throw in a private window with site data blocked, so every access is guarded
 and a failed write costs the reader nothing but the memory.
 - Drill-in is Timeline-only. Favorites and the Album page render `PhotoGrid`
   directly with a fixed granularity and have no headings to click.
+- In year view a photo tile drills in too, straight to week and anchored on
+  itself, because the strip there is a sample rather than the year
+  ([0031](0031-year-view-is-a-summary.md)). It is the one place a zoom change
+  is not something the reader asked for by name.
 - `drillIn` is a `useCallback` reading the same refs as the wheel listener. A
   handler that reached `listRef.current` through `handleGranularity` counts as
   a ref read during render (`react-hooks/refs`), because it is created in

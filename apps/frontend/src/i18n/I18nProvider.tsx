@@ -39,17 +39,26 @@ function lookup(messages: Messages, key: string): unknown {
  * A placeholder with no value is left as written rather than replaced with
  * "undefined": a visible `{count}` is a bug report, where "undefined photos"
  * reads like a product that does not know what it holds.
+ *
+ * A numeric value goes through `Intl.NumberFormat`, so a library of eleven
+ * thousand photos reads as "11,000 memories" in English and "11.000" in
+ * Dutch. It is done here rather than at the call sites because the grouping
+ * separator is a property of the language, which is this file's subject. A
+ * value that must stay unformatted — a year, an id — is passed as a string.
  */
-function interpolate(template: string, values?: Values): string {
+function interpolate(template: string, format: Intl.NumberFormat, values?: Values): string {
   if (!values) return template;
-  return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
-    name in values ? String(values[name]) : whole,
-  );
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) => {
+    if (!(name in values)) return whole;
+    const value = values[name];
+    return typeof value === 'number' ? format.format(value) : String(value);
+  });
 }
 
 export function createTranslator(locale: Locale): (key: string, values?: Values) => string {
   const catalogue = CATALOGUES[locale] ?? CATALOGUES[FALLBACK_LOCALE];
   const plural = new Intl.PluralRules(intlLocale(locale));
+  const number = new Intl.NumberFormat(intlLocale(locale));
 
   return (key, values) => {
     let message = lookup(catalogue, key);
@@ -69,7 +78,7 @@ export function createTranslator(locale: Locale): (key: string, values?: Values)
       // greppable in the catalogue, rather than an empty space.
       return key;
     }
-    return interpolate(message, values);
+    return interpolate(message, number, values);
   };
 }
 

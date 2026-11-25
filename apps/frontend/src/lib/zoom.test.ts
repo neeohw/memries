@@ -6,6 +6,7 @@ import {
   accumulateZoom,
   canZoomIn,
   canZoomOut,
+  levelForOpenedPhoto,
   nextLevelNoun,
   readZoom,
   wheelPixels,
@@ -165,5 +166,16 @@ describe('zoom persistence', () => {
     writeZoom(spy, 'year');
     expect(written[ZOOM_STORAGE_KEY]).toBe('year');
     expect(Object.keys(written)).toEqual([ZOOM_STORAGE_KEY]);
+  });
+});
+
+describe('levelForOpenedPhoto', () => {
+  it('drops year view to the week around the photo that was opened', () => {
+    expect(levelForOpenedPhoto('year')).toBe('week');
+  });
+
+  it('leaves the level alone where the view already is the period', () => {
+    expect(levelForOpenedPhoto('month')).toBeNull();
+    expect(levelForOpenedPhoto('week')).toBeNull();
   });
 });

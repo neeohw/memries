@@ -41,6 +41,10 @@ type API struct {
 func (a *API) Routes(r chi.Router) {
 	r.Get("/timeline", a.timeline)
 	r.Get("/photos", a.photos)
+	// Year view's own shape: a sample of the whole library rather than a page
+	// of it (ADR 0031). Static before the parameter for readability only —
+	// chi matches on the segment, not on registration order.
+	r.Get("/photos/summary", a.photoSummary)
 	r.Get("/photos/{id}", a.photo)
 	// Batch route before the single one is not required by chi, which matches
 	// on segment count, but keeps the pair readable (ADR 0018).

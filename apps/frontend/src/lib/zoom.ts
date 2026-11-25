@@ -145,3 +145,21 @@ export function nextLevelNoun(granularity: Granularity): string {
 export function zoomDisplayLabel(granularity: Granularity): string {
   return granularity.charAt(0).toUpperCase() + granularity.slice(1);
 }
+
+/**
+ * The level to zoom to when a photo is opened, or null to stay put.
+ *
+ * Only year view moves. It is a sample of the whole library rather than a
+ * period of it (ADR 0031), so the tiles either side of the one just opened are
+ * months away; zooming the list behind the viewer down to the week the photo
+ * was taken in means closing the viewer lands among its neighbours instead.
+ * Month and week already show the period they name, so opening a photo there
+ * changes nothing.
+ *
+ * Week rather than one step in: month view of a year that holds a thousand
+ * photos is still a screen the opened photo has to be found in, and the reader
+ * has already said which photo they meant.
+ */
+export function levelForOpenedPhoto(granularity: Granularity): Granularity | null {
+  return granularity === 'year' ? 'week' : null;
+}

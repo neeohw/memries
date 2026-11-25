@@ -12,6 +12,7 @@ describe('TimelineSection', () => {
           label: 'August 2026',
           sublabel: '5 memories',
           photos: [testPhoto()],
+          total: 1,
         }}
         granularity="month"
         onOpen={() => {}}
@@ -35,6 +36,7 @@ describe('TimelineSection drill-in', () => {
     label: '2026',
     sublabel: '11 memories',
     photos: [testPhoto({ takenAt: '2026-08-31T10:00:00' })],
+    total: 1,
   };
 
   it('drills into the clicked group, not the one at the top of the screen', () => {
@@ -85,5 +87,57 @@ describe('TimelineSection drill-in', () => {
     );
     expect(screen.getByRole('heading', { level: 2, name: '31 Aug – 6 Sep 2026' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '31 Aug – 6 Sep 2026' })).toBeNull();
+  });
+});
+
+describe('TimelineSection on a sampled period', () => {
+  const sampled = {
+    key: '2026',
+    label: '2026',
+    sublabel: '1240 memories',
+    photos: [testPhoto({ takenAt: '2026-08-31T10:00:00' })],
+    total: 1240,
+  };
+
+  it('says how many photos zooming in would add, and zooms in on a press', () => {
+    const onDrillIn = vi.fn();
+    render(
+      <TimelineSection
+        group={sampled}
+        granularity="year"
+        onOpen={() => {}}
+        showHeading
+        onDrillIn={onDrillIn}
+      />,
+    );
+    // 1,239 and not 1,240: the one on screen is not more.
+    const more = screen.getByRole('button', { name: '1,239 more in 2026 — zoom in' });
+    fireEvent.click(more);
+    expect(onDrillIn).toHaveBeenCalledWith(sampled);
+  });
+
+  it('says nothing when the period is all there', () => {
+    render(
+      <TimelineSection
+        group={{ ...sampled, total: 1 }}
+        granularity="year"
+        onOpen={() => {}}
+        showHeading
+        onDrillIn={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /more in 2026/ })).toBeNull();
+  });
+
+  it('says nothing at the closest level, where there is nowhere to zoom', () => {
+    render(
+      <TimelineSection
+        group={{ ...sampled, key: '2026-W36', label: '31 Aug – 6 Sep 2026' }}
+        granularity="week"
+        onOpen={() => {}}
+        showHeading
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /more in/ })).toBeNull();
   });
 });

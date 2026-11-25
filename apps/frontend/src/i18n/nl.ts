@@ -35,6 +35,7 @@ export const nl: Messages = {
     syncFolder: 'Map synchroniseren',
     syncing: 'Synchroniseren…',
     jumpToDate: 'Naar datum springen',
+    showAllInPeriod: 'Nog {count} in {period} — inzoomen',
     zoomGroup: 'Tijdlijnzoom',
     zoomIn: 'Inzoomen, groeperen per kortere periode',
     zoomOut: 'Uitzoomen, groeperen per langere periode',

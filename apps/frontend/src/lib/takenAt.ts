@@ -59,3 +59,25 @@ export function wallClockFromExifValue(value: unknown): string | null {
 export function takenAtFromUtcDate(date: Date): string {
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
 }
+
+/**
+ * The 1 January after the year a wall clock falls in, as `YYYY-01-01`, or `''`
+ * when there is no year to read.
+ *
+ * This is the feed's upper bound when drilling out of year view (ADR 0031).
+ * The whole of the clicked year sits above the reader, so a week reached by
+ * opening a photo from July can still be scrolled back up to December. Landing
+ * on the photo is paging's job, not the bound's.
+ *
+ * No arithmetic on `Date`: four digits in, four digits out, so the machine
+ * timezone cannot shift a year boundary the way it shifts a clock.
+ */
+export function yearCeiling(takenAt: string): string {
+  const head = takenAt.slice(0, 4);
+  if (!/^\d{4}$/.test(head)) return '';
+  const year = Number(head);
+  // The server's own ceiling is the year 2100 (`parseRange`), and a bound it
+  // cannot parse is a 400 rather than a wider feed.
+  if (year >= 9999) return '';
+  return `${year + 1}-01-01`;
+}

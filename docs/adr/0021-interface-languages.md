@@ -1,7 +1,7 @@
 # ADR 0021 — English and Dutch, chosen per reader
 
 - Status: accepted
-- Date: 2026-11-20
+- Date: 2026-11-20 (revised 2026-11-24)
 
 ## Context
 
@@ -31,6 +31,15 @@ than replaced with "undefined": a stray `{count}` is a bug report, where
 Plurals go through `Intl.PluralRules` with `.one` and `.other` forms, so "1
 photo" and "3 foto's" are both right without either language hard-coding the
 other's rules.
+
+A **numeric** value is interpolated through `Intl.NumberFormat`, so eleven
+thousand photos read as "11,000 memories" in English and "11.000" in Dutch.
+It happens here and not at the call sites because the grouping separator is a
+property of the language, which is this file's subject; a year strip reports
+four and five figures routinely
+([0031](0031-year-view-is-a-summary.md)). The plural form is still chosen from
+the raw count, before formatting, and a value that must keep its digits — a
+year, an id — is passed as a string.
 
 A key with no message returns the key itself — greppable, and obvious on
 screen, unlike a blank space.

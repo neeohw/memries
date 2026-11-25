@@ -11,7 +11,9 @@ import {
   setPhotosFavorite,
   type PhotoFilter,
   type PhotosPage,
+  type YearSummary,
 } from '../lib/api';
+import { yearSummaryQueryKey } from './useYearSummary';
 import type { Photo } from '../models/photo';
 
 export const photoQueryKey = ['photos'] as const;
@@ -39,6 +41,28 @@ function invalidateFavoriteLists(queryClient: ReturnType<typeof useQueryClient>)
       const [root, filter] = query.queryKey as [string, PhotoFilter | undefined];
       return root === photoQueryKey[0] && filter?.favorite !== undefined;
     },
+  });
+}
+
+/**
+ * Flips the flag on the year summary too, which is a separate cache entry
+ * with a shape of its own (see `yearSummaryQueryKey`).
+ *
+ * Patched rather than invalidated: the summary is the whole library in one
+ * response, and refetching all of it to change one boolean is a lot of a Pi's
+ * afternoon.
+ */
+function patchSummaryFavorite(
+  queryClient: ReturnType<typeof useQueryClient>,
+  ids: Set<string>,
+  favorite: boolean,
+) {
+  queryClient.setQueryData<YearSummary[]>(yearSummaryQueryKey, (current) => {
+    if (!current) return current;
+    return current.map((year) => ({
+      ...year,
+      photos: year.photos.map((photo) => (ids.has(photo.id) ? { ...photo, favorite } : photo)),
+    }));
   });
 }
 
@@ -84,12 +108,15 @@ export function useToggleFavorite() {
           };
         },
       );
-      return { snapshots };
+      const summary = queryClient.getQueryData<YearSummary[]>(yearSummaryQueryKey);
+      patchSummaryFavorite(queryClient, new Set([id]), favorite);
+      return { snapshots, summary };
     },
     onError: (_error, _vars, context) => {
       for (const [key, data] of context?.snapshots ?? []) {
         queryClient.setQueryData(key, data);
       }
+      if (context?.summary) queryClient.setQueryData(yearSummaryQueryKey, context.summary);
     },
     onSettled: () => invalidateFavoriteLists(queryClient),
   });
@@ -128,12 +155,15 @@ export function useBatchFavorite() {
           };
         },
       );
-      return { snapshots };
+      const summary = queryClient.getQueryData<YearSummary[]>(yearSummaryQueryKey);
+      patchSummaryFavorite(queryClient, chosen, favorite);
+      return { snapshots, summary };
     },
     onError: (_error, _vars, context) => {
       for (const [key, data] of context?.snapshots ?? []) {
         queryClient.setQueryData(key, data);
       }
+      if (context?.summary) queryClient.setQueryData(yearSummaryQueryKey, context.summary);
     },
     onSettled: () => invalidateFavoriteLists(queryClient),
   });

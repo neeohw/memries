@@ -36,6 +36,13 @@ export const en = {
     syncFolder: 'Sync folder',
     syncing: 'Syncing…',
     jumpToDate: 'Jump to date',
+    /**
+     * The "there is more here" affordance under a sampled year (ADR 0031).
+     * The count arrives already through `Intl.NumberFormat` — 11000 is not
+     * how anyone writes eleven thousand — and the phrase does not inflect,
+     * so it needs no plural forms.
+     */
+    showAllInPeriod: '{count} more in {period} — zoom in',
     zoomGroup: 'Timeline zoom',
     zoomIn: 'Zoom in, group by a shorter period',
     zoomOut: 'Zoom out, group by a longer period',

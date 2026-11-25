@@ -1,7 +1,7 @@
 # ADR 0002 — Timeline Groups are built in the SPA
 
 - Status: accepted
-- Date: 2026-08-26 (revised 2026-11-18)
+- Date: 2026-08-26 (revised 2026-11-24)
 
 ## Context
 
@@ -33,12 +33,21 @@ moment a reader opened a period.
 ([0017](0017-date-scrubber.md)) wants exactly a count per month over the whole
 library, which is the summary that endpoint already returns.
 
+Year view is the one level that is **not** fed from the feed. It reads
+`/api/photos/summary`, which samples the whole library rather than paging it
+([0031](0031-year-view-is-a-summary.md)). That does not move bucketing to the
+server — the SPA still groups what it is handed — but it does mean the widest
+zoom level sees every year the library holds rather than only the newest page
+of it.
+
 ## Consequences
 
 - Grouping is a UI decision and can change without a new endpoint shape.
 - Favorites and a zoom change only see photos already in the infinite
   query. With a page size of 500 ([0017](0017-date-scrubber.md)) that is
-  usually the visible era, but it is not a global index.
+  usually the visible era, but it is not a global index. At year level that
+  was the whole problem, and year view no longer reads the feed
+  ([0031](0031-year-view-is-a-summary.md)); at month and week it still holds.
 - Because `virtua` renders nothing in jsdom, Timeline composition cannot be
   unit tested. It is covered by the Playwright suite instead, and tests that
   need a rendered tile assert at the `PhotoCard` level.

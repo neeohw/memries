@@ -40,7 +40,9 @@ describe('Timeline', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /^Zoom in/ }));
-    expect(onGranularityChange).toHaveBeenCalledWith('week');
+    // The anchor travels with the level: App scopes the feed to the year the
+    // reader was looking at (ADR 0031).
+    expect(onGranularityChange).toHaveBeenCalledWith('week', '2024-12-12T10:00:00');
 
     rerender(
       <Timeline
@@ -54,7 +56,7 @@ describe('Timeline', () => {
     // silently doing nothing on a press.
     expect(screen.getByRole('button', { name: /^Zoom in/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: /^Zoom out/ }));
-    expect(onGranularityChange).toHaveBeenLastCalledWith('month');
+    expect(onGranularityChange).toHaveBeenLastCalledWith('month', '2024-12-12T10:00:00');
   });
 
   it('zooms on Ctrl + wheel and leaves a plain wheel to scroll', () => {
@@ -74,7 +76,7 @@ describe('Timeline', () => {
     expect(onGranularityChange).not.toHaveBeenCalled();
 
     fireEvent.wheel(root, { deltaY: -120, deltaMode: 0, ctrlKey: true });
-    expect(onGranularityChange).toHaveBeenCalledWith('week');
+    expect(onGranularityChange).toHaveBeenCalledWith('week', '2024-12-12T10:00:00');
 
     // A trackpad pinch arrives as a stream of small ctrl+wheel deltas, which
     // must add up to one level rather than counting one level each.
@@ -252,6 +254,89 @@ describe('Timeline date scrubber', () => {
     await waitFor(() => {
       // June 2025 is unreachable, so it lands on February, the oldest loaded
       // month, instead of waiting forever for a page that is not coming.
+      expect(screen.getByRole('slider').getAttribute('aria-valuenow')).toBe('1');
+    });
+    expect(screen.getByRole('slider').getAttribute('aria-busy')).toBeNull();
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Drilling out of year view starts the scoped feed at the top of the clicked
+ * year, so the photo to land on may be several pages into it (ADR 0031). The
+ * anchor arrives as a prop because the query key change unmounts the
+ * timeline, so a ref cannot carry it across.
+ */
+describe('Timeline landing on an anchor it was mounted with', () => {
+  const HISTOGRAM = [
+    { key: '2019-12', count: 20 },
+    { key: '2019-11', count: 20 },
+    { key: '2019-07', count: 20 },
+  ];
+
+  const loaded = [
+    testPhoto({ id: 'dec', takenAt: '2019-12-20T10:00:00' }),
+    testPhoto({ id: 'nov', takenAt: '2019-11-04T10:00:00' }),
+  ];
+
+  it('scrolls to the anchor without a request when it is already loaded', async () => {
+    const fetchNextPage = vi.fn();
+    render(
+      <Timeline
+        photos={loaded}
+        granularity="week"
+        onGranularityChange={() => {}}
+        anchorTakenAt="2019-11-04T10:00:00"
+        onOpen={() => {}}
+        histogram={HISTOGRAM}
+        hasNextPage
+        fetchNextPage={fetchNextPage}
+      />,
+    );
+    await waitFor(() => {
+      // The thumb followed the list off the newest group, which is how we know
+      // the anchor was sought rather than quietly dropped.
+      expect(screen.getByRole('slider').getAttribute('aria-valuenow')).toBe('1');
+    });
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it('pages down until the feed reaches the anchor', async () => {
+    const fetchNextPage = vi.fn();
+    render(
+      <Timeline
+        photos={loaded}
+        granularity="week"
+        onGranularityChange={() => {}}
+        anchorTakenAt="2019-07-14T18:30:01"
+        onOpen={() => {}}
+        histogram={HISTOGRAM}
+        hasNextPage
+        fetchNextPage={fetchNextPage}
+      />,
+    );
+    await waitFor(() => {
+      expect(fetchNextPage).toHaveBeenCalled();
+    });
+  });
+
+  // Otherwise a photo the window's UTC edge left out would page the whole
+  // library and then hang on "…".
+  it('settles on the oldest loaded group when no more pages are coming', async () => {
+    const fetchNextPage = vi.fn();
+    render(
+      <Timeline
+        photos={loaded}
+        granularity="week"
+        onGranularityChange={() => {}}
+        anchorTakenAt="2019-07-14T18:30:01"
+        onOpen={() => {}}
+        histogram={HISTOGRAM}
+        hasNextPage={false}
+        fetchNextPage={fetchNextPage}
+      />,
+    );
+    await waitFor(() => {
       expect(screen.getByRole('slider').getAttribute('aria-valuenow')).toBe('1');
     });
     expect(screen.getByRole('slider').getAttribute('aria-busy')).toBeNull();

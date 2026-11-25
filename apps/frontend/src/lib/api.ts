@@ -65,6 +65,32 @@ export type PhotosPage = {
 
 export type PhotoFilter = {
   favorite?: boolean;
+  /**
+   * Upper bound on capture time, exclusive, as a `YYYY-MM-DD` date.
+   *
+   * It is what makes drilling into an old year cheap: the feed still pages
+   * newest-first and still runs off the bottom into older photos, but it
+   * *starts* at the end of the year that was clicked instead of at today
+   * (ADR 0031). The bound is the year rather than the day, so the reader can
+   * scroll back up through it; the timeline pages down to the photo itself.
+   * Nothing newer than the bound is reachable without zooming back out,
+   * which is the navigation year view is for.
+   */
+  to?: string;
+};
+
+export type ApiYearSummary = {
+  year: string;
+  count: number;
+  photos: ApiPhoto[];
+};
+
+/** One year of the library, sampled: see `fetchYearSummary`. */
+export type YearSummary = {
+  year: string;
+  /** Every photo in the year, not the number sampled. */
+  count: number;
+  photos: Photo[];
 };
 
 export type ApiSource = {
@@ -268,12 +294,39 @@ export async function fetchPhotosPage(cursor?: string, filter?: PhotoFilter): Pr
   if (cursor) params.set('cursor', cursor);
   if (filter?.favorite === true) params.set('favorite', 'true');
   if (filter?.favorite === false) params.set('favorite', 'false');
+  if (filter?.to) params.set('to', filter.to);
   const res = await apiFetch(`/api/photos?${params}`);
   const body = (await res.json()) as { photos?: ApiPhoto[]; next_cursor?: string };
   return {
     photos: (body.photos ?? []).map(mapPhoto),
     nextCursor: body.next_cursor || null,
   };
+}
+
+/**
+ * Photos per month in a year summary.
+ *
+ * Three is a season rather than a day: one per month reads as a contact sheet
+ * of Decembers, and a dozen is already a screenful per year at thumbnail
+ * size, which stops being a summary (ADR 0031).
+ */
+export const SUMMARY_PER_MONTH = 3;
+
+/**
+ * Every year the library holds, each with a sample of its photos.
+ *
+ * One request for the whole library, which is the point: year view is how a
+ * reader gets *to* a year, and paging the feed back twenty years to show one
+ * is the wrong shape for that.
+ */
+export async function fetchYearSummary(perMonth = SUMMARY_PER_MONTH): Promise<YearSummary[]> {
+  const res = await apiFetch(`/api/photos/summary?per_month=${perMonth}`);
+  const body = (await res.json()) as { years?: ApiYearSummary[] };
+  return (body.years ?? []).map((year) => ({
+    year: year.year,
+    count: year.count,
+    photos: (year.photos ?? []).map(mapPhoto),
+  }));
 }
 
 export async function setPhotoFavorite(id: string, favorite: boolean): Promise<void> {

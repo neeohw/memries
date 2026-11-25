@@ -42,4 +42,10 @@ export interface TimelineGroup {
   label: string;
   sublabel: string;
   photos: Photo[];
+  /**
+   * How many photos the period holds, which is `photos.length` everywhere
+   * except year view: there the feed is a sample of the year, and the
+   * difference is what the "more" affordance reports (ADR 0031).
+   */
+  total: number;
 }

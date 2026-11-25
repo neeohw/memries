@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlbumPage } from './components/AlbumPage';
 import { LoginScreen } from './components/LoginScreen';
@@ -22,6 +22,7 @@ import {
 import { useIndex } from './hooks/useIndex';
 import { useStoredZoom } from './hooks/useStoredZoom';
 import { useTimelineHistogram } from './hooks/useTimelineHistogram';
+import { useYearSummary } from './hooks/useYearSummary';
 import {
   meQueryKey,
   useCreateSource,
@@ -35,8 +36,10 @@ import {
 import { I18nProvider, useT } from './i18n/I18nProvider';
 import { useLocale } from './hooks/useLocale';
 import { isUnauthorized, signIn, signOut } from './lib/api';
+import { yearCeiling } from './lib/takenAt';
+import { resolveViewerList, type ViewerState } from './lib/viewerList';
 import { flattenPhotos, useBatchFavorite, usePhotos, useToggleFavorite } from './hooks/usePhotos';
-import type { NavTab, Photo } from './models/photo';
+import type { Granularity, NavTab, Photo } from './models/photo';
 
 /**
  * Auth gate (ADR 0016). `/api/me` answering 401 is what shows the sign-in
@@ -135,17 +138,34 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   } = useIndex();
   const [tab, setTab] = useState<NavTab>('memories');
   const [granularity, setGranularity] = useStoredZoom();
+  /**
+   * The feed's exclusive upper bound on capture time, or null for the whole
+   * library, with the photo to land on inside it.
+   *
+   * Both are set by drilling out of year view and cleared by zooming back in.
+   * The bound is the start of the year *after* whatever was clicked, so the
+   * whole of that year is above the reader and can be scrolled back up
+   * through; the anchor is what the timeline pages down to. The feed still
+   * pages newest-first and still runs off the bottom into older photos — only
+   * where it starts moved, which is what makes opening 2019 a handful of
+   * requests instead of twenty pages of them (ADR 0031).
+   */
+  const [focusTo, setFocusTo] = useState<string | null>(null);
+  const [focusAnchor, setFocusAnchor] = useState<string | undefined>(undefined);
   const [lastFocus, setLastFocus] = useState<HTMLElement | null>(null);
-  const [viewer, setViewer] = useState<{
-    id: string;
-    origin: DOMRect | null;
-    list: Photo[];
-  } | null>(null);
+  const [viewer, setViewer] = useState<(ViewerState & { origin: DOMRect | null }) | null>(null);
   const [actionsPhoto, setActionsPhoto] = useState<Photo | null>(null);
   const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
   const [indexVisible, setIndexVisible] = useState(true);
 
-  const timelineQuery = usePhotos(isReadyForPhotos);
+  // Year view reads a sampled overview of the whole library instead of the
+  // feed: a few photos per month per year, with each year's real count (ADR
+  // 0031). Enabled only at that level, so a reader who never zooms out never
+  // pays for it.
+  const yearMode = granularity === 'year';
+  const summaryQuery = useYearSummary(isReadyForPhotos && yearMode);
+  const feedFilter = useMemo(() => (focusTo ? { to: focusTo } : undefined), [focusTo]);
+  const timelineQuery = usePhotos(isReadyForPhotos, feedFilter);
   // Drives the date scrubber's track. Independent of which tab is open so the
   // scrubber is ready the moment Memories is.
   const histogramQuery = useTimelineHistogram(isReadyForPhotos);
@@ -186,15 +206,47 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
     rescan();
   }, [rescan]);
 
-  const timelinePhotos = flattenPhotos(timelineQuery.data);
+  /**
+   * Changes the zoom level and, leaving year view, starts the feed at whatever
+   * was clicked there.
+   *
+   * Only on the way out of year view. Zooming between month and week keeps
+   * whatever bound is in force: re-deriving it from the group on screen would
+   * change the query key — and so refetch the feed — every time a reader
+   * scrolled into the previous year and then zoomed (ADR 0031).
+   */
+  const changeGranularity = useCallback(
+    (next: Granularity, anchorTakenAt?: string) => {
+      if (next === 'year') {
+        setFocusTo(null);
+        setFocusAnchor(undefined);
+      } else if (granularity === 'year' && anchorTakenAt) {
+        setFocusTo(yearCeiling(anchorTakenAt) || null);
+        setFocusAnchor(anchorTakenAt);
+      }
+      setGranularity(next);
+    },
+    [granularity, setGranularity],
+  );
+
+  // The summary, when year view has one. A failed summary request falls back
+  // to the feed rather than to an empty screen: the old behaviour is still a
+  // timeline, only a shorter one.
+  const summary = yearMode ? summaryQuery.data : undefined;
+  const summaryPhotos = useMemo(() => (summary ?? []).flatMap((year) => year.photos), [summary]);
+  const yearTotals = useMemo(
+    () =>
+      summary ? Object.fromEntries(summary.map((year) => [year.year, year.count])) : undefined,
+    [summary],
+  );
+  const feedPhotos = flattenPhotos(timelineQuery.data);
+  const timelinePhotos = summary ? summaryPhotos : feedPhotos;
   const favoritesPhotos = flattenPhotos(favoritesQuery.data);
   const albums = albumsQuery.data ?? [];
 
   const tabPhotos = tab === 'favorites' ? favoritesPhotos : timelinePhotos;
 
-  const liveViewerList = viewer
-    ? viewer.list.map((item) => tabPhotos.find((photo) => photo.id === item.id) ?? item)
-    : [];
+  const liveViewerList = viewer ? resolveViewerList(viewer, tabPhotos) : [];
 
   const liveActionsPhoto = actionsPhoto
     ? (tabPhotos.find((photo) => photo.id === actionsPhoto.id) ?? actionsPhoto)
@@ -202,7 +254,16 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
 
   const openPhoto = (photo: Photo, origin: HTMLElement, list: Photo[]) => {
     setLastFocus(origin);
-    setViewer({ id: photo.id, origin: origin.getBoundingClientRect(), list });
+    // Opening a photo from year view also zooms the timeline to the week
+    // around it, so the list to arrow through is the feed that change is
+    // fetching rather than the year sample that was clicked (ADR 0031).
+    const follow = tab === 'memories' && yearMode;
+    setViewer({
+      id: photo.id,
+      origin: origin.getBoundingClientRect(),
+      list: follow ? [photo] : list,
+      follow,
+    });
   };
 
   const closeViewer = () => {
@@ -267,15 +328,18 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
             <Timeline
               photos={timelinePhotos}
               granularity={granularity}
-              onGranularityChange={setGranularity}
+              onGranularityChange={changeGranularity}
+              anchorTakenAt={focusAnchor}
+              groupTotals={yearTotals}
               onOpen={openPhoto}
               onActions={openActions}
-              hasNextPage={timelineQuery.hasNextPage}
-              isFetchingNextPage={timelineQuery.isFetchingNextPage}
+              hasNextPage={summary ? false : timelineQuery.hasNextPage}
+              isFetchingNextPage={summary ? false : timelineQuery.isFetchingNextPage}
               fetchNextPage={() => {
+                if (summary) return;
                 void timelineQuery.fetchNextPage();
               }}
-              fetchError={timelineQuery.isFetchNextPageError}
+              fetchError={summary ? false : timelineQuery.isFetchNextPageError}
               onRescan={handleRescan}
               rescanning={rescanning}
               noFolders={indexStatus?.sources === 0}

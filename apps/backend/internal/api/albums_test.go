@@ -20,6 +20,8 @@ type fakeLibrary struct {
 	albums     map[string]*db.AlbumView
 	albumOwner map[string]string
 	filter     db.PhotoFilter
+	summaries  []db.YearSummary
+	perMonth   int
 	listed     bool
 	resetFor   string
 }
@@ -44,6 +46,11 @@ func (f *fakeLibrary) PhotosFiltered(_ context.Context, _ string, _, _ time.Time
 
 func (f *fakeLibrary) Timeline(context.Context, string, time.Time, time.Time) ([]db.Bucket, error) {
 	return nil, nil
+}
+
+func (f *fakeLibrary) YearSummaries(_ context.Context, _ string, perMonth int) ([]db.YearSummary, error) {
+	f.perMonth = perMonth
+	return f.summaries, nil
 }
 
 func (f *fakeLibrary) SetFavorite(_ context.Context, _, photoID string, favorite bool) (*db.Photo, error) {

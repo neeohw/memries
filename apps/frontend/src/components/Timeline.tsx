@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n/I18nProvider';
 import { VList, type VListHandle } from 'virtua';
-import { groupPhotos, nearestGroupIndex } from '../lib/groupPhotos';
+import { groupIndexForPhoto, groupPhotos } from '../lib/groupPhotos';
 import {
   type HistogramBucket,
   buildScrubberScale,
@@ -11,7 +11,14 @@ import {
 import { PhotoSelectionProvider, useSelectionState } from '../hooks/usePhotoSelection';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { selectionIsAllFavorited } from '../lib/selection';
-import { accumulateZoom, canZoomIn, nextLevelNoun, wheelPixels, zoomBy } from '../lib/zoom';
+import {
+  accumulateZoom,
+  canZoomIn,
+  levelForOpenedPhoto,
+  nextLevelNoun,
+  wheelPixels,
+  zoomBy,
+} from '../lib/zoom';
 import type { Album, Granularity, Photo, TimelineGroup } from '../models/photo';
 import { CurrentPeriod } from './CurrentPeriod';
 import { ZoomControl } from './ZoomControl';
@@ -20,6 +27,27 @@ import { Scrubber } from './Scrubber';
 import { SelectionToolbar } from './SelectionToolbar';
 import { TimelineSection } from './TimelineSection';
 import { FilterIcon, SyncIcon, TodayIcon } from './icons';
+
+/**
+ * Where a pending jump is headed: a month, from the scrubber's track
+ * ([0017](../../../../docs/adr/0017-date-scrubber.md)), or one photo, from
+ * drilling out of year view ([0031](../../../../docs/adr/0031-year-view-is-a-summary.md)).
+ *
+ * Both are resolved against the feed as loaded *so far*, and both answer -1
+ * while the list does not reach back that far, which is the signal to fetch
+ * another page and ask again.
+ */
+export type SeekTarget = { month: string } | { takenAt: string };
+
+export function seekIndex(
+  target: SeekTarget,
+  groups: TimelineGroup[],
+  groupMonths: string[],
+): number {
+  return 'takenAt' in target
+    ? groupIndexForPhoto(groups, target.takenAt)
+    : groupIndexForMonth(groupMonths, target.month);
+}
 
 /**
  * The group whose period the header should name.
@@ -48,6 +76,8 @@ export function Timeline({
   photos,
   granularity,
   onGranularityChange,
+  anchorTakenAt,
+  groupTotals,
   onOpen,
   onActions,
   hasNextPage,
@@ -67,7 +97,30 @@ export function Timeline({
 }: {
   photos: Photo[];
   granularity: Granularity;
-  onGranularityChange: (value: Granularity) => void;
+  /**
+   * `anchorTakenAt` is the photo the reader was looking at when the level
+   * changed. It travels up because the feed may have to be refetched around
+   * it: drilling into a year scopes `/api/photos` to that year rather than
+   * paging back to it (ADR 0031).
+   */
+  onGranularityChange: (value: Granularity, anchorTakenAt?: string) => void;
+  /**
+   * The photo to land on at this zoom level, when the level was not reached
+   * from inside this component.
+   *
+   * Drilling out of year view changes the feed's query key, which unmounts
+   * the timeline until the first page of the scoped feed arrives — so the
+   * anchor the click set cannot be kept in a ref. It comes back in as a prop
+   * and is sought the same way: scrolled to if it is loaded, paged towards if
+   * it is not (ADR 0031).
+   */
+  anchorTakenAt?: string;
+  /**
+   * Real photo count per group key, for when `photos` is a sample rather than
+   * the period itself. Year view passes it; month and week have the whole
+   * period in hand and pass nothing (ADR 0031).
+   */
+  groupTotals?: Record<string, number>;
   onOpen: (photo: Photo, origin: HTMLElement, list: Photo[]) => void;
   onActions?: (photo: Photo, origin: HTMLElement) => void;
   hasNextPage?: boolean;
@@ -95,8 +148,9 @@ export function Timeline({
       groupPhotos(photos, granularity, {
         locale: intl,
         memories: (count) => t('favorites.count', { count }),
+        totals: groupTotals,
       }),
-    [photos, granularity, intl, t],
+    [photos, granularity, intl, t, groupTotals],
   );
   const listRef = useRef<VListHandle>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -112,7 +166,7 @@ export function Timeline({
   // Index of the group at the top of the viewport. Kept in state as well as in
   // the ref above because the scrubber thumb has to re-render when it moves.
   const [startIndex, setStartIndex] = useState(0);
-  const [seekTarget, setSeekTarget] = useState<string | null>(null);
+  const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
 
   const orderedPhotos = useMemo(() => groups.flatMap((group) => group.photos), [groups]);
   const orderedIds = useMemo(() => orderedPhotos.map((photo) => photo.id), [orderedPhotos]);
@@ -121,9 +175,16 @@ export function Timeline({
 
   const scale = useMemo(() => buildScrubberScale(histogram ?? []), [histogram]);
   const hasScrubber = scale.segments.length >= 2;
-  // The month of each group's newest photo, newest-first.
+  // The month each group *reaches back to*, newest group first.
+  //
+  // The group's oldest photo, not its newest: `groupIndexForMonth` takes the
+  // first group that starts at or before the month asked for, and in year view
+  // a group spans twelve months. Keyed on the newest photo, a jump to June
+  // 2026 would skip past the 2026 section — whose newest photo is in
+  // November — and land on 2025 (ADR 0031). At month and week level the two
+  // are the same month, so nothing else changes.
   const groupMonths = useMemo(
-    () => groups.map((group) => (group.photos[0]?.takenAt ?? '').slice(0, 7)),
+    () => groups.map((group) => (group.photos[group.photos.length - 1]?.takenAt ?? '').slice(0, 7)),
     [groups],
   );
 
@@ -143,15 +204,27 @@ export function Timeline({
     setStartIndex(0);
     startIndexRef.current = 0;
     lastOffsetRef.current = 0;
-    const anchor = anchorRef.current;
-    if (!anchor || !listRef.current || current.length === 0) return;
-    const index = nearestGroupIndex(current, anchor);
-    listRef.current.scrollToIndex(index, { align: 'start' });
+    const anchor = anchorRef.current ?? anchorTakenAt ?? null;
+    anchorRef.current = null;
+    if (!anchor || current.length === 0) return;
+    const index = groupIndexForPhoto(current, anchor);
+    if (index < 0) {
+      // The anchor is older than anything loaded. Drilling out of year view
+      // starts the feed at the top of the clicked year rather than at the
+      // clicked photo, precisely so the reader can scroll back up through the
+      // year — which means landing on a photo from July pages down to it first
+      // (ADR 0031). The seek effect below does the paging.
+      setSeekTarget({ takenAt: anchor });
+      return;
+    }
+    // Resolved here rather than through the latch so a zoom change with the
+    // anchor already loaded — which is every zoom that does not refetch —
+    // scrolls in the same frame, without a visible jump from the top.
+    listRef.current?.scrollToIndex(index, { align: 'start' });
     startIndexRef.current = index;
     setStartIndex(index);
     if (index > 0) setShowToday(true);
-    anchorRef.current = null;
-  }, [granularity]);
+  }, [granularity, anchorTakenAt]);
 
   /**
    * Changes the zoom level, keeping the reader where they were.
@@ -172,7 +245,7 @@ export function Timeline({
         anchorRef.current = group?.photos[0]?.takenAt ?? null;
       }
     }
-    onGranularityChange(next);
+    onGranularityChange(next, anchorRef.current ?? undefined);
   };
 
   // Latest values for the non-passive wheel listener below, which is attached
@@ -246,6 +319,12 @@ export function Timeline({
 
   const openFrom = (photo: Photo, origin: HTMLElement) => {
     onOpen(photo, origin, orderedPhotos);
+    // Year view is a sample of the library, so what sits either side of this
+    // photo on screen is months away (ADR 0031). Zoom the list behind the
+    // viewer down to the week the photo was taken in, anchored on the photo
+    // itself, so closing the viewer lands among its neighbours.
+    const zoomTo = levelForOpenedPhoto(granularity);
+    if (zoomTo) handleGranularity(zoomTo, photo.takenAt);
   };
 
   const requestNextPage = useCallback(() => {
@@ -265,16 +344,17 @@ export function Timeline({
   }, []);
 
   /**
-   * Resolves a scrubber jump, or latches it until the month is loaded.
+   * Resolves a jump, or latches it until the feed reaches back that far.
    *
-   * The track covers the whole library but only part of it is loaded (ADR
-   * 0017), so a jump to an older month may have to page backwards first. The
-   * common case — the month is already loaded — is handled here, in the event
-   * handler, so no effect runs at all.
+   * The scrubber's track covers the whole library but only part of it is
+   * loaded (ADR 0017), and a drilled-to photo may be several pages into the
+   * year it was clicked in (ADR 0031), so either may have to page first. The
+   * common case — it is already loaded — is handled here, in the caller, so no
+   * effect runs at all.
    */
-  const seekToMonth = useCallback(
-    (monthKey: string) => {
-      const index = groupIndexForMonth(groupMonths, monthKey);
+  const seekTo = useCallback(
+    (target: SeekTarget) => {
+      const index = seekIndex(target, groups, groupMonths);
       if (index >= 0) {
         scrollToGroup(index);
         return;
@@ -282,12 +362,12 @@ export function Timeline({
       if (!hasNextPage || fetchError) {
         // Nothing older is coming; land on the oldest photo there is rather
         // than leaving the jump unresolved.
-        scrollToGroup(groupMonths.length - 1);
+        scrollToGroup(groups.length - 1);
         return;
       }
-      setSeekTarget(monthKey);
+      setSeekTarget(target);
     },
-    [fetchError, groupMonths, hasNextPage, scrollToGroup],
+    [fetchError, groupMonths, groups, hasNextPage, scrollToGroup],
   );
 
   // Only reached while a jump is waiting on pages. Each arriving page re-runs
@@ -301,20 +381,21 @@ export function Timeline({
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!seekTarget) return;
-    const index = groupIndexForMonth(groupMonths, seekTarget);
+    const index = seekIndex(seekTarget, groups, groupMonths);
     if (index >= 0) {
       scrollToGroup(index);
       setSeekTarget(null);
       return;
     }
     if (fetchError || !hasNextPage) {
-      scrollToGroup(groupMonths.length - 1);
+      scrollToGroup(groups.length - 1);
       setSeekTarget(null);
       return;
     }
     if (!isFetchingNextPage) fetchNextPage?.();
   }, [
     seekTarget,
+    groups,
     groupMonths,
     hasNextPage,
     isFetchingNextPage,
@@ -426,7 +507,7 @@ export function Timeline({
                 <Scrubber
                   scale={scale}
                   value={fractionForDate(scale, groups[startIndex]?.photos[0]?.takenAt ?? '')}
-                  onSeek={seekToMonth}
+                  onSeek={(month) => seekTo({ month })}
                   seeking={seekTarget !== null}
                   // `scrolling` is deliberately never set under reduced motion,
                   // so the track would otherwise only ever appear on hover for

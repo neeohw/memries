@@ -32,6 +32,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0029](docs/adr/0029-video.md) | Video indexed via ffmpeg (metadata + poster frame into the existing ladder); originals streamed with byte ranges; nothing transcoded |
 | [0030](docs/adr/0030-debian-package.md) | A .deb installs the API as a systemd service on 127.0.0.1 plus the built SPA; nginx or Apache serves it and proxies `/api` and `/auth` from the same origin |
 | [0019](docs/adr/0019-pointer-driven-timeline-zoom.md) | Granularity is a 3-step zoom ladder (year/month/week, no day); Ctrl+wheel and pinch, − level + control replaces the radiogroup, period headings drill in, level kept in `sessionStorage` |
+| [0031](docs/adr/0031-year-view-is-a-summary.md) | Year view reads `/api/photos/summary` — a few photos per month per year plus each year's real count — not the feed; the gap is named under each strip, and drilling out scopes `/api/photos` with `to` set to the year after what was clicked and pages down to it. Opening a photo there also zooms the list behind the viewer to its week |
 
 ## Contexts
 
@@ -72,7 +73,7 @@ flowchart LR
 - **Photo** — a `photos` row; `key` is stable identity (path-first on Sync); `hash` is sha256 of current bytes; `kind` is `photo` today (video reserved). See [docs/adr/0005-capture-time-stable-identity.md](docs/adr/0005-capture-time-stable-identity.md).
 - **Owner** — `users` row keyed by sha1(lowercase email). Owns Albums and favorites; Photos have no owner.
 - **TakenAt** — EXIF `DateTimeOriginal` (then digitized / `DateTime`), else filesystem birth, else mtime; UI buckets on `taken_at_local` ([0005](docs/adr/0005-capture-time-stable-identity.md)).
-- **Granularity** — `year` / `month` / `week` / `day`; buckets come from `taken_at_local`, week as ISO year-week ([0014](docs/adr/0014-pluggable-sql-store.md)). Memories buckets in the SPA, not `/api/timeline` ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md)).
+- **Granularity** — `year` / `month` / `week` / `day`; buckets come from `taken_at_local`, week as ISO year-week ([0014](docs/adr/0014-pluggable-sql-store.md)). Memories buckets in the SPA, not `/api/timeline` ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md)). Year is the one level fed by `/api/photos/summary` instead of the paged feed ([0031](docs/adr/0031-year-view-is-a-summary.md)).
 - **Storage** — interface; `local` and read-only `webdav` implemented; `sources.Registry` routes `<source id>/<path>` keys to them; `s3` factory returns “phase 3”.
 - **Source** — admin-managed folder (`sources` table) feeding one Owner's library; password sealed with a key derived from `MEMRIES_SESSION_KEY` ([0013](docs/adr/0013-admin-managed-sources.md)).
 - **Thumb** — JPEG cache under `MEMRIES_CACHE_ROOT`, paths `<key[:2]>/<key>/{s,m,l}.jpg` for 256 / 512 / 1024. Compact grids use 256 when the viewport is ≥1280px, else 512 ([docs/adr/0007-viewport-forced-compact-thumbs.md](docs/adr/0007-viewport-forced-compact-thumbs.md)).
@@ -104,7 +105,10 @@ ACL today: every signed-in reader sees every Photo. What is scoped is `album.own
 - Cookie `credentials: "include"`; a 401 throws `UnauthorizedError`, and a 401 from `/api/me` is what makes `App` render `LoginScreen`
 - Splash polls `/api/index/status` and may `POST /api/index` ([0004](docs/adr/0004-cursor-paginated-photos.md))
 - A `complete` run reads as `not_started` only when originals went missing or a folder grew past the last run's `discovered` — never because disk files outnumber photo rows, which duplicates and failed imports make permanent ([0004](docs/adr/0004-cursor-paginated-photos.md))
-- Memories pages `/api/photos` and groups in the SPA; `/api/timeline` is unused by the UI ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md))
+- Memories pages `/api/photos` and groups in the SPA; `/api/timeline` feeds only the scrubber's histogram ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md))
+- Year view reads `/api/photos/summary` instead, so the widest zoom sees every year rather than the newest page; `TimelineGroup.total` is the period's real count and the feed is scoped with `to` on the way out ([0031](docs/adr/0031-year-view-is-a-summary.md))
+- Opening a photo from year view drills the timeline to that photo's week and hands the viewer the drilled feed rather than the sample — `levelForOpenedPhoto` in `lib/zoom.ts`, `resolveViewerList` in `lib/viewerList.ts` ([0031](docs/adr/0031-year-view-is-a-summary.md))
+- One latch serves both the scrubber's month jumps and that drill-in: `SeekTarget` / `seekIndex` in `Timeline.tsx` resolve against the feed as loaded so far and page when it does not reach back far enough ([0017](docs/adr/0017-date-scrubber.md), [0031](docs/adr/0031-year-view-is-a-summary.md))
 - Granularity is React state (not `localStorage`); theme is the only persisted UI key
 
 ## Photo layout

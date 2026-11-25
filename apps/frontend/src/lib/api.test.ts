@@ -7,6 +7,8 @@ import {
   mapAlbum,
   mapFolderPreview,
   mapPhoto,
+  fetchPhotosPage,
+  fetchYearSummary,
   signIn,
   signOut,
   wallClockFromApi,
@@ -208,5 +210,70 @@ describe('signIn', () => {
   it('treats an already-expired session as a successful sign-out', async () => {
     stubFetch({ ok: false, status: 401 });
     await expect(signOut()).resolves.toBeUndefined();
+  });
+});
+
+describe('the year summary and the windowed feed', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubJSON(body: unknown) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: '',
+      headers: new Headers(),
+      text: async () => '',
+      json: async () => body,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('asks for the sample size and maps each year', async () => {
+    const fetchMock = stubJSON({
+      years: [
+        {
+          year: '2026',
+          count: 1240,
+          photos: [
+            {
+              _key: 'p1',
+              hash: 'h1',
+              taken_at_local: '2026-08-26T10:00:00',
+              dims: { w: 100, h: 80 },
+            },
+          ],
+        },
+        { year: '2025', count: 87, photos: [] },
+      ],
+    });
+
+    const years = await fetchYearSummary(4);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/photos/summary?per_month=4');
+    expect(years.map((year) => [year.year, year.count, year.photos.length])).toEqual([
+      ['2026', 1240, 1],
+      ['2025', 87, 0],
+    ]);
+    // Photos come back through the same mapping as the feed's, so a tile does
+    // not care which query it came from.
+    expect(years[0].photos[0].thumbnailUrl).toContain('/api/thumb/p1');
+  });
+
+  it('survives a body with no years', async () => {
+    stubJSON({});
+    await expect(fetchYearSummary()).resolves.toEqual([]);
+  });
+
+  it('scopes the feed with `to` when one is given', async () => {
+    const fetchMock = stubJSON({ photos: [] });
+    await fetchPhotosPage(undefined, { to: '2020' });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain('to=2020');
+
+    fetchMock.mockClear();
+    await fetchPhotosPage(undefined, {});
+    expect(fetchMock.mock.calls[0][0] as string).not.toContain('to=');
   });
 });

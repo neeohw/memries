@@ -248,6 +248,7 @@ file ([ADR 0014](docs/adr/0014-pluggable-sql-store.md)) and sign-in is local
 - `/api/index/status` → the current or last index run
 - `/api/index`    → `POST` starts (or dedupes) a folder scan
 - `/api/photos`   → cursor page (`limit`, opaque `cursor` → `next_cursor`; optional `year`, `favorite`, `q`)
+- `/api/photos/summary` → the whole library sampled for year view: every year with a few photos per month and its real count (`per_month`, 1-12, default 3)
 - `/api/photos/{id}/favorite` → `PUT` `{ "favorite": true }`
 - `/api/albums`   → list/create albums
 - `/api/albums/{id}` → one album plus its photos

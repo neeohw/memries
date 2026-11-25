@@ -127,3 +127,29 @@ describe('catalogues', () => {
     expect(englishLeftovers).toEqual([]);
   });
 });
+
+describe('number formatting in messages', () => {
+  it('groups a numeric value the way the language does', () => {
+    // A year strip routinely reports four and five figures (ADR 0031), and
+    // "11000 more" is not how anyone writes eleven thousand.
+    expect(
+      createTranslator('en')('timeline.showAllInPeriod', { count: 11000, period: '2019' }),
+    ).toBe('11,000 more in 2019 — zoom in');
+    expect(
+      createTranslator('nl')('timeline.showAllInPeriod', { count: 11000, period: '2019' }),
+    ).toBe('Nog 11.000 in 2019 — inzoomen');
+  });
+
+  it('leaves a string value alone, so a year keeps its digits', () => {
+    // The period is passed as a string precisely so it is not grouped into
+    // "2.019".
+    expect(createTranslator('nl')('timeline.showAllInPeriod', { count: 5, period: '2019' })).toBe(
+      'Nog 5 in 2019 — inzoomen',
+    );
+  });
+
+  it('still chooses the plural form from the raw count', () => {
+    expect(createTranslator('en')('favorites.count', { count: 1 })).toBe('1 memory');
+    expect(createTranslator('en')('favorites.count', { count: 2400 })).toBe('2,400 memories');
+  });
+});
