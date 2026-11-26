@@ -75,6 +75,7 @@ export const en = {
     next: 'Next photo',
     close: 'Close photo',
     actions: 'Photo actions',
+    openOriginal: 'Open the original in a new tab',
     fallbackName: 'Photo',
   },
   selection: {

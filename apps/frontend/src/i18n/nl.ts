@@ -68,6 +68,7 @@ export const nl: Messages = {
     next: 'Volgende foto',
     close: 'Foto sluiten',
     actions: 'Fotoacties',
+    openOriginal: 'Open het origineel in een nieuw tabblad',
     fallbackName: 'Foto',
   },
   selection: {

@@ -39,4 +39,26 @@ describe('PhotoViewer', () => {
       'false',
     );
   });
+
+  // A link rather than window.open, so cmd-click and middle-click work and no
+  // popup blocker is involved. `noopener` matters even for our own origin: the
+  // new tab would otherwise hold a handle on this one.
+  it('offers the original in a new tab', () => {
+    render(
+      <PhotoViewer
+        photos={[photo]}
+        activeId={photo.id}
+        origin={null}
+        onClose={() => {}}
+        onChange={() => {}}
+        onToggleFavorite={() => {}}
+        albums={[]}
+        onAddToAlbum={() => {}}
+      />,
+    );
+    const link = screen.getByRole('link', { name: 'Open the original in a new tab' });
+    expect(link).toHaveAttribute('href', photo.imageUrl);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+  });
 });

@@ -7,7 +7,14 @@ import { VideoStage } from './VideoStage';
 import { viewerFallbackSrc } from '../lib/photoSrc';
 import { resolveViewerGesture } from '../lib/viewerGesture';
 import type { Album, Photo } from '../models/photo';
-import { AlbumIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, HeartIcon } from './icons';
+import {
+  AlbumIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  HeartIcon,
+  NewTabIcon,
+} from './icons';
 import { PhotoActionsMenu } from './PhotoActionsMenu';
 
 type ViewerMotion = 'opening' | 'open' | 'navigating' | 'closing' | 'reduced';
@@ -225,6 +232,24 @@ export function PhotoViewer({
               <CloseIcon className="h-5 w-5" />
             </button>
             <div className="flex items-center gap-2">
+              {/*
+                A real link, not a button that calls window.open: it honours
+                cmd-click and middle-click, needs no popup-blocker exception,
+                and the file is served by the same origin either way. For a
+                format no browser can show, /api/original answers with the 2048
+                display rendition rather than the raw bytes (ADR 0025), so what
+                opens is always something that renders.
+              */}
+              <a
+                href={photo.imageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="grid h-11 w-11 min-h-11 min-w-11 place-items-center rounded-full bg-white/10 transition duration-200 hover:bg-white/20 active:scale-95"
+                aria-label={t('photo.openOriginal')}
+                title={t('photo.openOriginal')}
+              >
+                <NewTabIcon className="h-5 w-5" />
+              </a>
               <button
                 type="button"
                 onClick={() => setAlbumPickerOpen(true)}

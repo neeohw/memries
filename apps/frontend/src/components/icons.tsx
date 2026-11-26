@@ -190,6 +190,15 @@ export function PlayIcon(props: IconProps) {
   );
 }
 
+/** A pane with an arrow leaving it: this opens somewhere else. */
+export function NewTabIcon(props: IconProps) {
+  return (
+    <svg {...icon(props)}>
+      <path d="M14 4h6v6M20 4l-8 8M18 13.5v4.7A1.8 1.8 0 0 1 16.2 20H5.8A1.8 1.8 0 0 1 4 18.2V7.8A1.8 1.8 0 0 1 5.8 6h4.7" />
+    </svg>
+  );
+}
+
 export function CheckIcon(props: IconProps) {
   return (
     <svg {...icon(props)} strokeWidth={2.4}>
