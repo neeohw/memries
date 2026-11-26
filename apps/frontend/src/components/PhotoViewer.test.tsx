@@ -61,4 +61,26 @@ describe('PhotoViewer', () => {
     expect(link).toHaveAttribute('target', '_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
   });
+
+  // Three icons with no words next to them. A screen reader has the
+  // aria-label; a pointer needs the title, and the two should not drift.
+  it('says what each action in the top row does on hover', () => {
+    render(
+      <PhotoViewer
+        photos={[photo]}
+        activeId={photo.id}
+        origin={null}
+        onClose={() => {}}
+        onChange={() => {}}
+        onToggleFavorite={() => {}}
+        albums={[]}
+        onAddToAlbum={() => {}}
+      />,
+    );
+    for (const name of ['Open the original in a new tab', 'Add to album', 'Add to favorites']) {
+      expect(
+        screen.getByRole(name.startsWith('Open') ? 'link' : 'button', { name }),
+      ).toHaveAttribute('title', name);
+    }
+  });
 });

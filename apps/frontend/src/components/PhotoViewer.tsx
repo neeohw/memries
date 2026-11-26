@@ -53,6 +53,9 @@ export function PhotoViewer({
   const dragRef = useRef({ x: 0, y: 0 });
   const closingRef = useRef(false);
   const [drag, setDrag] = useState({ x: 0, y: 0 });
+  const favoriteLabel = photo?.favorite
+    ? t('selection.removeFromFavorites')
+    : t('selection.addToFavorites');
   const nextSrc = photo?.imageUrl ?? '';
   const imageIdentity = `${photo?.id ?? ''}:${nextSrc}`;
   const [src, setSrc] = useState(nextSrc);
@@ -255,6 +258,7 @@ export function PhotoViewer({
                 onClick={() => setAlbumPickerOpen(true)}
                 className="grid h-11 w-11 min-h-11 min-w-11 place-items-center rounded-full bg-white/10 transition duration-200 hover:bg-white/20 active:scale-95"
                 aria-label={t('selection.addToAlbum')}
+                title={t('selection.addToAlbum')}
               >
                 <AlbumIcon className="h-5 w-5" />
               </button>
@@ -262,7 +266,11 @@ export function PhotoViewer({
                 type="button"
                 onClick={() => onToggleFavorite(photo.id, !photo.favorite)}
                 className="grid h-11 w-11 min-h-11 min-w-11 place-items-center rounded-full bg-white/10 transition duration-200 hover:bg-white/20 active:scale-95"
-                aria-label={photo.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                // Was hardcoded English, the one label in this dialog that
+                // never reached the catalogue (ADR 0021). Same words, so
+                // nothing that matches on the name changes.
+                aria-label={favoriteLabel}
+                title={favoriteLabel}
                 aria-pressed={photo.favorite}
               >
                 <HeartIcon
