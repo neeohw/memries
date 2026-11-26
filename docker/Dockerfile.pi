@@ -3,9 +3,9 @@
 # Builds both Memries binaries for the Pi, linked against libvips (ADR 0025).
 #
 # HEIC needs native decode — pure Go measured 4.6s to 24.7s per 12MP frame on
-# an A53 against ~0.8s native — so these are cgo builds. The server is one
-# too: it runs the index coordinator in-process, so pressing Scan in the UI
-# renders thumbnails inside the server, and a pure server fails every HEIC.
+# an A53 against ~0.8s native — so these are cgo builds. The server is one too,
+# though no longer because it has to be: an index run is a child process now
+# (ADR 0004), and the pair is built the same way so both link the same libvips.
 #
 # That makes the base image part of the contract rather than a convenience:
 # this must be the same Debian release as the box, because the binaries end up
@@ -71,15 +71,19 @@ RUN pkg-config --exists vips \
 RUN --mount=type=cache,id=gomod-arm64,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild-arm64,target=/root/.cache/go-build \
     CGO_ENABLED=1 go build -tags vips -trimpath -ldflags "$LDFLAGS" \
-        -o /out/server ./cmd/server \
+        -o /out/memries-server ./cmd/server \
     && CGO_ENABLED=1 go build -tags vips -trimpath -ldflags "$LDFLAGS" \
-        -o /out/indexer ./cmd/indexer
+        -o /out/memries-indexer ./cmd/indexer
 
 # Prove the binaries are what we think they are before they leave the
 # builder: a missing libvips link should fail here, not on the box. readelf
 # comes with build-essential's binutils; `file` is not installed.
+#
+# The names are the installed ones, not cmd/ names: the server finds the
+# indexer beside itself by filename, so what the build emits has to be what
+# the package installs (ADR 0004).
 RUN set -eu; \
-    for bin in server indexer; do \
+    for bin in memries-server memries-indexer; do \
         readelf -h "/out/$bin" | grep -E 'Class|Machine'; \
         readelf -d "/out/$bin" | grep -q 'libvips' \
             || { echo "$bin is not linked against libvips"; exit 1; }; \
@@ -91,11 +95,11 @@ RUN set -eu; \
 # One stage per selection, so --server-only and --indexer-only export exactly
 # what was asked for rather than everything the builder made.
 FROM scratch AS export
-COPY --from=build /out/server /server
-COPY --from=build /out/indexer /indexer
+COPY --from=build /out/memries-server /memries-server
+COPY --from=build /out/memries-indexer /memries-indexer
 
 FROM scratch AS export-server
-COPY --from=build /out/server /server
+COPY --from=build /out/memries-server /memries-server
 
 FROM scratch AS export-indexer
-COPY --from=build /out/indexer /indexer
+COPY --from=build /out/memries-indexer /memries-indexer

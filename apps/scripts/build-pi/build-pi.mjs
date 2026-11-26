@@ -177,7 +177,9 @@ export async function main(argv, deps = {}) {
     return 1;
   }
 
-  const wanted = [args.server && 'server', args.indexer && 'indexer'].filter(Boolean);
+  const wanted = [args.server && 'memries-server', args.indexer && 'memries-indexer'].filter(
+    Boolean,
+  );
   log(`${wanted.join(' + ')} -> ${args.out}/ (${args.platform}, cgo + libvips)`);
 
   const result = spawn(

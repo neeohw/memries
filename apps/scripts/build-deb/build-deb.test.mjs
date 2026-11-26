@@ -200,6 +200,6 @@ test('dockerArgs runs the same build in a matched container', () => {
 
 test('prerequisites name the command that makes each missing piece', () => {
   const needed = prerequisites({ repoRoot });
-  assert.ok(needed.some((p) => p.path.endsWith(join('dist', 'pi', 'server')) && p.how === 'make build-pi'));
+  assert.ok(needed.some((p) => p.path.endsWith(join('dist', 'pi', 'memries-server')) && p.how === 'make build-pi'));
   assert.ok(needed.some((p) => p.path.endsWith('index.html') && /pnpm/.test(p.how)));
 });

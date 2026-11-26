@@ -359,7 +359,7 @@ Compose is for development. The box runs the two binaries directly
 ([0025](docs/adr/0025-heic-and-the-cgo-build.md)):
 
 ```bash
-make build-pi            # -> dist/pi/server, dist/pi/indexer
+make build-pi            # -> dist/pi/memries-server, dist/pi/memries-indexer
 ```
 
 | binary | build | needs on the box |

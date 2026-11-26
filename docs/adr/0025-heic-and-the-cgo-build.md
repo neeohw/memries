@@ -1,7 +1,7 @@
 # ADR 0025 — HEIC, and the cgo build it requires
 
 - Status: accepted
-- Date: 2026-11-22
+- Date: 2026-11-22 (revised 2026-11-26)
 
 ## Context
 
@@ -38,17 +38,23 @@ optional speed-up into the only way indexing works.
 This decision first read "the indexer becomes a cgo build; the server does
 not", on the grounds that the server decodes nothing. That was wrong, and the
 product showed it: adding 8 HEICs to a folder and pressing **Scan now** failed
-all eight with `thumb: render pure: HEIC needs the libvips build`.
-`cmd/server` constructs an `index.Indexer` and runs the coordinator
-**in-process** — that is what makes the live progress of
-[0023](0023-scan-progress.md) possible — so pressing Scan renders thumbnails
-inside the server. The `indexer` CLI is the other way to start the same work,
-not the only one, and it is the one nobody uses from the UI.
+all eight with `thumb: render pure: HEIC needs the libvips build`. `cmd/server`
+constructed an `index.Indexer` and ran the coordinator **in-process**, so
+pressing Scan rendered thumbnails inside the server.
 
-The alternative was to keep the server pure and have it spawn the indexer
-binary for a scan. That buys a static server at the cost of process
-management and of the in-process status the progress panel reads, to avoid a
-dependency the box already has to install for the CLI. Not worth it.
+It no longer does. The run was moved into a child process
+([0004](0004-cursor-paginated-photos.md)) — the alternative this ADR weighed
+and declined, "at the cost of process management and of the in-process status
+the progress panel reads". The progress cost turned out to be avoidable: the
+child reports on stdout and the splash is unaffected. What tipped it was not
+the build at all but the hardware — four concurrent 12MP decodes inside the
+API process on 1.9GB with no swap.
+
+So the server no longer needs the tag to be correct. Both binaries still get
+it, because one container building a matched pair is simpler than two paths,
+and because `thumb.Backend` is what the logs name. Making the server pure
+again is a separate change, and the reason to want it is a static binary
+rather than anything that is broken today.
 
 The box needs `apt install libvips42t64`, which pulls `libheif1` itself.
 Nothing is compiled from source: Debian trixie's libvips 8.16.1 already ships
@@ -170,9 +176,11 @@ gets a smaller image rather than an error.
 - **Docker is needed to build either binary.** Both are cgo, so both come out
   of the matched container; `--server-only` picks an export stage, not a
   host build.
-- **The server has a runtime dependency now**: `libvips42t64`, the same one
-  the indexer already needed. Nothing new to install on the box, but the
-  server is no longer a file you can copy onto a bare system.
+- **The server has a runtime dependency**: `libvips42t64`, the same one the
+  indexer already needed. Nothing new to install on the box, but the server is
+  not a file you can copy onto a bare system. It no longer has to be this way
+  — see [0004](0004-cursor-paginated-photos.md) — and dropping it is the one
+  thing left to collect from that change.
 - `.avif` is decodable by the same loader but stays out, along with
   `.tif`/`.bmp` and raw formats.
 

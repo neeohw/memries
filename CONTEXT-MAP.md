@@ -9,7 +9,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0001](docs/adr/0001-agent-guidance-and-context-map.md) | AGENTS.md is the operating contract; CONTEXT-MAP.md is the persistent map; stay in this repo |
 | [0002](docs/adr/0002-spa-owned-timeline-groups.md) | Memories buckets Photos in the SPA; `/api/timeline` is not the feed, but [0017](docs/adr/0017-date-scrubber.md) reads it as the scrubber's histogram |
 | [0003](docs/adr/0003-modular-monolith-compose.md) | Compose modular monolith: one Go module, two binaries, Caddy in front |
-| [0004](docs/adr/0004-cursor-paginated-photos.md) | Browser-started Index run; composite-cursor `/api/photos`; "a folder grew" is disk files vs. the last run's `discovered`, never vs. the row count |
+| [0004](docs/adr/0004-cursor-paginated-photos.md) | Browser-started Index run; the run is a `memries-indexer` child process found beside the server, reporting progress as JSON on stdout; composite-cursor `/api/photos`; "a folder grew" is disk files vs. the last run's `discovered`, never vs. the row count |
 | [0005](docs/adr/0005-capture-time-stable-identity.md) | Capture clock, stable Photo `_key`, persisted owner library |
 | [0007](docs/adr/0007-viewport-forced-compact-thumbs.md) | Compact grids: 256 at viewport ≥1280px, else 512; no `srcset` |
 | [0010](docs/adr/0010-memries-platform-quality-shelf.md) | Local `/platform-quality`: a11y → e2e suite → lint → format; e2e slices superseded by [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) |

@@ -11,10 +11,10 @@ export const BINARIES = ['server', 'indexer'];
  * MEMRIES_VIPS=1 builds against libvips instead of the pure Go renderer
  * (ADR 0015). HEIC can only be decoded that way.
  *
- * It applies to **both** binaries. The server was left pure on the theory
- * that it decodes nothing, which was wrong: cmd/server runs the index
- * coordinator in-process, so pressing Scan renders thumbnails inside the
- * server and a pure server fails every HEIC it is handed (ADR 0025).
+ * It applies to **both** binaries. The server does not render thumbnails any
+ * more — an index run is a child process (ADR 0004) — so it no longer needs
+ * the tag to be correct; it keeps it so one build produces a matched pair and
+ * so thumb.Backend names the same renderer in both logs (ADR 0025).
  *
  * It needs libvips-dev and a C toolchain, so it stays opt-in: a plain
  * checkout still builds with nothing installed, and the result still runs —

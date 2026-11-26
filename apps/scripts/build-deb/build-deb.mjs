@@ -26,7 +26,7 @@ Build the Memries .deb (ADR 0030).
 
 It packages what is already built rather than building it:
 
-  dist/pi/server, dist/pi/indexer   make build-pi
+  dist/pi/memries-server, dist/pi/memries-indexer   make build-pi
   apps/frontend/dist                pnpm --filter @memries/frontend build
 
 The package installs the API server as a systemd service on 127.0.0.1:5987,
@@ -83,8 +83,8 @@ export function layout({ repoRoot }) {
   const pkg = join(repoRoot, 'packaging');
   return {
     binaries: {
-      'usr/bin/memries-server': join(repoRoot, 'dist', 'pi', 'server'),
-      'usr/bin/memries-indexer': join(repoRoot, 'dist', 'pi', 'indexer'),
+      'usr/bin/memries-server': join(repoRoot, 'dist', 'pi', 'memries-server'),
+      'usr/bin/memries-indexer': join(repoRoot, 'dist', 'pi', 'memries-indexer'),
     },
     files: {
       'etc/memries/config.yaml': join(pkg, 'debian', 'config.yaml'),

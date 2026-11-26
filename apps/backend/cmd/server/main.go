@@ -83,9 +83,15 @@ func main() {
 		os.Exit(1)
 	}
 	reg := &sources.Registry{Repo: dbc, Sealer: sealer, Roots: cfg.Library.Roots, Log: log}
+	// An index run happens in a child process, not in here: rendering
+	// thumbnails inside the API means four concurrent 12MP decodes on 1.9GB
+	// with no swap, and a crash in cgo took the server with it (ADR 0004).
+	// This Indexer stays for the per-prefix media counts the status heuristic
+	// reads, which only walk directory entries.
 	idx := &index.Indexer{Store: reg, DB: dbc, Thumb: tg, Log: log}
+	runner := &index.ExecRunner{Config: path, Log: log}
 	lib := index.Library{Photos: dbc, Store: reg}
-	coord := index.NewCoordinator(ctx, idx, dbc, dbc, idx, lib, log).WithScopes(reg)
+	coord := index.NewCoordinator(ctx, runner, dbc, dbc, idx, lib, log).WithScopes(reg)
 	if err := coord.Reconcile(ctx); err != nil {
 		log.Error("index reconcile", "err", err)
 		os.Exit(1)

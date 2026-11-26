@@ -1,7 +1,7 @@
 # ADR 0004 — Browser-started indexing and cursor-paginated photos
 
 - Status: accepted
-- Date: 2026-08-26 (revised 2026-11-24)
+- Date: 2026-08-26 (revised 2026-11-26)
 
 ## Context
 
@@ -26,6 +26,49 @@ recent originals have gone missing.
 Interrupted `queued` or `running` rows are marked failed on process start and
 on the next status read: a run cannot survive the process that was running it,
 and leaving the row as `running` would hang the splash forever.
+
+### The run happens in a child process
+
+The coordinator's `JobRunner` is satisfied by `index.ExecRunner`, which spawns
+the `memries-indexer` binary instead of calling `index.Indexer` in this
+process. Everything above that seam is unchanged: the coordinator still writes
+`index_runs`, `/api/index/status` still reports from it, and the splash still
+polls.
+
+**Why.** Indexing in process means four concurrent 12MP decodes inside the API
+on a 1.9GB board with no swap, so a scan could take the server out, and a
+crash in cgo or libvips took it with it. As a child, the scan is the thing that
+dies and the library stays browsable. `GOMEMLIMIT` in the unit applies per
+process, so the child gets its own ceiling rather than sharing the server's.
+
+[0025](0025-heic-and-the-cgo-build.md) weighed this and declined it, "at the
+cost of process management and of the in-process status the progress panel
+reads". The second cost turned out to be avoidable, which is what changed the
+answer.
+
+**Progress crosses the boundary on stdout.** `--progress json` makes the
+indexer write one object per update, the same `Result` the in-process callback
+received; `ExecRunner` parses each line and calls `OnProgress` with it, so the
+splash's live counters are unaffected. The indexer's own logging already went
+to stderr, so the two streams were already separate. A line that is not a
+progress object is skipped rather than failing the run, and the final `Result`
+is written as the last line whether or not a tick landed on the last file.
+
+**The binary is found beside the server**, by filename, from `os.Executable`
+with symlinks resolved. Not through `PATH`: `exec.Command` with a bare name
+searches it, and a `memries-indexer` earlier in `PATH` would then run as the
+server's user. Not from configuration either — one fewer path to get wrong,
+and the package installs the pair together, which is why `make build-pi` emits
+them under their installed names rather than cmd/'s.
+
+**Cancelling means signalling.** The child is put in its own process group and
+gets `SIGTERM`, escalating to a kill after ten seconds, because the indexer
+runs ffmpeg per clip and signalling only the indexer would orphan a transcode.
+A run killed this way lands as `failed`, not as a `running` row that never
+finishes — which is the stuck row that used to latch the heuristic below.
+
+`--source` is repeated once per Source rather than joined, so the child walks
+exactly the set the parent resolved and recorded.
 
 ### "A folder grew" is measured against the last run, not against the catalog
 
