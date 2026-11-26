@@ -25,16 +25,12 @@ export const en = {
     favorites: 'Favorites',
   },
   timeline: {
-    scanFolder: 'Scan your folder',
-    scanning: 'Scanning your folder…',
     heading: 'Your memries',
     empty: 'No memories here yet.',
     loadingMore: 'Loading more memories…',
     backToToday: 'Back to today',
     currentPeriod: 'Current period',
     filter: 'Filter',
-    syncFolder: 'Sync folder',
-    syncing: 'Syncing…',
     jumpToDate: 'Jump to date',
     /**
      * The "there is more here" affordance under a sampled year (ADR 0031).
@@ -147,6 +143,7 @@ export const en = {
     looking: 'Looking through your folder…',
     reading: 'Reading {processed} of {discovered}…',
     stopped: 'Indexing stopped before it finished.',
+    failed: 'Indexing could not finish.',
     someFailed: 'Some files could not be read. Opening what we have…',
     opening: 'Opening your album…',
     heading: 'Indexing your files',
@@ -154,6 +151,8 @@ export const en = {
     unreachable: 'We could not reach the library.',
     retry: 'Try again',
     retrying: 'Retrying…',
+    stop: 'Stop the scan',
+    stopping: 'Stopping…',
   },
   scan: {
     title: 'Scanning',

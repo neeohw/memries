@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchIndexStatus, startIndex } from '../lib/api';
+import { fetchIndexStatus, startIndex, stopIndex } from '../lib/api';
 import {
   canRetryIndex,
   isIndexReady,
-  shouldAutoStart,
   shouldInvalidatePhotos,
   shouldPoll,
   type IndexStatus,
@@ -17,7 +16,6 @@ export const indexQueryKey = ['index', 'status'] as const;
 export function useIndex() {
   const queryClient = useQueryClient();
   const prevRef = useRef<IndexStatus | undefined>(undefined);
-  const autoStarted = useRef(false);
 
   const statusQuery = useQuery({
     queryKey: indexQueryKey,
@@ -32,20 +30,17 @@ export function useIndex() {
     },
   });
 
-  const status = statusQuery.data;
+  // The status that comes back still reads `running`: the indexer has been
+  // signalled, not reaped. Writing it to the cache keeps the splash polling
+  // until the run actually ends (ADR 0004).
+  const stopMutation = useMutation({
+    mutationFn: stopIndex,
+    onSuccess: (next) => {
+      queryClient.setQueryData(indexQueryKey, next);
+    },
+  });
 
-  useEffect(() => {
-    if (!status || startMutation.isPending) return;
-    if (shouldPoll(status)) return;
-    if (shouldAutoStart(status)) {
-      if (autoStarted.current || startMutation.isError) return;
-      autoStarted.current = true;
-      startMutation.mutate();
-      return;
-    }
-    // Allow a later not_started (library grew / missing originals) to auto-start again.
-    autoStarted.current = false;
-  }, [startMutation, status]);
+  const status = statusQuery.data;
 
   useEffect(() => {
     if (!status) return;
@@ -67,11 +62,6 @@ export function useIndex() {
     startMutation.mutate();
   };
 
-  const rescan = () => {
-    startMutation.reset();
-    startMutation.mutate();
-  };
-
   return {
     status,
     isLoading: statusQuery.isLoading && !status,
@@ -83,9 +73,10 @@ export function useIndex() {
       startMutation.isError ||
       (statusQuery.isError && !status),
     retry,
-    rescan,
     retrying: startMutation.isPending,
-    rescanning: startMutation.isPending,
+    stop: () => stopMutation.mutate(),
+    stopping: stopMutation.isPending,
+    canStop: !!status && shouldPoll(status),
     refetch: statusQuery.refetch,
   };
 }

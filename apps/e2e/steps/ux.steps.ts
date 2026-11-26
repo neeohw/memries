@@ -62,9 +62,12 @@ When('I switch the theme', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', next);
 });
 
+// Scan on the Folders page is the only trigger in the interface: the splash
+// no longer starts a run on its own and the timeline has no sync button
+// (ADR 0004).
 When('I start a folder sync', async ({ page }) => {
-  await openTab(page, 'Memories');
-  await page.getByRole('button', { name: 'Sync folder' }).click();
+  await openTab(page, 'Folders');
+  await page.getByRole('button', { name: 'Scan now' }).first().click();
   await expect(page.locator('[data-indexing-splash]')).toBeVisible();
 });
 

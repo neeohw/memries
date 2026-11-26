@@ -18,8 +18,13 @@ const (
 	StatusComplete           = "complete"
 	StatusCompleteWithErrors = "complete_with_errors"
 	StatusFailed             = "failed"
+	// StatusStopped is a run an admin ended on purpose. Not a failure: the
+	// photos it got through are in the catalog and the library is browsable,
+	// so the splash lets the reader past it (ADR 0004).
+	StatusStopped = "stopped"
 
 	interruptMessage = "interrupted by restart"
+	stoppedMessage   = "stopped before it finished"
 )
 
 type Result struct {
@@ -99,6 +104,8 @@ type job struct {
 	result  Result
 	errMsg  string
 	rerun   bool // Sources changed mid-run: go again when this run ends
+	stopped bool // An admin asked for this run to end
+	cancel  context.CancelFunc
 }
 
 func NewCoordinator(ctx context.Context, runner JobRunner, store RunStore, counter OwnerPhotoCounter, media PrefixMediaCounter, library OriginalsProber, log *slog.Logger) *Coordinator {
@@ -196,7 +203,12 @@ func (c *Coordinator) Status(ctx context.Context) (Status, error) {
 				return Status{}, err
 			}
 		}
-		if run.Prefix != prefix || c.shouldRescan(ctx, scopes, run) {
+		// "The library grew since the last run" is a claim about a run that
+		// *finished*. A stopped or failed one has to report itself instead, or
+		// stopping a scan would read as a library that was never indexed —
+		// and `discovered` from a half-run always looks like growth.
+		settled := run.Status == StatusComplete || run.Status == StatusCompleteWithErrors
+		if run.Prefix != prefix || (settled && c.shouldRescan(ctx, scopes, run)) {
 			return idle, nil
 		}
 		s := statusFromRun(run, prefix)
@@ -286,6 +298,66 @@ func (c *Coordinator) Start(ctx context.Context) (Status, error) {
 	return c.start(ctx, false)
 }
 
+// Stop ends the run in flight.
+//
+// The child process gets a signal and unwinds, so this returns as soon as the
+// request is in — the status still reads `running` until the process is gone,
+// and the splash polls its way to `stopped`. Waiting here would hold an HTTP
+// request open for however long libvips takes to put down the frame it is on.
+//
+// A queued follow-up run is dropped: an admin pressing stop does not mean
+// "and then go again". Stopping when nothing is running is not an error, so
+// the current status comes back unchanged and pressing it twice is harmless.
+func (c *Coordinator) Stop(ctx context.Context) (Status, error) {
+	ownerID := db.IndexRunKey
+
+	c.mu.Lock()
+	j, ok := c.jobs[ownerID]
+	if !ok {
+		c.mu.Unlock()
+		return c.Status(ctx)
+	}
+	if j.status != StatusQueued && j.status != StatusRunning {
+		s := j.snapshot()
+		c.mu.Unlock()
+		return s, nil
+	}
+	j.stopped = true
+	j.rerun = false
+	cancel := j.cancel
+	s := j.snapshot()
+	c.mu.Unlock()
+
+	// Nil while the job is still queued behind another: runOnce reads the flag
+	// before it starts anything, so the run ends without walking a file.
+	if cancel != nil {
+		cancel()
+	}
+	c.log.Info("index run stop requested")
+	return s, nil
+}
+
+// takeStopped reports whether a stop was asked for, and clears the request.
+func (c *Coordinator) takeStopped(ownerID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	j, ok := c.jobs[ownerID]
+	if !ok || !j.stopped {
+		return false
+	}
+	j.stopped = false
+	return true
+}
+
+// setRunCancel hands the job the handle Stop pulls.
+func (c *Coordinator) setRunCancel(ownerID string, cancel context.CancelFunc) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if j, ok := c.jobs[ownerID]; ok {
+		j.cancel = cancel
+	}
+}
+
 // Rescan is Start for callers that just changed the Sources: a run already in
 // flight walked the old set, so another run is queued behind it.
 func (c *Coordinator) Rescan(ctx context.Context) (Status, error) {
@@ -361,6 +433,12 @@ func (c *Coordinator) runOnce() bool {
 		prefixes[i] = s.Prefix
 	}
 
+	if c.takeStopped(ownerID) {
+		// Stopped while queued behind another run: end without walking a file.
+		c.finish(ownerID, prefix, StatusStopped, Result{}, stoppedMessage)
+		return false
+	}
+
 	c.setRunning(ownerID, prefix, len(scopes))
 	started := time.Now().UTC()
 	_ = c.store.UpsertIndexRun(c.ctx, &db.IndexRun{
@@ -371,7 +449,13 @@ func (c *Coordinator) runOnce() bool {
 		UpdatedAt: started,
 	})
 
-	res, err := c.runner.Run(c.ctx, Options{
+	// A context of this run's own, so Stop can end one run without taking the
+	// server's down with it.
+	runCtx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
+	c.setRunCancel(ownerID, cancel)
+
+	res, err := c.runner.Run(runCtx, Options{
 		Prefixes:    prefixes,
 		Concurrency: 4,
 		OnProgress: func(p Result) {
@@ -379,6 +463,12 @@ func (c *Coordinator) runOnce() bool {
 		},
 	})
 	if err != nil {
+		// Asked for, so not a failure: the counts it reached are kept and the
+		// library stays browsable.
+		if c.takeStopped(ownerID) {
+			c.finish(ownerID, prefix, StatusStopped, res, stoppedMessage)
+			return false
+		}
 		msg := err.Error()
 		if c.ctx.Err() != nil {
 			msg = interruptMessage

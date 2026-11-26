@@ -1,5 +1,5 @@
 export type IndexPhase =
-  'not_started' | 'queued' | 'running' | 'complete' | 'complete_with_errors' | 'failed';
+  'not_started' | 'queued' | 'running' | 'complete' | 'complete_with_errors' | 'stopped' | 'failed';
 
 export type IndexStatus = {
   status: IndexPhase;
@@ -14,16 +14,25 @@ export type IndexStatus = {
   error?: string;
 };
 
-export function shouldAutoStart(status: IndexStatus): boolean {
-  return status.status === 'not_started';
-}
-
 export function shouldPoll(status: IndexStatus): boolean {
   return status.status === 'queued' || status.status === 'running';
 }
 
+/**
+ * Whether the reader should be let through to the library.
+ *
+ * Anything but a run in flight, or one that failed. While the splash still
+ * started runs by itself, `not_started` meant "a run is about to begin" and
+ * waiting on it made sense. Now that only an admin starts one it means
+ * "nobody has asked for one yet", and holding a reader on a splash for that
+ * is a dead end with no way out (ADR 0004). A `stopped` run is the same: the
+ * photos it got through are in the catalog.
+ *
+ * `failed` is the exception. The splash is where the reason is shown, and an
+ * admin's retry is there with it.
+ */
 export function isIndexReady(status: IndexStatus): boolean {
-  return status.status === 'complete' || status.status === 'complete_with_errors';
+  return !shouldPoll(status) && status.status !== 'failed';
 }
 
 export function canRetryIndex(status: IndexStatus): boolean {
@@ -50,7 +59,8 @@ export function indexStatusCopy(
     if (status.discovered === 0) return t('indexing.looking');
     return t('indexing.reading', { processed: status.processed, discovered: status.discovered });
   }
-  if (status.status === 'failed') return status.error || t('indexing.stopped');
+  if (status.status === 'stopped') return t('indexing.stopped');
+  if (status.status === 'failed') return status.error || t('indexing.failed');
   if (status.status === 'complete_with_errors') return t('indexing.someFailed');
   return t('indexing.opening');
 }

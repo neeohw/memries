@@ -343,8 +343,9 @@ When('I relocate the photo {string} to {string}', async ({}, from: string, to: s
 });
 
 When('I sync the folder', async ({ page }) => {
+  await openTab(page, 'Folders');
+  await page.getByRole('button', { name: 'Scan now' }).first().click();
   await openTab(page, 'Memories');
-  await page.getByRole('button', { name: 'Sync folder' }).click();
   await expect(page.getByRole('heading', { name: 'Your memries' })).toBeVisible({
     timeout: 120_000,
   });

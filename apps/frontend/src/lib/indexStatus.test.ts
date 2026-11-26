@@ -4,7 +4,6 @@ import {
   indexProgress,
   indexStatusCopy,
   isIndexReady,
-  shouldAutoStart,
   shouldInvalidatePhotos,
   shouldPoll,
   type IndexStatus,
@@ -29,17 +28,25 @@ function status(phase: IndexStatus['status']): IndexStatus {
 }
 
 describe('index status decisions', () => {
-  it('auto-starts only a never-run import', () => {
-    expect(shouldAutoStart(status('not_started'))).toBe(true);
-    expect(shouldAutoStart(status('complete'))).toBe(false);
-    expect(shouldAutoStart(status('failed'))).toBe(false);
-  });
-
+  // Nothing here starts a run any more: loading the page must not put a
+  // 1.9GB box through an 11,000-file walk, and the only trigger in the
+  // interface is Scan on the Folders page (ADR 0004). `not_started` is
+  // something the splash reports, not something it acts on.
   it('polls only while queued or running', () => {
     expect(shouldPoll(status('queued'))).toBe(true);
     expect(shouldPoll(status('running'))).toBe(true);
     expect(shouldPoll(status('complete'))).toBe(false);
     expect(shouldPoll(status('failed'))).toBe(false);
+  });
+
+  // The splash is for a run in flight. Holding a reader on it when nothing is
+  // running — and nothing will start by itself any more — is a dead end.
+  it('lets the reader through unless a run is in flight or failed', () => {
+    expect(isIndexReady(status('not_started'))).toBe(true);
+    expect(isIndexReady(status('stopped'))).toBe(true);
+    expect(isIndexReady(status('queued'))).toBe(false);
+    expect(isIndexReady(status('running'))).toBe(false);
+    expect(isIndexReady(status('failed'))).toBe(false);
   });
 
   it('treats complete and complete_with_errors as ready for photos', () => {
@@ -78,7 +85,12 @@ describe('indexStatusCopy', () => {
     expect(indexStatusCopy(counted({ status: 'failed', error: 'permission denied' }), t)).toBe(
       'permission denied',
     );
+    // A failure and a run an admin stopped are different things now, and each
+    // says which it was.
     expect(indexStatusCopy(counted({ status: 'failed' }), t)).toBe(
+      'Indexeren kon niet worden afgerond.',
+    );
+    expect(indexStatusCopy(counted({ status: 'stopped' }), t)).toBe(
       'Indexeren is gestopt voordat het klaar was.',
     );
   });

@@ -63,6 +63,7 @@ func (a *API) Routes(r chi.Router) {
 	r.Get("/original/{id}", a.original)
 	r.Get("/index/status", a.indexStatus)
 	r.Post("/index", a.startIndex)
+	r.Post("/index/stop", a.stopIndex)
 	r.Route("/admin", a.adminRoutes)
 	if a.E2E {
 		r.Post("/e2e/reset", a.e2eReset)

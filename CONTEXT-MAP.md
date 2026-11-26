@@ -9,7 +9,7 @@ Stay in this repository. Do not read or edit parent directories.
 | [0001](docs/adr/0001-agent-guidance-and-context-map.md) | AGENTS.md is the operating contract; CONTEXT-MAP.md is the persistent map; stay in this repo |
 | [0002](docs/adr/0002-spa-owned-timeline-groups.md) | Memories buckets Photos in the SPA; `/api/timeline` is not the feed, but [0017](docs/adr/0017-date-scrubber.md) reads it as the scrubber's histogram |
 | [0003](docs/adr/0003-modular-monolith-compose.md) | Compose modular monolith: one Go module, two binaries, Caddy in front |
-| [0004](docs/adr/0004-cursor-paginated-photos.md) | Browser-started Index run; the run is a `memries-indexer` child process found beside the server, reporting progress as JSON on stdout; composite-cursor `/api/photos`; "a folder grew" is disk files vs. the last run's `discovered`, never vs. the row count |
+| [0004](docs/adr/0004-cursor-paginated-photos.md) | Admin-started Index run (Scan on the Folders page is the only trigger; the splash never starts one); the run is a `memries-indexer` child process found beside the server, reporting progress as JSON on stdout; `POST /api/index/stop` ends it and `stopped` reads as ready, since what it indexed is kept; composite-cursor `/api/photos`; "a folder grew" is disk files vs. the last run's `discovered`, never vs. the row count |
 | [0005](docs/adr/0005-capture-time-stable-identity.md) | Capture clock, stable Photo `_key`, persisted owner library |
 | [0007](docs/adr/0007-viewport-forced-compact-thumbs.md) | Compact grids: 256 at viewport ≥1280px, else 512; no `srcset` |
 | [0010](docs/adr/0010-memries-platform-quality-shelf.md) | Local `/platform-quality`: a11y → e2e suite → lint → format; e2e slices superseded by [0012](docs/adr/0012-e2e-one-suite-two-profiles.md) |
@@ -103,7 +103,7 @@ ACL today: every signed-in reader sees every Photo. What is scoped is `album.own
 ## Frontend
 
 - Cookie `credentials: "include"`; a 401 throws `UnauthorizedError`, and a 401 from `/api/me` is what makes `App` render `LoginScreen`
-- Splash polls `/api/index/status` and may `POST /api/index` ([0004](docs/adr/0004-cursor-paginated-photos.md))
+- Splash polls `/api/index/status` and only reports; `POST /api/index` is admin-only and reached from Scan on the Folders page ([0004](docs/adr/0004-cursor-paginated-photos.md))
 - A `complete` run reads as `not_started` only when originals went missing or a folder grew past the last run's `discovered` — never because disk files outnumber photo rows, which duplicates and failed imports make permanent ([0004](docs/adr/0004-cursor-paginated-photos.md))
 - Memories pages `/api/photos` and groups in the SPA; `/api/timeline` feeds only the scrubber's histogram ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md))
 - Year view reads `/api/photos/summary` instead, so the widest zoom sees every year rather than the newest page; `TimelineGroup.total` is the period's real count and the feed is scoped with `to` on the way out ([0031](docs/adr/0031-year-view-is-a-summary.md))

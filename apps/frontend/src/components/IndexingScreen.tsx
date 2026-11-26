@@ -9,6 +9,8 @@ export function IndexingScreen({
   onExited,
   onRetry,
   retrying,
+  onStop,
+  stopping,
   loadError,
 }: {
   status?: IndexStatus;
@@ -16,6 +18,9 @@ export function IndexingScreen({
   onExited: () => void;
   onRetry?: () => void;
   retrying?: boolean;
+  /** Admin-only, and only while a run is in flight (ADR 0004). */
+  onStop?: () => void;
+  stopping?: boolean;
   loadError?: boolean;
 }) {
   const { t } = useI18n();
@@ -80,6 +85,16 @@ export function IndexingScreen({
               style={{ width: `${progress}%` }}
             />
           </div>
+        )}
+        {onStop && (
+          <button
+            type="button"
+            onClick={onStop}
+            disabled={stopping}
+            className="mt-6 min-h-11 rounded-full bg-plum/10 px-5 text-sm font-medium text-plum disabled:opacity-40"
+          >
+            {stopping ? t('indexing.stopping') : t('indexing.stop')}
+          </button>
         )}
         {showRetry && onRetry && (
           <button

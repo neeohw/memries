@@ -278,6 +278,18 @@ export async function startIndex(): Promise<IndexStatus> {
 }
 
 /**
+ * Ends the run in flight.
+ *
+ * The answer is the status as it stands, which still reads `running` while
+ * the indexer process is putting down the frame it was on — the splash polls
+ * its way to `stopped` from there (ADR 0004).
+ */
+export async function stopIndex(): Promise<IndexStatus> {
+  const res = await apiFetch('/api/index/stop', { method: 'POST' });
+  return (await res.json()) as IndexStatus;
+}
+
+/**
  * Photos per page.
  *
  * 500 is the server's cap (`db.ClampPhotoLimit`). The scrubber can ask to jump

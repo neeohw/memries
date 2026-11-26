@@ -10,15 +10,40 @@ timeline has to page through it without skipping or repeating a photo.
 
 ## Decision
 
-### The browser starts the index run
+### An admin starts the index run, and nothing else does
 
-`GET /api/index/status` and `POST /api/index` are session-authenticated, and
-the body cannot name a folder — the folders come from the Sources an admin
-configured ([0013](0013-admin-managed-sources.md)), never from the client.
+`GET /api/index/status` is session-authenticated. `POST /api/index` is
+**admin-only**, and the body cannot name a folder — the folders come from the
+Sources an admin configured ([0013](0013-admin-managed-sources.md)), never
+from the client.
+
+The splash used to start a run by itself whenever the status read came back
+`not_started`. That was right for an empty box and wrong for everything after:
+on a library of 11,000 files, any condition that reported `not_started` — a
+changed Source set, a missing original, a partial `discovered` from an
+interrupted run — made **every page load** walk the whole library again. The
+reader had not asked for it and could not tell it was happening beyond a
+splash that would not go away.
+
+So the only trigger in the interface is **Scan on the Folders page**. The
+timeline's sync button is gone and the splash's auto-start with it; the splash
+reports a run and no longer causes one. `not_started` became something to
+display rather than something to act on, and the heuristics behind it
+(`shouldRescan`, below) now only decide what the splash *says*.
+
+Admin-only because starting a run walks every Source and renders thumbnails
+for what it finds, which on a single-board computer is minutes of the machine.
+That is not a reader's decision to make. The check sits in the handler rather
+than in `requireAdmin`, which also refuses when no Source store is configured
+— the right answer for the Sources routes and the wrong one for this.
+
+A first run therefore needs a deliberate press, by someone who can also add
+the folder it reads. An empty library shows the splash with nothing happening
+until then, which is honest about a machine that will be busy for an hour.
 
 State persists as a single `index_runs` row ([0020](0020-server-wide-library.md)),
 through `not_started`, `queued`, `running`, `complete`,
-`complete_with_errors`, `failed`. An empty successful scan is persisted too,
+`complete_with_errors`, `stopped`, `failed`. An empty successful scan is persisted too,
 so the splash does not loop on a library that is genuinely empty. A library
 that already holds photos is treated as complete unless a folder grew or
 recent originals have gone missing.
@@ -26,6 +51,40 @@ recent originals have gone missing.
 Interrupted `queued` or `running` rows are marked failed on process start and
 on the next status read: a run cannot survive the process that was running it,
 and leaving the row as `running` would hang the splash forever.
+
+### A run can be stopped, and stopping is not failing
+
+`POST /api/index/stop` is admin-only for the same reason starting is: one
+reader should not be able to cut short a scan someone else asked for. It
+cancels a context belonging to that run, not the server's, so the child is
+signalled and the API is untouched.
+
+It returns as soon as the request is in. The status still reads `running`
+while libvips puts down the frame it was on, and the splash polls its way to
+`stopped` from there — waiting in the handler would hold an HTTP request open
+for however long that takes. Stopping when nothing is running is not an error:
+the current status comes back and a second press has nothing to cancel.
+
+A queued follow-up run is dropped. An admin pressing stop does not mean "and
+then go again".
+
+**`stopped` is its own state, and it reads as ready.** A stopped run is not a
+failure: the photos it got through are in the catalog, so the library is
+browsable and the splash lets the reader past. The counts it reached are kept
+on the row — stopping is not undoing. `failed` is the one state that still
+holds the splash, because that is where the reason is shown and where an
+admin's retry sits.
+
+For the same reason, `isIndexReady` now means "no run in flight, and not
+failed" rather than "complete". `not_started` used to mean "a run is about to
+begin", because the splash was about to begin one; now it means "nobody has
+asked for one", and holding a reader on a splash for that is a dead end with
+no way out.
+
+"The library grew since the last run" is also now only asked of a run that
+*finished*. A stopped run's `discovered` is a partial count, so it always
+looks like growth, and the splash would have reported a library that was
+never indexed.
 
 ### The run happens in a child process
 

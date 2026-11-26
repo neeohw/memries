@@ -132,9 +132,10 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
     isError: indexError,
     isReadyForPhotos,
     retry: indexRetry,
-    rescan,
-    rescanning,
     retrying: indexRetrying,
+    stop: indexStop,
+    stopping: indexStopping,
+    canStop: indexCanStop,
   } = useIndex();
   const [tab, setTab] = useState<NavTab>('memories');
   const [granularity, setGranularity] = useStoredZoom();
@@ -198,13 +199,8 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
   const showQueryError = activeQuery.isError && tab !== 'folders';
 
   const loadSettled = activeQuery.isSuccess || activeQuery.isError;
-  const canLeaveIndex = isReadyForPhotos && loadSettled && !rescanning && !indexRetrying;
+  const canLeaveIndex = isReadyForPhotos && loadSettled && !indexRetrying;
   const hideIndex = useCallback(() => setIndexVisible(false), []);
-
-  const handleRescan = useCallback(() => {
-    setIndexVisible(true);
-    rescan();
-  }, [rescan]);
 
   /**
    * Changes the zoom level and, leaving year view, starts the feed at whatever
@@ -340,8 +336,6 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
                 void timelineQuery.fetchNextPage();
               }}
               fetchError={summary ? false : timelineQuery.isFetchNextPageError}
-              onRescan={handleRescan}
-              rescanning={rescanning}
               noFolders={indexStatus?.sources === 0}
               onAddFolder={admin ? () => changeTab('folders') : undefined}
               histogram={histogramQuery.data}
@@ -447,8 +441,17 @@ function Library({ onSignOut }: { onSignOut: () => void }) {
           status={indexStatus}
           leaving={canLeaveIndex}
           onExited={hideIndex}
-          onRetry={indexRetry}
+          // Starting a run is an admin action now: the only trigger in the
+          // interface is Scan on the Folders page, and `POST /api/index`
+          // refuses anyone else (ADR 0004). Without this the button would be
+          // a 403 with nothing to say for itself.
+          onRetry={admin ? indexRetry : undefined}
           retrying={indexRetrying}
+          // A scan is minutes of a single-board computer, so whoever started
+          // it can call it off. Only while one is actually in flight, and
+          // only for an admin, who is the only one who could have started it.
+          onStop={admin && indexCanStop ? indexStop : undefined}
+          stopping={indexStopping}
           loadError={indexError && !indexStatus}
         />
       )}

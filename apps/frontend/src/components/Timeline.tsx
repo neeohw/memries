@@ -26,7 +26,7 @@ import { PhotoSkeleton } from './PhotoSkeleton';
 import { Scrubber } from './Scrubber';
 import { SelectionToolbar } from './SelectionToolbar';
 import { TimelineSection } from './TimelineSection';
-import { FilterIcon, SyncIcon, TodayIcon } from './icons';
+import { FilterIcon, TodayIcon } from './icons';
 
 /**
  * Where a pending jump is headed: a month, from the scrubber's track
@@ -84,8 +84,6 @@ export function Timeline({
   isFetchingNextPage,
   fetchNextPage,
   fetchError,
-  onRescan,
-  rescanning,
   noFolders,
   onAddFolder,
   onFilter,
@@ -127,8 +125,6 @@ export function Timeline({
   isFetchingNextPage?: boolean;
   fetchNextPage?: () => void;
   fetchError?: boolean;
-  onRescan?: () => void;
-  rescanning?: boolean;
   /** No folder feeds this library yet; admins get a shortcut to add one. */
   noFolders?: boolean;
   onAddFolder?: () => void;
@@ -453,20 +449,6 @@ export function Timeline({
                 <FilterIcon className="h-5 w-5" />
               </button>
             )}
-            {onRescan && (
-              <button
-                type="button"
-                onClick={onRescan}
-                disabled={rescanning}
-                aria-label={rescanning ? t('timeline.syncing') : t('timeline.syncFolder')}
-                title={rescanning ? t('timeline.syncing') : t('timeline.syncFolder')}
-                className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition duration-200 hover:bg-surface/70 hover:text-plum active:scale-95 disabled:opacity-50"
-              >
-                <SyncIcon
-                  className={`h-5 w-5 ${rescanning && !reducedMotion ? 'index-spin' : ''}`}
-                />
-              </button>
-            )}
           </div>
         )}
 
@@ -486,16 +468,6 @@ export function Timeline({
                   className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream"
                 >
                   Add a folder
-                </button>
-              )}
-              {onRescan && !noFolders && (
-                <button
-                  type="button"
-                  onClick={onRescan}
-                  disabled={rescanning}
-                  className="mt-5 min-h-11 rounded-full bg-plum px-5 text-sm font-medium text-cream disabled:opacity-60"
-                >
-                  {rescanning ? t('timeline.scanning') : t('timeline.scanFolder')}
                 </button>
               )}
             </div>

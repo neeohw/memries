@@ -428,3 +428,58 @@ func TestCoordinatorRescanQueuesFollowUpRun(t *testing.T) {
 		t.Fatalf("calls = %d, want follow-up run after Rescan", runner.nCalls())
 	}
 }
+
+// A run an admin stops is not a failure. The photos it reached are in the
+// catalog, so the row says `stopped` and the splash lets the reader past it
+// (ADR 0004).
+func TestCoordinatorStopEndsTheRunWithoutFailingIt(t *testing.T) {
+	runner := &fakeRunner{
+		block:   make(chan struct{}),
+		started: make(chan struct{}),
+		result:  Result{Discovered: 10, Processed: 4},
+	}
+	c := NewCoordinator(context.Background(), runner, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).
+		WithScopes(fixedScopes{{Prefix: "src-1"}})
+
+	if _, err := c.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	<-runner.started
+
+	if _, err := c.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		s, err := c.Status(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.Status == StatusStopped {
+			// What it got through is kept: stopping is not undoing.
+			if s.Processed != 4 {
+				t.Errorf("processed %d, want the 4 it reached before stopping", s.Processed)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status settled on %q, want %q", s.Status, StatusStopped)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Stopping when nothing is running is a no-op, not an error: an admin may
+// press it twice, and the second press has nothing to cancel.
+func TestCoordinatorStopIsHarmlessWhenIdle(t *testing.T) {
+	c := NewCoordinator(context.Background(), &fakeRunner{}, newMemStore(), memCounter{}, memMediaCounter{}, nil, nil).
+		WithScopes(fixedScopes{{Prefix: "src-1"}})
+	s, err := c.Stop(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Status != StatusNotStarted {
+		t.Errorf("status %q, want %q", s.Status, StatusNotStarted)
+	}
+}
