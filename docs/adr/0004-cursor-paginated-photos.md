@@ -129,6 +129,30 @@ finishes — which is the stuck row that used to latch the heuristic below.
 `--source` is repeated once per Source rather than joined, so the child walks
 exactly the set the parent resolved and recorded.
 
+### A resync is a stat, not a read
+
+A file whose size and mtime still match its row is skipped before a byte of it
+is read — no sha256, no decode, no thumbnail. That is what makes adding one
+folder to an indexed library cheap: the walk visits every file, one indexed
+lookup and a handful of `stat` calls each, and reads only what is new.
+
+**It was not working.** The catalog keeps mtimes to the microsecond
+(`nullMicros`) and a filesystem reports nanoseconds, so comparing the two with
+`time.Equal` was false for almost every real file — its mtime has a
+sub-microsecond remainder that does not survive the round trip. Every scan
+therefore re-read and re-hashed the whole library, including streaming every
+video in full to hash it. The comparison now happens at the precision the
+catalog keeps.
+
+No test could see it, because `memPhotos` — the in-memory repository the
+indexer tests run against — kept whatever precision it was handed, and the
+fixtures set whole-second mtimes. A double that is more precise than the thing
+it doubles hides exactly this. It now truncates the way the SQL store does.
+
+The cost of the cheap check is that a file edited in place without its size or
+mtime moving is not noticed, and neither is a thumbnail that is wrong rather
+than missing. `indexer --force` is the way past it, and the only way.
+
 ### "A folder grew" is measured against the last run, not against the catalog
 
 A `complete` row is reported as `not_started` — which the splash answers by

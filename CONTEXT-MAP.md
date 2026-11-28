@@ -104,6 +104,7 @@ ACL today: every signed-in reader sees every Photo. What is scoped is `album.own
 
 - Cookie `credentials: "include"`; a 401 throws `UnauthorizedError`, and a 401 from `/api/me` is what makes `App` render `LoginScreen`
 - Splash polls `/api/index/status` and only reports; `POST /api/index` is admin-only and reached from Scan on the Folders page ([0004](docs/adr/0004-cursor-paginated-photos.md))
+- A resync skips any file whose size and mtime still match its row, before reading it; mtimes compare at the microsecond the catalog stores, not the nanosecond the disk reports. `indexer --force` is the only way past it ([0004](docs/adr/0004-cursor-paginated-photos.md))
 - A `complete` run reads as `not_started` only when originals went missing or a folder grew past the last run's `discovered` — never because disk files outnumber photo rows, which duplicates and failed imports make permanent ([0004](docs/adr/0004-cursor-paginated-photos.md))
 - Memories pages `/api/photos` and groups in the SPA; `/api/timeline` feeds only the scrubber's histogram ([docs/adr/0002-spa-owned-timeline-groups.md](docs/adr/0002-spa-owned-timeline-groups.md))
 - Year view reads `/api/photos/summary` instead, so the widest zoom sees every year rather than the newest page; `TimelineGroup.total` is the period's real count and the feed is scoped with `to` on the way out ([0031](docs/adr/0031-year-view-is-a-summary.md))

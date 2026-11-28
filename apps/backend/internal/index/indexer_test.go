@@ -24,8 +24,16 @@ type memPhotos struct {
 	byKey map[string]*db.Photo
 }
 
+// clone also truncates the stored mtime to microseconds, because that is what
+// the SQL store does (`nullMicros`) and a double that keeps more precision
+// than the real thing hides exactly one bug: the cheap "unchanged on disk"
+// check comparing a nanosecond mtime against a microsecond one.
 func (m *memPhotos) clone(p *db.Photo) *db.Photo {
 	cp := *p
+	if cp.Storage.ModTime != nil {
+		t := time.UnixMicro(cp.Storage.ModTime.UTC().UnixMicro()).UTC()
+		cp.Storage.ModTime = &t
+	}
 	return &cp
 }
 
@@ -296,5 +304,71 @@ func TestUnreachablePrefixFailsSoftAndKeepsItsPhotos(t *testing.T) {
 		if p.DeletedAt != nil {
 			t.Fatalf("pruned %s while its source was unreachable", p.Storage.Path)
 		}
+	}
+}
+
+// A resync must not re-read the library. The cheap check is size plus mtime,
+// so the second run here should stat one file and stop — and the mtime carries
+// nanoseconds, as every file on a real disk does, because that remainder is
+// what the catalog drops and what the comparison used to trip over (ADR 0004).
+func TestSecondRunSkipsWhatDidNotChange(t *testing.T) {
+	root := t.TempDir()
+	key := "admin@example.com/holiday.jpg"
+	full := filepath.Join(root, filepath.FromSlash(key))
+	writeJPEG(t, full, 200, 10, 10)
+	mtime := time.Unix(1700000000, 123456789)
+	if err := os.Chtimes(full, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := &memPhotos{}
+	idx := newTestIndexer(t, root, repo)
+	opts := Options{Prefixes: []string{"admin@example.com"}}
+
+	first, err := idx.Run(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Indexed != 1 {
+		t.Fatalf("first run indexed %d, want 1", first.Indexed)
+	}
+
+	second, err := idx.Run(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Skipped != 1 || second.Indexed != 0 {
+		t.Errorf("second run indexed %d and skipped %d, want 0 and 1 — the file was read again",
+			second.Indexed, second.Skipped)
+	}
+}
+
+// --force is the way past the cheap check, for a file edited in place without
+// its size or mtime moving, and for repairing a thumb that is wrong rather
+// than missing.
+func TestForceReindexesEvenWhenNothingChanged(t *testing.T) {
+	root := t.TempDir()
+	key := "admin@example.com/holiday.jpg"
+	full := filepath.Join(root, filepath.FromSlash(key))
+	writeJPEG(t, full, 200, 10, 10)
+	mtime := time.Unix(1700000000, 123456789)
+	if err := os.Chtimes(full, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := &memPhotos{}
+	idx := newTestIndexer(t, root, repo)
+	if _, err := idx.Run(context.Background(), Options{Prefixes: []string{"admin@example.com"}}); err != nil {
+		t.Fatal(err)
+	}
+	forced, err := idx.Run(context.Background(), Options{
+		Prefixes: []string{"admin@example.com"},
+		Force:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forced.Skipped != 0 {
+		t.Errorf("forced run skipped %d, want 0", forced.Skipped)
 	}
 }

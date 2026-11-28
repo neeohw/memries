@@ -405,9 +405,20 @@ func (i *Indexer) storagePtr(info storage.ObjectInfo) db.StoragePtr {
 	return ptr
 }
 
+// unchangedOnDisk is the whole reason a resync is fast: a file whose size and
+// mtime still match its row is skipped before a byte of it is read.
+//
+// The comparison has to happen at the precision the catalog keeps, which is
+// microseconds (`nullMicros`), while a filesystem reports nanoseconds. Equal
+// on the raw values is therefore false for almost every real file — its mtime
+// has a sub-microsecond remainder that does not survive the round trip — and
+// that quietly turned every scan into a full re-read and re-hash of the
+// library (ADR 0004).
 func unchangedOnDisk(p *db.Photo, info storage.ObjectInfo) bool {
-	return p.Storage.ModTime != nil && !info.ModTime.IsZero() &&
-		p.Storage.ModTime.Equal(info.ModTime) && p.SizeBytes == info.Size
+	if p.Storage.ModTime == nil || info.ModTime.IsZero() || p.SizeBytes != info.Size {
+		return false
+	}
+	return p.Storage.ModTime.UnixMicro() == info.ModTime.UTC().UnixMicro()
 }
 
 func lookupPhoto(p *db.Photo, err error) (*db.Photo, error) {
